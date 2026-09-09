@@ -1,0 +1,15 @@
+error[E0061]: this function takes 4 arguments but 3 arguments were supplied
+  --> tests/compile-fail/login_cannot_be_wrapped_without_the_autofill_key.rs:12:13
+   |
+12 |     let _ = VaultAndAutofill::wrap(&item_key, &vault_key, ctx);
+   |             ^^^^^^^^^^^^^^^^^^^^^^                        --- argument #3 of type `&Secret<AutofillKey>` is missing
+   |
+note: associated function defined here
+  --> src/wrap.rs
+   |
+   |     pub fn wrap(
+   |            ^^^^
+help: provide the argument
+   |
+12 |     let _ = VaultAndAutofill::wrap(&item_key, &vault_key, /* &Secret<AutofillKey> */, ctx);
+   |                                                           +++++++++++++++++++++++++++

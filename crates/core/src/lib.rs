@@ -4,3 +4,4 @@ pub mod aad;
 pub mod derive;
 pub mod nonce;
 pub mod secret;
+pub mod wrap;

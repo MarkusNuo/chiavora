@@ -1,0 +1,11 @@
+error[E0271]: type mismatch resolving `<Note as ItemType>::Wraps == VaultAndAutofill`
+ --> tests/compile-fail/vault_only_type_cannot_take_double_wrap.rs:9:31
+  |
+9 |     let _ = requires_double::<Note>();
+  |                               ^^^^ expected `VaultAndAutofill`, found `VaultOnly`
+  |
+note: required by a bound in `requires_double`
+ --> tests/compile-fail/vault_only_type_cannot_take_double_wrap.rs:4:32
+  |
+4 | fn requires_double<T: ItemType<Wraps = VaultAndAutofill>>() -> &'static str {
+  |                                ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `requires_double`

@@ -7,6 +7,7 @@ dist/
 build/
 out/
 release/
+target/
 *.tsbuildinfo
 
 # test / coverage
@@ -43,3 +44,5 @@ Thumbs.db
 *.log
 npm-debug.log*
 pnpm-debug.log*
+native/
+target/ffi-smoke*/

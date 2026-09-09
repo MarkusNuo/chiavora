@@ -1,0 +1,12 @@
+{
+  "name": "@chiavora/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "React Native (Expo) app over the Rust core via uniffi. Android only for now.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  }
+}

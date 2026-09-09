@@ -1,0 +1,12 @@
+{
+  "name": "@chiavora/extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WebExtension MV3 for Chrome, Edge and Firefox. Scaffold.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  }
+}

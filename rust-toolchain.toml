@@ -1,0 +1,4 @@
+# Pinned on purpose, so a new Rust release cannot turn CI red with new lints.
+# The Android target is not listed; `scripts/mobile-native.ps1` adds it when missing.
+[toolchain]
+channel = "stable"

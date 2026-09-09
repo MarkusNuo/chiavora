@@ -20,3 +20,4 @@ subtle = "2.6"
 
 [dev-dependencies]
 trybuild = "1.0"
+proptest = "1.5"

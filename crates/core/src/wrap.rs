@@ -3,6 +3,8 @@
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use subtle::ConstantTimeEq;
+
+use crate::aad::{self, AadFields, WRAP_PURPOSE_AUTOFILL, WRAP_PURPOSE_VAULT};
 use crate::nonce::{FreshNonce, StoredNonce, NONCE_LEN};
 use crate::secret::{
     kind::{AutofillKey, ItemKey, VaultKey},
@@ -10,11 +12,6 @@ use crate::secret::{
 };
 
 const WRAPPING_KEY_LEN: usize = 32;
-
-const PURPOSE_VAULT: u8 = 0x01;
-const PURPOSE_AUTOFILL: u8 = 0x02;
-
-const WRAP_MAGIC: &[u8; 5] = b"CHVW1";
 
 /// What a wrapped Item Key is bound to: the `0x05` record's fields (§2.2).
 #[derive(Debug, Clone, Copy)]
@@ -24,16 +21,13 @@ pub struct WrapContext<'a> {
 }
 
 impl WrapContext<'_> {
-    fn aad(&self, purpose: u8) -> Result<Vec<u8>, WrapError> {
-        let mut out = Vec::new();
-        out.extend_from_slice(WRAP_MAGIC);
-        out.push(purpose);
-        for field in [self.vault_id, self.item_id] {
-            let len = u32::try_from(field.len()).map_err(|_| WrapError::FieldTooLong)?;
-            out.extend_from_slice(&len.to_le_bytes());
-            out.extend_from_slice(field);
-        }
-        Ok(out)
+    fn aad(&self, wrap_purpose: u8) -> Result<Vec<u8>, WrapError> {
+        aad::encode(&AadFields::WrappedItemKey {
+            vault_id: self.vault_id.to_vec(),
+            item_id: self.item_id.to_vec(),
+            wrap_purpose,
+        })
+        .map_err(WrapError::Aad)
     }
 }
 
@@ -65,7 +59,7 @@ impl WrappedKey {
 pub enum WrapError {
     BadWrappingKeyLength,
     Aead,
-    FieldTooLong,
+    Aad(aad::AadError),
     BadItemKeyLength,
     I7Disagreement,
 }
@@ -75,7 +69,7 @@ impl core::fmt::Display for WrapError {
         match *self {
             Self::BadWrappingKeyLength => f.write_str("a wrapping key is not 32 bytes"),
             Self::Aead => f.write_str("the AEAD refused the wrapped key"),
-            Self::FieldTooLong => f.write_str("a wrap binding field exceeds u32::MAX bytes"),
+            Self::Aad(e) => write!(f, "the wrap binding could not be encoded: {e}"),
             Self::BadItemKeyLength => f.write_str("the unwrapped Item Key has an invalid length"),
             Self::I7Disagreement => f.write_str(
                 "I7 violated: the Vault-Key and Autofill-Key wraps yielded different Item Keys",
@@ -156,7 +150,7 @@ impl VaultOnly {
         ctx: WrapContext<'_>,
     ) -> Result<Self, WrapError> {
         Ok(Self {
-            vault: wrap_one(item_key, vault_key, ctx, PURPOSE_VAULT)?,
+            vault: wrap_one(item_key, vault_key, ctx, WRAP_PURPOSE_VAULT)?,
         })
     }
 
@@ -175,7 +169,7 @@ impl VaultOnly {
         vault_key: &Secret<VaultKey>,
         ctx: WrapContext<'_>,
     ) -> Result<Secret<ItemKey>, WrapError> {
-        unwrap_one(&self.vault, vault_key, ctx, PURPOSE_VAULT)
+        unwrap_one(&self.vault, vault_key, ctx, WRAP_PURPOSE_VAULT)
     }
 }
 
@@ -194,8 +188,8 @@ impl VaultAndAutofill {
         ctx: WrapContext<'_>,
     ) -> Result<Self, WrapError> {
         Ok(Self {
-            vault: wrap_one(item_key, vault_key, ctx, PURPOSE_VAULT)?,
-            autofill: wrap_one(item_key, autofill_key, ctx, PURPOSE_AUTOFILL)?,
+            vault: wrap_one(item_key, vault_key, ctx, WRAP_PURPOSE_VAULT)?,
+            autofill: wrap_one(item_key, autofill_key, ctx, WRAP_PURPOSE_AUTOFILL)?,
         })
     }
 
@@ -221,8 +215,8 @@ impl VaultAndAutofill {
         autofill_key: &Secret<AutofillKey>,
         ctx: WrapContext<'_>,
     ) -> Result<Secret<ItemKey>, WrapError> {
-        let from_vault = unwrap_one(&self.vault, vault_key, ctx, PURPOSE_VAULT)?;
-        let from_autofill = unwrap_one(&self.autofill, autofill_key, ctx, PURPOSE_AUTOFILL)?;
+        let from_vault = unwrap_one(&self.vault, vault_key, ctx, WRAP_PURPOSE_VAULT)?;
+        let from_autofill = unwrap_one(&self.autofill, autofill_key, ctx, WRAP_PURPOSE_AUTOFILL)?;
         // Constant time, because this compares key material.
         if from_vault.expose().ct_eq(from_autofill.expose()).into() {
             Ok(from_vault)
@@ -238,7 +232,7 @@ impl VaultAndAutofill {
         autofill_key: &Secret<AutofillKey>,
         ctx: WrapContext<'_>,
     ) -> Result<Secret<ItemKey>, WrapError> {
-        unwrap_one(&self.autofill, autofill_key, ctx, PURPOSE_AUTOFILL)
+        unwrap_one(&self.autofill, autofill_key, ctx, WRAP_PURPOSE_AUTOFILL)
     }
 }
 

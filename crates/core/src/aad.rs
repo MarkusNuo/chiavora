@@ -6,6 +6,10 @@ pub const RECORD_ITEM_PAYLOAD: u8 = 0x01;
 pub const RECORD_ATTACHMENT_CHUNK: u8 = 0x02;
 pub const RECORD_MANIFEST_ROOT: u8 = 0x03;
 pub const RECORD_MANIFEST_SEGMENT: u8 = 0x04;
+pub const RECORD_WRAPPED_ITEM_KEY: u8 = 0x05;
+
+pub const WRAP_PURPOSE_VAULT: u8 = 0x01;
+pub const WRAP_PURPOSE_AUTOFILL: u8 = 0x02;
 
 pub const MAX_PREFIX_LEN: u8 = 64;
 
@@ -43,6 +47,12 @@ pub enum AadFields {
         /// Prefix in the most-significant `prefix_len` bits; low bits zero.
         prefix_bits: u64,
     },
+    /// In this encoder so I3 covers it.
+    WrappedItemKey {
+        vault_id: Vec<u8>,
+        item_id: Vec<u8>,
+        wrap_purpose: u8,
+    },
 }
 
 impl AadFields {
@@ -53,6 +63,7 @@ impl AadFields {
             Self::AttachmentChunk { .. } => RECORD_ATTACHMENT_CHUNK,
             Self::ManifestRoot { .. } => RECORD_MANIFEST_ROOT,
             Self::ManifestSegment { .. } => RECORD_MANIFEST_SEGMENT,
+            Self::WrappedItemKey { .. } => RECORD_WRAPPED_ITEM_KEY,
         }
     }
 }
@@ -64,6 +75,7 @@ pub enum AadError {
     PrefixBitsNotCanonical,
     BadMagic,
     UnknownRecordType(u8),
+    UnknownWrapPurpose(u8),
     Truncated,
     TrailingBytes,
 }
@@ -82,6 +94,9 @@ impl core::fmt::Display for AadError {
             Self::UnknownRecordType(t) => {
                 write!(f, "unknown AAD record type {t:#04x}")
             }
+            Self::UnknownWrapPurpose(p) => {
+                write!(f, "unknown AAD wrap purpose {p:#04x}")
+            }
             Self::Truncated => f.write_str("AAD string ended inside a field"),
             Self::TrailingBytes => f.write_str("trailing bytes after a complete AAD record"),
         }
@@ -89,6 +104,14 @@ impl core::fmt::Display for AadError {
 }
 
 impl core::error::Error for AadError {}
+
+const fn check_wrap_purpose(wrap_purpose: u8) -> Result<(), AadError> {
+    if wrap_purpose == WRAP_PURPOSE_VAULT || wrap_purpose == WRAP_PURPOSE_AUTOFILL {
+        Ok(())
+    } else {
+        Err(AadError::UnknownWrapPurpose(wrap_purpose))
+    }
+}
 
 const fn check_prefix(prefix_len: u8, prefix_bits: u64) -> Result<(), AadError> {
     if prefix_len > MAX_PREFIX_LEN {
@@ -190,6 +213,18 @@ pub fn encode(fields: &AadFields) -> Result<Vec<u8>, AadError> {
             out.push(prefix_len);
             out.extend_from_slice(&prefix_bits.to_le_bytes());
         }
+        AadFields::WrappedItemKey {
+            ref vault_id,
+            ref item_id,
+            wrap_purpose,
+        } => {
+            check_wrap_purpose(wrap_purpose)?;
+            out.extend_from_slice(MAGIC);
+            out.push(RECORD_WRAPPED_ITEM_KEY);
+            put_var(&mut out, vault_id)?;
+            put_var(&mut out, item_id)?;
+            out.push(wrap_purpose);
+        }
     }
     Ok(out)
 }
@@ -290,6 +325,17 @@ pub fn decode(bytes: &[u8]) -> Result<AadFields, AadError> {
                 vault_key_epoch,
                 prefix_len,
                 prefix_bits,
+            }
+        }
+        RECORD_WRAPPED_ITEM_KEY => {
+            let vault_id = r.var()?;
+            let item_id = r.var()?;
+            let wrap_purpose = r.u8()?;
+            check_wrap_purpose(wrap_purpose)?;
+            AadFields::WrappedItemKey {
+                vault_id,
+                item_id,
+                wrap_purpose,
             }
         }
         other => return Err(AadError::UnknownRecordType(other)),

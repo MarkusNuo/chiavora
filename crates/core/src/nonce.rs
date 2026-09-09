@@ -17,7 +17,9 @@ impl Nonce {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// A nonce just drawn from the CSPRNG and never used. It is neither `Copy` nor `Clone`,
+/// so an encrypt path that takes it by value can use it only once.
+#[derive(PartialEq, Eq)]
 pub struct FreshNonce(Nonce);
 
 impl FreshNonce {

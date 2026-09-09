@@ -2,7 +2,8 @@
 
 use chiavora_core::aad::{
     decode, encode, AadError, AadFields, MAX_PREFIX_LEN, RECORD_ATTACHMENT_CHUNK,
-    RECORD_ITEM_PAYLOAD, RECORD_MANIFEST_ROOT, RECORD_MANIFEST_SEGMENT,
+    RECORD_ITEM_PAYLOAD, RECORD_MANIFEST_ROOT, RECORD_MANIFEST_SEGMENT, RECORD_WRAPPED_ITEM_KEY,
+    WRAP_PURPOSE_AUTOFILL, WRAP_PURPOSE_VAULT,
 };
 use proptest::prelude::{any, prop, ProptestConfig, Strategy};
 use proptest::{prop_assert, prop_assert_eq, prop_assume, proptest};
@@ -98,12 +99,28 @@ fn manifest_segment() -> impl Strategy<Value = AadFields> {
     )
 }
 
+fn wrapped_item_key() -> impl Strategy<Value = AadFields> {
+    (
+        var_field(),
+        var_field(),
+        prop::sample::select(vec![WRAP_PURPOSE_VAULT, WRAP_PURPOSE_AUTOFILL]),
+    )
+        .prop_map(
+            |(vault_id, item_id, wrap_purpose)| AadFields::WrappedItemKey {
+                vault_id,
+                item_id,
+                wrap_purpose,
+            },
+        )
+}
+
 fn any_record() -> impl Strategy<Value = AadFields> {
     prop::strategy::Union::new(vec![
         item_payload().boxed(),
         attachment_chunk().boxed(),
         manifest_root().boxed(),
         manifest_segment().boxed(),
+        wrapped_item_key().boxed(),
     ])
 }
 
@@ -157,6 +174,11 @@ fn i3_every_record_type_round_trips_at_least_once() {
             prefix_len: 3,
             prefix_bits: 0xE000_0000_0000_0000,
         },
+        AadFields::WrappedItemKey {
+            vault_id: b"vault".to_vec(),
+            item_id: b"item".to_vec(),
+            wrap_purpose: WRAP_PURPOSE_VAULT,
+        },
     ];
     let seen: Vec<u8> = cases.iter().map(AadFields::record_type).collect();
 
@@ -166,7 +188,8 @@ fn i3_every_record_type_round_trips_at_least_once() {
             RECORD_ITEM_PAYLOAD,
             RECORD_ATTACHMENT_CHUNK,
             RECORD_MANIFEST_ROOT,
-            RECORD_MANIFEST_SEGMENT
+            RECORD_MANIFEST_SEGMENT,
+            RECORD_WRAPPED_ITEM_KEY
         ]
     );
     for fields in cases {
@@ -415,4 +438,87 @@ proptest! {
             );
         }
     }
+}
+
+#[test]
+fn the_two_wrap_purposes_do_not_collide() {
+    // If these collided, a wrap could be moved between the Vault-Key and Autofill-Key slots.
+    let vault = AadFields::WrappedItemKey {
+        vault_id: b"v".to_vec(),
+        item_id: b"i".to_vec(),
+        wrap_purpose: WRAP_PURPOSE_VAULT,
+    };
+    let autofill = AadFields::WrappedItemKey {
+        vault_id: b"v".to_vec(),
+        item_id: b"i".to_vec(),
+        wrap_purpose: WRAP_PURPOSE_AUTOFILL,
+    };
+    assert_ne!(
+        encode(&vault).expect("must encode"),
+        encode(&autofill).expect("must encode")
+    );
+}
+
+#[test]
+fn an_undefined_wrap_purpose_is_refused_on_encode_and_decode() {
+    for bad in [0x00_u8, 0x03, 0xFF] {
+        let fields = AadFields::WrappedItemKey {
+            vault_id: b"v".to_vec(),
+            item_id: b"i".to_vec(),
+            wrap_purpose: bad,
+        };
+        assert_eq!(
+            encode(&fields),
+            Err(AadError::UnknownWrapPurpose(bad)),
+            "purpose {bad:#04x} must be refused on encode"
+        );
+    }
+
+    // On decode, built by hand since the encoder will not produce it.
+    let mut bytes = encode(&AadFields::WrappedItemKey {
+        vault_id: b"v".to_vec(),
+        item_id: b"i".to_vec(),
+        wrap_purpose: WRAP_PURPOSE_VAULT,
+    })
+    .expect("must encode");
+    let last = bytes.len() - 1;
+    bytes[last] = 0x03;
+    assert_eq!(decode(&bytes), Err(AadError::UnknownWrapPurpose(0x03)));
+}
+
+#[test]
+fn a_wrapped_key_does_not_collide_with_the_payload_of_the_same_item() {
+    let payload = AadFields::ItemPayload {
+        vault_id: b"v".to_vec(),
+        item_id: b"i".to_vec(),
+        version: 0,
+        content_type: Vec::new(),
+    };
+    let wrapped = AadFields::WrappedItemKey {
+        vault_id: b"v".to_vec(),
+        item_id: b"i".to_vec(),
+        wrap_purpose: WRAP_PURPOSE_VAULT,
+    };
+    assert_ne!(
+        encode(&payload).expect("must encode"),
+        encode(&wrapped).expect("must encode")
+    );
+}
+
+#[test]
+fn the_wrapped_key_binding_is_length_prefixed() {
+    let left = AadFields::WrappedItemKey {
+        vault_id: b"ab".to_vec(),
+        item_id: b"c".to_vec(),
+        wrap_purpose: WRAP_PURPOSE_VAULT,
+    };
+    let right = AadFields::WrappedItemKey {
+        vault_id: b"a".to_vec(),
+        item_id: b"bc".to_vec(),
+        wrap_purpose: WRAP_PURPOSE_VAULT,
+    };
+    assert_ne!(
+        encode(&left).expect("must encode"),
+        encode(&right).expect("must encode")
+    );
 }

@@ -1,0 +1,9 @@
+error[E0382]: use of moved value: `nonce`
+  --> tests/compile-fail/fresh_nonce_cannot_be_reused.rs:17:30
+   |
+15 |     let nonce = FreshNonce::generate().unwrap();
+   |         ----- move occurs because `nonce` has type `FreshNonce`, which does not implement the `Copy` trait
+16 |     let _first = seal(&key, nonce, &fields, b"plaintext one");
+   |                             ----- value moved here
+17 |     let _second = seal(&key, nonce, &fields, b"plaintext two");
+   |                              ^^^^^ value used here after move

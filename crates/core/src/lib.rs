@@ -2,6 +2,7 @@
 
 pub mod aad;
 pub mod derive;
+pub mod item;
 pub mod nonce;
 pub mod secret;
 pub mod wrap;

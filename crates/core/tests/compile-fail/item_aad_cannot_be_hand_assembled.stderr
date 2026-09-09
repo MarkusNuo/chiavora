@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/compile-fail/item_aad_cannot_be_hand_assembled.rs:10:31
+   |
+10 |     let _ = seal(&key, nonce, &hand_rolled, b"plaintext");
+   |             ----              ^^^^^^^^^^^^ expected `&AadFields`, found `&Vec<u8>`
+   |             |
+   |             arguments to this function are incorrect
+   |
+   = note: expected reference `&AadFields`
+              found reference `&Vec<u8>`
+note: function defined here
+  --> src/item.rs
+   |
+   | pub fn seal(
+   |        ^^^^

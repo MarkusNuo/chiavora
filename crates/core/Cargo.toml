@@ -9,3 +9,10 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+zeroize = { version = "1.8", features = ["zeroize_derive"] }
+region = "3.0"
+# The only randomness source in core.
+getrandom = "0.3"
+
+[dev-dependencies]
+trybuild = "1.0"

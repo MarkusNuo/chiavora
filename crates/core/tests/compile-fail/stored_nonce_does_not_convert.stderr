@@ -1,0 +1,7 @@
+error[E0277]: the trait bound `FreshNonce: From<StoredNonce>` is not satisfied
+ --> tests/compile-fail/stored_nonce_does_not_convert.rs:6:41
+  |
+6 |     let _laundered: FreshNonce = stored.into();
+  |                                         ^^^^ the trait `From<StoredNonce>` is not implemented for `FreshNonce`
+  |
+  = note: required for `StoredNonce` to implement `Into<FreshNonce>`

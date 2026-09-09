@@ -1,0 +1,13 @@
+error[E0308]: mismatched types
+  --> tests/compile-fail/stored_nonce_cannot_encrypt.rs:10:13
+   |
+10 |     encrypt(stored);
+   |     ------- ^^^^^^ expected `FreshNonce`, found `StoredNonce`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/compile-fail/stored_nonce_cannot_encrypt.rs:6:4
+   |
+ 6 | fn encrypt(_nonce: FreshNonce) {}
+   |    ^^^^^^^ ------------------

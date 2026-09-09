@@ -1,0 +1,11 @@
+error[E0599]: no method named `set_version` found for struct `Record` in the current scope
+ --> tests/compile-fail/version_cannot_be_set.rs:6:12
+  |
+6 |     record.set_version(1);
+  |            ^^^^^^^^^^^
+  |
+help: there is a method `version` with a similar name, but with different arguments
+ --> src/lib.rs
+  |
+  |     pub const fn version(&self) -> u16 {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

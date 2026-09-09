@@ -1,0 +1,5 @@
+error[E0616]: field `version` of struct `Record` is private
+ --> tests/compile-fail/version_field_is_private.rs:6:12
+  |
+6 |     record.version = 1;
+  |            ^^^^^^^ private field

@@ -9,3 +9,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+
+[dev-dependencies]
+proptest = "1.5"
+trybuild = "1.0"

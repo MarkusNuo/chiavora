@@ -1,0 +1,16 @@
+error[E0061]: this function takes 1 argument but 2 arguments were supplied
+ --> tests/compile-fail/record_cannot_be_built_at_a_chosen_version.rs:5:19
+  |
+5 |     let _record = Record::new(2, Vec::new());
+  |                   ^^^^^^^^^^^ - unexpected argument #1 of type `{integer}`
+  |
+note: associated function defined here
+ --> src/lib.rs
+  |
+  |     pub const fn new(fields: Vec<Field>) -> Self {
+  |                  ^^^
+help: remove the extra argument
+  |
+5 -     let _record = Record::new(2, Vec::new());
+5 +     let _record = Record::new(Vec::new());
+  |

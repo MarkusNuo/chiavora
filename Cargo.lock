@@ -314,6 +314,10 @@ dependencies = [
 [[package]]
 name = "chiavora-protocol"
 version = "0.1.0"
+dependencies = [
+ "proptest",
+ "trybuild",
+]
 
 [[package]]
 name = "chiavora-server"

@@ -251,23 +251,80 @@ proptest! {
         let record = Record::new(fields);
         let target = record.fields()[0].tag();
 
+        if record.count_with(target) > 1 {
+            prop_assert_eq!(
+                record.with_field(target, replacement).err(),
+                Some(WireError::AmbiguousTag(target))
+            );
+            return Ok(());
+        }
+
         let edited = record.with_field(target, replacement).expect("must edit");
 
         // Compared by position, because comparing by tag is ambiguous for a repeated tag.
         let before: Vec<u16> = record.fields().iter().map(Field::tag).collect();
         let after: Vec<u16> = edited.fields().iter().map(Field::tag).collect();
         prop_assert_eq!(before, after);
-        for field in record.fields().iter().skip(1) {
-            if field.tag() != target {
-                prop_assert_eq!(
-                    edited.field(field.tag()).map(Field::value),
-                    Some(field.value())
-                );
+        for (original, result) in record.fields().iter().zip(edited.fields()) {
+            if original.tag() != target {
+                prop_assert_eq!(original.value(), result.value());
             }
         }
     }
 }
 
 #[test]
-fn us_231_cargo_fuzz_target_is_still_owed() {
+fn a_repeated_tag_is_legal_to_read_and_round_trips() {
+    let record = Record::new(vec![
+        field(TAG_FUTURE_A, b"first"),
+        field(TAG_NONCE, b"nonce"),
+        field(TAG_FUTURE_A, b"second"),
+    ]);
+    let bytes = record.encode().expect("must encode");
+    let decoded = Record::decode(&bytes).expect("a repeated tag must be readable");
+
+    assert_eq!(decoded, record);
+    assert_eq!(decoded.encode().expect("must re-encode"), bytes);
+    assert_eq!(decoded.count_with(TAG_FUTURE_A), 2);
+
+    let values: Vec<&[u8]> = decoded
+        .fields_with(TAG_FUTURE_A)
+        .map(Field::value)
+        .collect();
+    assert_eq!(values, vec![b"first".as_slice(), b"second".as_slice()]);
+}
+
+#[test]
+fn editing_a_repeated_tag_is_refused_rather_than_guessed_at() {
+    let record = Record::new(vec![
+        field(TAG_FUTURE_A, b"first"),
+        field(TAG_FUTURE_A, b"second"),
+    ]);
+    assert_eq!(
+        record
+            .with_field(TAG_FUTURE_A, b"replacement".to_vec())
+            .err(),
+        Some(WireError::AmbiguousTag(TAG_FUTURE_A))
+    );
+    assert_eq!(record.count_with(TAG_FUTURE_A), 2);
+}
+
+#[test]
+fn editing_an_unambiguous_tag_in_a_record_that_has_repeats_elsewhere_is_fine() {
+    let record = Record::new(vec![
+        field(TAG_FUTURE_A, b"first"),
+        field(TAG_NONCE, b"nonce"),
+        field(TAG_FUTURE_A, b"second"),
+    ]);
+    let edited = record
+        .with_field(TAG_NONCE, b"new nonce".to_vec())
+        .expect("an unambiguous tag must still be editable");
+
+    assert_eq!(
+        edited.field(TAG_NONCE).map(Field::value),
+        Some(b"new nonce".as_slice())
+    );
+    assert_eq!(edited.count_with(TAG_FUTURE_A), 2);
+    let values: Vec<&[u8]> = edited.fields_with(TAG_FUTURE_A).map(Field::value).collect();
+    assert_eq!(values, vec![b"first".as_slice(), b"second".as_slice()]);
 }

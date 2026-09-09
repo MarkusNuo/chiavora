@@ -299,6 +299,7 @@ dependencies = [
 name = "chiavora-ffi-mobile"
 version = "0.1.0"
 dependencies = [
+ "chiavora-core",
  "uniffi",
 ]
 
@@ -306,6 +307,7 @@ dependencies = [
 name = "chiavora-ffi-node"
 version = "0.1.0"
 dependencies = [
+ "chiavora-core",
  "napi",
  "napi-build",
  "napi-derive",

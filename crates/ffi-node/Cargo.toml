@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 workspace = true
 
 [dependencies]
+chiavora-core = { workspace = true }
 napi = { version = "2.16", default-features = false, features = ["napi4"] }
 napi-derive = "2.16"
 

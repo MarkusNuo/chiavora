@@ -27,6 +27,10 @@ cast_possible_truncation = "deny"
 cast_lossless = "warn"
 missing_errors_doc = "allow"
 
+# Versioned, because cargo-deny treats a path dependency without one as a wildcard.
+[workspace.dependencies]
+chiavora-core = { path = "crates/core", version = "0.1.0" }
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"

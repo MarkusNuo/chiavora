@@ -18,4 +18,5 @@ path = "src/bin/uniffi-bindgen.rs"
 workspace = true
 
 [dependencies]
+chiavora-core = { workspace = true }
 uniffi = { version = "0.28", features = ["cli"] }

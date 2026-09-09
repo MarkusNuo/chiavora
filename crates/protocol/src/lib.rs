@@ -76,7 +76,19 @@ impl Record {
         self.fields.iter().find(|f| f.tag == tag)
     }
 
+    pub fn fields_with(&self, tag: Tag) -> impl Iterator<Item = &Field> {
+        self.fields.iter().filter(move |f| f.tag == tag)
+    }
+
+    #[must_use]
+    pub fn count_with(&self, tag: Tag) -> usize {
+        self.fields_with(tag).count()
+    }
+
     pub fn with_field(&self, tag: Tag, value: Vec<u8>) -> Result<Self, WireError> {
+        if self.count_with(tag) > 1 {
+            return Err(WireError::AmbiguousTag(tag));
+        }
         let replacement = Field::new(tag, value)?;
         let mut fields = self.fields.clone();
         match fields.iter_mut().find(|f| f.tag == tag) {
@@ -138,6 +150,8 @@ pub enum WireError {
     TrailingBytes,
     FieldTooLong,
     TooManyFields,
+    /// Legal to read, but which one to edit would be a guess.
+    AmbiguousTag(Tag),
 }
 
 impl fmt::Display for WireError {
@@ -148,6 +162,10 @@ impl fmt::Display for WireError {
             Self::TrailingBytes => f.write_str("trailing bytes after a complete wire record"),
             Self::FieldTooLong => f.write_str("a wire field exceeds u32::MAX bytes"),
             Self::TooManyFields => f.write_str("a wire record has more than u32::MAX fields"),
+            Self::AmbiguousTag(tag) => write!(
+                f,
+                "tag {tag:#06x} appears more than once; this build cannot edit it safely"
+            ),
         }
     }
 }

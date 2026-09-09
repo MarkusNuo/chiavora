@@ -63,6 +63,7 @@ impl<K: SecretKind> Secret<K> {
     pub fn new(bytes: Vec<u8>) -> Self {
         let bytes = Zeroizing::new(bytes);
         let lock = lock_buffer(&bytes);
+        crate::ffi_guard::register(&bytes);
         Self {
             bytes,
             lock,
@@ -103,6 +104,14 @@ impl<K: SecretKind> fmt::Debug for Secret<K> {
             K::NAME,
             self.bytes.len()
         )
+    }
+}
+
+/// Deregisters the fingerprint while the bytes are still readable, before
+/// `Zeroizing` wipes them.
+impl<K: SecretKind> Drop for Secret<K> {
+    fn drop(&mut self) {
+        crate::ffi_guard::deregister(&self.bytes);
     }
 }
 

@@ -8,7 +8,9 @@ uniffi::setup_scaffolding!();
 #[uniffi::export]
 #[must_use]
 pub fn ffi_smoke() -> String {
-    smoke_value().to_owned()
+    let value = smoke_value().to_owned();
+    chiavora_core::ffi_guard::assert_not_key_material(value.as_bytes());
+    value
 }
 
 #[must_use]

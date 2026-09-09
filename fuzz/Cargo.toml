@@ -1,0 +1,31 @@
+[package]
+name = "chiavora-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+# Not part of the root workspace: cargo-fuzz needs nightly, the main build
+# stays on stable.
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+chiavora-core = { path = "../crates/core" }
+chiavora-protocol = { path = "../crates/protocol" }
+
+[[bin]]
+name = "wire_record_decode"
+path = "fuzz_targets/wire_record_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "aad_decode"
+path = "fuzz_targets/aad_decode.rs"
+test = false
+doc = false
+bench = false

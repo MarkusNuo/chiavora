@@ -1,0 +1,56 @@
+# Needs nightly, so not a required check; fuzzing normally runs locally with `scripts/fuzz.ps1`.
+name: Fuzz
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "Minutes to fuzz each target"
+        required: false
+        default: "10"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [wire_record_decode, aad_decode]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Fuzz ${{ matrix.target }}
+        run: |
+          MINUTES="${{ github.event.inputs.minutes || '10' }}"
+          cargo fuzz run "${{ matrix.target }}" -- \
+            -max_total_time=$((MINUTES * 60))
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/
+          if-no-files-found: ignore
+
+      - name: Upload grown corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus-${{ matrix.target }}
+          path: fuzz/corpus/${{ matrix.target }}/
+          if-no-files-found: ignore

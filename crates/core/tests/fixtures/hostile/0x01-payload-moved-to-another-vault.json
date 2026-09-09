@@ -1,0 +1,19 @@
+{
+  "attacks": "I3",
+  "why": "A ciphertext moved between vaults would let a shared-vault member read an item from a vault they were never given the key epoch for.",
+  "expect": "refused",
+  "kind": "item-payload",
+  "seal_as": {
+    "vault_id": "vault-1",
+    "item_id": "item-1",
+    "version": 1,
+    "content_type": "login"
+  },
+  "open_as": {
+    "vault_id": "vault-2",
+    "item_id": "item-1",
+    "version": 1,
+    "content_type": "login"
+  },
+  "plaintext": "the original payload"
+}

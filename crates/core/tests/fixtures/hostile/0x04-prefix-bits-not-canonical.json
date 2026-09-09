@@ -1,0 +1,7 @@
+{
+  "attacks": "I3, and I6b's precondition",
+  "why": "A non-zero bit below the prefixLen boundary gives one segment many encodings, which lets a tiling check pass while a keyspace range is hidden.",
+  "expect": "refused",
+  "kind": "aad-bytes",
+  "mutation": "dirty-prefix-low-bits"
+}

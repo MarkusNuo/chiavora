@@ -1,0 +1,11 @@
+{
+  "attacks": "I3 (record type 0x05)",
+  "why": "The Vault-Key and Autofill-Key wraps of one Item Key differ only by wrapPurpose, so if they were interchangeable the two paths could no longer be told apart.",
+  "expect": "refused",
+  "kind": "wrapped-key",
+  "mutation": "swap-slots",
+  "item": {
+    "vault_id": "vault-1",
+    "item_id": "item-1"
+  }
+}

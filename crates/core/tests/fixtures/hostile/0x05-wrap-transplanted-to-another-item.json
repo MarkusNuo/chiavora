@@ -1,0 +1,11 @@
+{
+  "attacks": "I3 (record type 0x05)",
+  "why": "A wrapped Item Key moved to another item must fail at the wrap itself, not only later at the payload AAD.",
+  "expect": "refused",
+  "kind": "wrapped-key",
+  "mutation": "transplant-item",
+  "item": {
+    "vault_id": "vault-1",
+    "item_id": "item-1"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "attacks": "I3",
+  "why": "prefixLen above 64 describes nothing, and describes it ambiguously: two different lengths over the same prefixBits would be distinct encodings of the same impossible segment.",
+  "expect": "refused",
+  "kind": "aad-bytes",
+  "mutation": "prefix-len-65"
+}

@@ -1,0 +1,19 @@
+{
+  "attacks": "I3",
+  "why": "A payload reinterpreted as another content type could become readable by the provider, since item type is security-relevant under ADR-0003.",
+  "expect": "refused",
+  "kind": "item-payload",
+  "seal_as": {
+    "vault_id": "vault-1",
+    "item_id": "item-1",
+    "version": 1,
+    "content_type": "note"
+  },
+  "open_as": {
+    "vault_id": "vault-1",
+    "item_id": "item-1",
+    "version": 1,
+    "content_type": "login"
+  },
+  "plaintext": "a secure note"
+}

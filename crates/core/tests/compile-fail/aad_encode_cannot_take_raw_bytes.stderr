@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+ --> tests/compile-fail/aad_encode_cannot_take_raw_bytes.rs:6:20
+  |
+6 |     let _ = encode(&hand_rolled);
+  |             ------ ^^^^^^^^^^^^ expected `&AadFields`, found `&Vec<u8>`
+  |             |
+  |             arguments to this function are incorrect
+  |
+  = note: expected reference `&AadFields`
+             found reference `&Vec<u8>`
+note: function defined here
+ --> src/aad.rs
+  |
+  | pub fn encode(fields: &AadFields) -> Result<Vec<u8>, AadError> {
+  |        ^^^^^^

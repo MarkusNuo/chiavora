@@ -287,6 +287,8 @@ dependencies = [
  "hkdf",
  "proptest",
  "region",
+ "serde",
+ "serde_json",
  "sha2",
  "subtle",
  "trybuild",

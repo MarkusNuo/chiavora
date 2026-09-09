@@ -1,0 +1,19 @@
+{
+  "attacks": "I3",
+  "why": "A ciphertext presented at another version would let a hostile server serve a password the user has already rotated away from.",
+  "expect": "refused",
+  "kind": "item-payload",
+  "seal_as": {
+    "vault_id": "vault-1",
+    "item_id": "item-1",
+    "version": 7,
+    "content_type": "login"
+  },
+  "open_as": {
+    "vault_id": "vault-1",
+    "item_id": "item-1",
+    "version": 6,
+    "content_type": "login"
+  },
+  "plaintext": "the rotated password"
+}

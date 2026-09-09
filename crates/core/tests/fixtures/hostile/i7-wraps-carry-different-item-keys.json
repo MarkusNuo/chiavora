@@ -1,0 +1,11 @@
+{
+  "attacks": "I7",
+  "why": "If the two wraps of a fillable item's Item Key disagree, preferring either answer could hand out a key an attacker chose, so no key is returned.",
+  "expect": "refused",
+  "kind": "wrapped-key",
+  "mutation": "disagreeing-keys",
+  "item": {
+    "vault_id": "vault-1",
+    "item_id": "item-1"
+  }
+}

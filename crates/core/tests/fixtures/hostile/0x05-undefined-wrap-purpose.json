@@ -1,0 +1,7 @@
+{
+  "attacks": "I3 (record type 0x05)",
+  "why": "An undefined wrapPurpose would admit a third wrap slot nothing defines, and two encodings for whichever slot it aliased.",
+  "expect": "refused",
+  "kind": "aad-bytes",
+  "mutation": "wrap-purpose-3"
+}

@@ -1,0 +1,8 @@
+{
+  "attacks": "I4",
+  "why": "KDF parameters below m = 64 MiB, t = 3 would make the vault cheap to brute-force, and on signup no verifier exists to contradict a malicious choice.",
+  "expect": "refused",
+  "kind": "kdf-params",
+  "memory_kib": 65535,
+  "iterations": 3
+}

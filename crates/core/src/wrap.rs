@@ -97,13 +97,13 @@ fn wrap_one<K: SecretKind>(
     let aead = cipher(key)?;
     // I2: the only nonce source, and taken by value so it cannot be reused.
     let nonce = FreshNonce::generate().map_err(|_| WrapError::Aead)?;
-    let aad = ctx.aad(purpose)?;
+    let encoded_aad = ctx.aad(purpose)?;
     let ciphertext = aead
         .encrypt(
             XNonce::from_slice(nonce.as_nonce().as_bytes()),
             Payload {
                 msg: item_key.expose(),
-                aad: &aad,
+                aad: &encoded_aad,
             },
         )
         .map_err(|_| WrapError::Aead)?;
@@ -121,13 +121,13 @@ fn unwrap_one<K: SecretKind>(
 ) -> Result<Secret<ItemKey>, WrapError> {
     let aead = cipher(key)?;
     let nonce = StoredNonce::from_stored_bytes(*wrapped.nonce());
-    let aad = ctx.aad(purpose)?;
+    let encoded_aad = ctx.aad(purpose)?;
     let plaintext = aead
         .decrypt(
             XNonce::from_slice(nonce.as_nonce().as_bytes()),
             Payload {
                 msg: wrapped.ciphertext(),
-                aad: &aad,
+                aad: &encoded_aad,
             },
         )
         .map_err(|_| WrapError::Aead)?;

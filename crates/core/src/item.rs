@@ -74,6 +74,9 @@ fn prepare(
     Ok((XChaCha20Poly1305::new(Key::from_slice(bytes)), encoded))
 }
 
+// By value so the nonce is consumed; a reference would let a caller reuse it.
+#[allow(clippy::needless_pass_by_value)]
+
 pub fn seal(
     item_key: &Secret<ItemKey>,
     nonce: FreshNonce,

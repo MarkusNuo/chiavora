@@ -1,0 +1,8 @@
+{
+  "attacks": "I4",
+  "why": "Iterations below t = 3 must be refused even with memory at the floor, because a floor on only one parameter is not a floor.",
+  "expect": "refused",
+  "kind": "kdf-params",
+  "memory_kib": 65536,
+  "iterations": 2
+}

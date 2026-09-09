@@ -1,0 +1,19 @@
+{
+  "attacks": "I3",
+  "why": "A ciphertext moved from one item to another would decrypt under the wrong identity, so an attacker could substitute a known password into a different entry.",
+  "expect": "refused",
+  "kind": "item-payload",
+  "seal_as": {
+    "vault_id": "vault-1",
+    "item_id": "item-1",
+    "version": 1,
+    "content_type": "login"
+  },
+  "open_as": {
+    "vault_id": "vault-1",
+    "item_id": "item-2",
+    "version": 1,
+    "content_type": "login"
+  },
+  "plaintext": "the original payload"
+}

@@ -1,0 +1,7 @@
+{
+  "attacks": "I3",
+  "why": "Accepting bytes after a complete record would let two byte strings decode to the same fields.",
+  "expect": "refused",
+  "kind": "aad-bytes",
+  "mutation": "append-byte"
+}

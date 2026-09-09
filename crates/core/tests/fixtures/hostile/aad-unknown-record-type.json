@@ -1,0 +1,7 @@
+{
+  "attacks": "I3",
+  "why": "A record type outside 0x01..=0x05 has no defined encoding, so injectivity would say nothing about it.",
+  "expect": "refused",
+  "kind": "aad-bytes",
+  "mutation": "record-type-9"
+}

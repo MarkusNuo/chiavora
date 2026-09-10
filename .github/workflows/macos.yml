@@ -1,0 +1,69 @@
+# The only place the Swift bindings are built and called.
+name: CI (macOS)
+
+on:
+  schedule:
+    - cron: "41 4 * * *"
+  pull_request:
+    paths:
+      - "crates/ffi-mobile/**"
+      - "scripts/ffi-smoke-swift.sh"
+      - ".github/workflows/macos.yml"
+      - "rust-toolchain.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+
+concurrency:
+  group: macos-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  rust-macos:
+    name: rust (macos-latest)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets
+      - name: cargo test
+        run: cargo test --workspace
+
+  node-macos:
+    name: node (macos-latest)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: pnpm typecheck
+        run: pnpm -r --parallel typecheck
+      - name: pnpm test
+        run: pnpm test
+
+  ffi-swift:
+    name: ffi smoke (Swift)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Swift FFI smoke test
+        run: bash scripts/ffi-smoke-swift.sh

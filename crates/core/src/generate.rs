@@ -215,6 +215,33 @@ mod tests {
     }
 
     #[test]
+    fn a_csprng_failure_maps_to_the_intended_variant() {
+        use crate::csprng::CsprngError;
+
+        let mapped = GenerateError::from(CsprngError);
+        assert_eq!(mapped, GenerateError::Csprng);
+        let text = format!("{mapped}");
+        assert!(text.contains("CSPRNG"), "it must say what failed: {text}");
+        assert!(
+            text.contains("refusing"),
+            "R1: it must say it is refusing rather than substituting: {text}"
+        );
+    }
+
+    #[test]
+    fn a_policy_reports_back_what_it_was_given() {
+        let policy = Policy::new(24, &[CharClass::Digit, CharClass::Digit], false, false).unwrap();
+        assert_eq!(policy.length(), 24);
+        assert!(!policy.require_one_of_each());
+        // De-duplicated: two `Digit`s are one class, so the alphabet is 10.
+        assert_eq!(policy.alphabet().len(), 10);
+
+        let strict = Policy::new(8, &all_classes(), true, true).unwrap();
+        assert_eq!(strict.length(), 8);
+        assert!(strict.require_one_of_each());
+    }
+
+    #[test]
     fn a_generated_password_has_the_requested_length_and_alphabet() {
         let policy = Policy::new(24, &all_classes(), false, false).unwrap();
         let alphabet = policy.alphabet();

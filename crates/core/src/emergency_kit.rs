@@ -302,6 +302,41 @@ mod tests {
     }
 
     #[test]
+    fn a_kit_does_not_print_itself() {
+        let with = kit(Some([0x5A; CHECKPOINT_LEN]));
+        let without = kit(None);
+
+        let shown = format!("{with:?}");
+        assert_eq!(shown, "Kit(redacted, checkpoint: present)");
+        assert_eq!(format!("{without:?}"), "Kit(redacted, checkpoint: absent)");
+
+        assert!(!shown.contains("11"), "accountId leaked: {shown}");
+        assert!(!shown.contains("22"), "accountSalt leaked: {shown}");
+        assert!(
+            !shown.contains("CHV1"),
+            "the Secret Key line leaked: {shown}"
+        );
+    }
+
+    #[test]
+    fn a_kit_refuses_a_mis_sized_secret_key() {
+        use crate::secret::Secret;
+        use zeroize::Zeroizing;
+
+        let short = Secret::from_external_bytes(Zeroizing::new(vec![0x11; 8]));
+        assert_eq!(
+            Kit::new(
+                [0x11; ACCOUNT_ID_LEN],
+                [0x22; ACCOUNT_SALT_LEN],
+                short,
+                None
+            )
+            .err(),
+            Some(KitError::WrongFieldLength)
+        );
+    }
+
+    #[test]
     fn absent_is_not_zero() {
         let absent = kit(None);
         let zeros = kit(Some([0_u8; CHECKPOINT_LEN]));

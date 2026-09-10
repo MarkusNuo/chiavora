@@ -170,3 +170,19 @@ proptest! {
         prop_assert!(set.unwrap(&vault_key(vault), other_ctx).is_err());
     }
 }
+
+#[test]
+fn a_vault_only_wrap_survives_being_stored_and_reconstituted() {
+    let item = item_key(vec![0x4D; 32]);
+    let vault = vault_key(vec![0x11; 32]);
+    let ctx = WrapContext {
+        vault_id: b"vault-1",
+        item_id: b"item-1",
+    };
+
+    let set = VaultOnly::wrap(&item, &vault, ctx).expect("wrap");
+    let stored = set.vault_wrap().clone();
+    let reconstituted = VaultOnly::from_stored_parts(stored);
+    let recovered = reconstituted.unwrap(&vault, ctx).expect("unwrap");
+    assert_eq!(recovered.expose(), item.expose());
+}

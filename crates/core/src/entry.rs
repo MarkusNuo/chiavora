@@ -292,6 +292,29 @@ mod tests {
     }
 
     #[test]
+    fn the_secret_key_field_refuses_empty_and_over_long_input() {
+        use super::{SecretKeyField, MAX_SECRET_KEY_BYTES};
+
+        assert_eq!(
+            accept::<SecretKeyField>(Vec::new()).err(),
+            Some(EntryError::Empty)
+        );
+        assert_eq!(
+            accept::<SecretKeyField>(vec![b'0'; MAX_SECRET_KEY_BYTES + 1]).err(),
+            Some(EntryError::TooLong {
+                max: MAX_SECRET_KEY_BYTES
+            })
+        );
+        let padded = format!(
+            "{}{}",
+            " ".repeat(MAX_SECRET_KEY_BYTES - 40),
+            "CHV1-0000-0000-0000-0000-0000-0000-00XV"
+        );
+        assert!(padded.len() < MAX_SECRET_KEY_BYTES);
+        assert!(accept::<SecretKeyField>(padded.into_bytes()).is_ok());
+    }
+
+    #[test]
     fn the_entry_point_names_itself_the_same_way_the_registry_does() {
         let covered = super::REGISTRY
             .iter()

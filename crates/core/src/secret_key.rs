@@ -155,6 +155,29 @@ mod tests {
     }
 
     #[test]
+    fn a_csprng_failure_maps_to_the_intended_variant() {
+        use crate::csprng::CsprngError;
+
+        let mapped = SecretKeyError::from(CsprngError);
+        assert_eq!(mapped, SecretKeyError::Csprng);
+        let text = format!("{mapped}");
+        assert!(text.contains("CSPRNG"), "it must say what failed: {text}");
+        assert!(
+            text.contains("refusing"),
+            "R1: it must say it is refusing rather than substituting: {text}"
+        );
+    }
+
+    #[test]
+    fn rendering_a_mis_sized_key_is_refused_rather_than_rendered_short() {
+        let short = key(vec![0xAA; KEY_LEN - 1]);
+        assert!(matches!(
+            render(&short),
+            Err(SecretKeyError::WrongLength { .. })
+        ));
+    }
+
+    #[test]
     fn two_generated_keys_differ() {
         let a = generate().expect("CSPRNG");
         let b = generate().expect("CSPRNG");

@@ -1,0 +1,13 @@
+* text=auto
+
+# Shell scripts run on Linux and macOS, so they must check out with LF.
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Fuzz inputs are raw bytes; converting line endings would change them.
+fuzz/corpus/** binary
+fuzz/artifacts/** binary
+
+# Test vectors and trybuild output are compared as text, kept LF everywhere.
+crates/core/tests/vectors/*.json text eol=lf
+*.stderr text eol=lf

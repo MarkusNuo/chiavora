@@ -11,4 +11,5 @@ pub mod nonce;
 #[cfg(test)]
 pub(crate) mod scan;
 pub mod secret;
+pub mod secret_key;
 pub mod wrap;

@@ -1,8 +1,9 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 use std::path::PathBuf;
-
-use chiavora_core::entry::{accept, EntryPoint as _, EntryStatus, PasswordField, REGISTRY};
+use chiavora_core::entry::{
+    accept, EntryError, EntryPoint as _, EntryStatus, PasswordField, SecretKeyField, REGISTRY,
+};
 
 fn repo_root() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -69,36 +70,82 @@ fn owed_points_name_a_blocker_and_covered_points_do_not() {
     }
 }
 
+/// The call returns the `Debug` of the `Secret` it produced, which names the brand.
+type CoveredPoint = (&'static str, fn() -> Result<String, EntryError>);
+
+fn covered_points() -> Vec<CoveredPoint> {
+    vec![
+        ("password field", || {
+            accept::<PasswordField>(b"a-real-password".to_vec()).map(|s| format!("{s:?}"))
+        }),
+        ("Secret Key field", || {
+            accept::<SecretKeyField>(b"CHV1-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AA53".to_vec())
+                .map(|s| format!("{s:?}"))
+        }),
+    ]
+}
+
 #[test]
-fn exactly_one_entry_point_is_covered_today() {
+fn the_covered_list_is_exactly_the_registry_s_covered_set() {
+    let mut from_registry: Vec<&str> = REGISTRY
+        .iter()
+        .filter(|r| r.status == EntryStatus::Covered)
+        .map(|r| r.name)
+        .collect();
+    let mut from_list: Vec<&str> = covered_points().into_iter().map(|(n, _)| n).collect();
+    from_registry.sort_unstable();
+    from_list.sort_unstable();
+    assert_eq!(from_registry, from_list);
+}
+
+#[test]
+fn the_entry_points_name_themselves_the_way_the_registry_does() {
+    let names: Vec<&str> = covered_points().into_iter().map(|(n, _)| n).collect();
+    assert!(names.contains(&PasswordField::NAME));
+    assert!(names.contains(&SecretKeyField::NAME));
+}
+
+#[test]
+fn two_entry_points_are_covered_today() {
     // Pinned, because `docs/crypto.md` states these counts in prose.
     let covered = REGISTRY
         .iter()
         .filter(|r| r.status == EntryStatus::Covered)
         .count();
     assert_eq!(
-        covered, 1,
+        covered, 2,
         "the number of covered entry points changed; update docs/crypto.md's \
-         partial-coverage section and this count together"
+         partial-coverage section, `covered_points` and this count together"
     );
     assert_eq!(REGISTRY.len(), 6, "the gate names six");
 }
 
 #[test]
-fn a_covered_point_is_reachable_through_accept() {
-    let secret = accept::<PasswordField>(b"a-real-password".to_vec()).expect("covered");
-    assert_eq!(secret.expose(), b"a-real-password");
+fn every_covered_point_is_reachable_through_accept() {
+    for (name, call) in covered_points() {
+        call().unwrap_or_else(|e| {
+            panic!("{name} is recorded as covered but refused a valid input: {e}")
+        });
+    }
 }
 
 #[test]
 fn every_covered_point_yields_the_brand_the_registry_records() {
+    let calls = covered_points();
     for record in REGISTRY.iter().filter(|r| r.status == EntryStatus::Covered) {
         let brand = record
             .yields
             .expect("a covered entry point knows what it yields");
-        assert_eq!(record.name, PasswordField::NAME);
-        let secret = accept::<PasswordField>(b"x".to_vec()).expect("accepted");
-        let rendered = format!("{secret:?}");
+        let (_, call) = calls
+            .iter()
+            .find(|(n, _)| *n == record.name)
+            .unwrap_or_else(|| {
+                panic!(
+                    "{} is covered but has no call in `covered_points`",
+                    record.name
+                )
+            });
+        let rendered = call().unwrap_or_else(|e| panic!("{}: {e}", record.name));
         assert!(
             rendered.contains(brand),
             "{} yields {rendered}, not the recorded {brand}",

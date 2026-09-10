@@ -7,6 +7,9 @@ use crate::secret::{kind, ExternalKind, Secret, SecretKind};
 /// Not a password policy: it stops a hostile host handing Argon2id a gigabyte.
 pub const MAX_PASSWORD_BYTES: usize = 4096;
 
+/// Far above the 39-character rendering, so a pasted Kit line with surrounding text still fits.
+pub const MAX_SECRET_KEY_BYTES: usize = 256;
+
 /// No variant carries any of the input, since an error here is likely to be logged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryError {
@@ -16,6 +19,7 @@ pub enum EntryError {
     },
     NormalizationUndecided,
     SurroundingWhitespace,
+    SecretKeyFormat(crate::secret_key::SecretKeyError),
 }
 
 impl core::fmt::Display for EntryError {
@@ -31,6 +35,7 @@ impl core::fmt::Display for EntryError {
             Self::SurroundingWhitespace => f.write_str(
                 "leading or trailing whitespace is refused until trimming is decided",
             ),
+            Self::SecretKeyFormat(inner) => write!(f, "{inner}"),
         }
     }
 }
@@ -88,6 +93,28 @@ impl EntryPoint for PasswordField {
     }
 }
 
+pub struct SecretKeyField;
+
+impl sealed::Sealed for SecretKeyField {}
+
+impl EntryPoint for SecretKeyField {
+    type Yields = kind::SecretKeyMaterial;
+
+    const NAME: &'static str = "Secret Key field";
+
+    fn transform(raw: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, EntryError> {
+        if raw.is_empty() {
+            return Err(EntryError::Empty);
+        }
+        if raw.len() > MAX_SECRET_KEY_BYTES {
+            return Err(EntryError::TooLong {
+                max: MAX_SECRET_KEY_BYTES,
+            });
+        }
+        crate::secret_key::decode(&raw).map_err(EntryError::SecretKeyFormat)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryStatus {
     Covered,
@@ -117,9 +144,9 @@ pub const REGISTRY: [EntryPointRecord; 6] = [
         name: "Secret Key field",
         gate_phrase: "the Secret Key field",
         statement: "",
-        status: EntryStatus::Owed,
+        status: EntryStatus::Covered,
         yields: Some("SecretKey"),
-        blocked_on: Some(" / docs/adr/0004 - Base32 rendering and checksum undecided"),
+        blocked_on: None,
     },
     EntryPointRecord {
         name: "Emergency Kit QR decode path",
@@ -127,7 +154,9 @@ pub const REGISTRY: [EntryPointRecord; 6] = [
         statement: "",
         status: EntryStatus::Owed,
         yields: Some("SecretKey"),
-        blocked_on: Some(" / docs/adr/0004, and the Kit itself is "),
+        blocked_on: Some(
+            " (the Emergency Kit); the format half closed in docs/adr/0004",
+        ),
     },
     EntryPointRecord {
         name: "clipboard paste",

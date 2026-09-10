@@ -1,10 +1,14 @@
 //! Chiavora core: crypto, key hierarchy, item model, manifest and sync engine.
 
 pub mod aad;
+pub(crate) mod csprng;
 pub mod derive;
 pub mod entry;
 pub mod ffi_guard;
+pub mod generate;
 pub mod item;
 pub mod nonce;
+#[cfg(test)]
+pub(crate) mod scan;
 pub mod secret;
 pub mod wrap;

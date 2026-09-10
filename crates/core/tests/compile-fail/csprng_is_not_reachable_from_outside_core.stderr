@@ -1,0 +1,13 @@
+error[E0603]: module `csprng` is private
+ --> tests/compile-fail/csprng_is_not_reachable_from_outside_core.rs:5:20
+  |
+5 |     chiavora_core::csprng::fill_bytes(&mut buf).unwrap();
+  |                    ^^^^^^  ---------- function `fill_bytes` is not publicly re-exported
+  |                    |
+  |                    private module
+  |
+note: the module `csprng` is defined here
+ --> src/lib.rs
+  |
+  | pub(crate) mod csprng;
+  | ^^^^^^^^^^^^^^^^^^^^^

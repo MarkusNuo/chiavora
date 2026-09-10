@@ -184,11 +184,7 @@ mod tests {
 
     #[test]
     fn only_the_brand_macro_grants_a_provenance() {
-        let source = include_str!("secret.rs");
-        let production = source
-            .split("#[cfg(test)]")
-            .next()
-            .expect("the file has production code before its tests");
+        let production = crate::scan::production(include_str!("secret.rs"));
         for provenance in ["ExternalKind", "DerivedKind"] {
             let needle = format!("impl {provenance} for ");
             let sites: Vec<&str> = production

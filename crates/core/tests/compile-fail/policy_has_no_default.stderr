@@ -1,0 +1,16 @@
+error[E0599]: no associated function or constant named `default` found for struct `Policy` in the current scope
+ --> tests/compile-fail/policy_has_no_default.rs:6:26
+  |
+6 |     let policy = Policy::default();
+  |                          ^^^^^^^ associated function or constant not found in `Policy`
+  |
+note: if you're trying to build a new `Policy`, consider using `Policy::new` which returns `Result<Policy, GenerateError>`
+ --> src/generate.rs
+  |
+  | /     pub fn new(
+  | |         length: usize,
+  | |         classes: &[CharClass],
+  | |         exclude_ambiguous: bool,
+  | |         require_one_of_each: bool,
+  | |     ) -> Result<Self, GenerateError> {
+  | |____________________________________^

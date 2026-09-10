@@ -25,7 +25,7 @@ pub struct FreshNonce(Nonce);
 impl FreshNonce {
     pub fn generate() -> Result<Self, NonceError> {
         let mut bytes = [0_u8; NONCE_LEN];
-        getrandom::fill(&mut bytes).map_err(|_| NonceError::Csprng)?;
+        crate::csprng::fill_bytes(&mut bytes).map_err(|_| NonceError::Csprng)?;
         Ok(Self(Nonce(bytes)))
     }
 
@@ -92,18 +92,35 @@ impl fmt::Debug for StoredNonce {
 mod tests {
     use super::{FreshNonce, StoredNonce, NONCE_LEN};
 
-    fn code_without_tests() -> &'static str {
-        let source = include_str!("nonce.rs");
-        let marker = concat!("#[cfg(", "test)]");
-        source.split(marker).next().unwrap_or(source)
+    // Production code only, so the needles below do not match their own messages.
+    fn code_without_tests() -> String {
+        crate::scan::production(include_str!("nonce.rs"))
     }
 
     #[test]
     fn i2_generate_is_the_only_fresh_nonce_source() {
-        let draws = code_without_tests().matches("getrandom::fill").count();
+        let code = code_without_tests();
+        let draws = code.matches("csprng::fill_bytes").count();
         assert_eq!(
             draws, 1,
-            "I2: expected exactly one CSPRNG call site, found {draws}"
+            "I2: expected exactly one CSPRNG draw in this module, found {draws}"
+        );
+
+        // Scoped to `impl FreshNonce`: over the whole module the needle also matches `StoredNonce`.
+        let fresh_impl = code
+            .split("impl FreshNonce {")
+            .nth(1)
+            .and_then(|rest| rest.split("impl StoredNonce").next())
+            .expect("nonce.rs declares `impl FreshNonce` before `impl StoredNonce`");
+        let constructions = fresh_impl.matches("Self(Nonce(").count();
+        assert_eq!(
+            constructions, 1,
+            "I2: expected exactly one FreshNonce construction, found {constructions}"
+        );
+
+        assert!(
+            !code.contains("getrandom"),
+            "I2: this module must draw through `csprng`, not `getrandom`"
         );
     }
 

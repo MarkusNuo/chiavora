@@ -31,10 +31,9 @@ pub(crate) fn uniform_below(n: u32) -> Result<u32, CsprngError> {
     loop {
         let mut bytes = [0_u8; 4];
         fill_bytes(&mut bytes)?;
-        let draw = u64::from(u32::from_le_bytes(bytes));
-        if draw < limit {
-            let value = draw % u64::from(n);
-            return Ok(u32::try_from(value).unwrap_or(0));
+        let draw = u32::from_le_bytes(bytes);
+        if u64::from(draw) < limit {
+            return Ok(draw % n);
         }
     }
 }

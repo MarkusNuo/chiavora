@@ -30,6 +30,7 @@ missing_errors_doc = "allow"
 # Versioned, because cargo-deny treats a path dependency without one as a wildcard.
 [workspace.dependencies]
 chiavora-core = { path = "crates/core", version = "0.1.0" }
+chiavora-protocol = { path = "crates/protocol", version = "0.1.0" }
 
 [workspace.package]
 version = "0.1.0"

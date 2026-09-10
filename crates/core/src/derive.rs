@@ -112,6 +112,7 @@ pub fn derive_root_key(
     ids: AccountIdentifiers<'_>,
     params: KdfParams,
 ) -> Result<Secret<RootKey>, DeriveError> {
+    const _: () = assert!(KEY_LEN == 32, "§2.1: rootKey is 32 bytes");
     let salt = derive_salt(ids)?;
 
     let argon_params = Params::new(
@@ -135,12 +136,15 @@ pub fn derive_root_key(
         &mut secret_key_kd,
     )?;
 
-    let root: Vec<u8> = pass_key
-        .iter()
-        .zip(secret_key_kd.iter())
-        .map(|(a, b)| a ^ b)
-        .collect();
-    debug_assert_eq!(root.len(), KEY_LEN, "rootKey must be exactly 32 bytes");
+    // The length comes from the allocation, not from a debug assertion that a
+    // release build would drop.
+    let mut root = vec![0_u8; KEY_LEN];
+    for (slot, (a, b)) in root
+        .iter_mut()
+        .zip(pass_key.iter().zip(secret_key_kd.iter()))
+    {
+        *slot = a ^ b;
+    }
 
     zeroize::Zeroize::zeroize(&mut pass_key);
     zeroize::Zeroize::zeroize(&mut secret_key_kd);

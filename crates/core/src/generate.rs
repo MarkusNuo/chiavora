@@ -45,6 +45,8 @@ pub enum GenerateError {
     AlphabetEmptyAfterExclusions,
     LengthBelowClassCount,
     Csprng,
+    AlphabetTooLarge,
+    AlphabetIndexOutOfRange,
 }
 
 impl core::fmt::Display for GenerateError {
@@ -61,6 +63,8 @@ impl core::fmt::Display for GenerateError {
             Self::Csprng => {
                 f.write_str("the platform CSPRNG failed; refusing to generate a weaker password")
             }
+            Self::AlphabetTooLarge => f.write_str("the alphabet does not fit in a u32"),
+            Self::AlphabetIndexOutOfRange => f.write_str("a drawn index fell outside the alphabet"),
         }
     }
 }
@@ -153,7 +157,8 @@ pub fn password(policy: &Policy) -> Result<Zeroizing<String>, GenerateError> {
     const MAX_ATTEMPTS: usize = 1_000;
 
     let alphabet = policy.alphabet();
-    let size = u32::try_from(alphabet.len()).unwrap_or(u32::MAX);
+    // Cannot fail (at most 75 characters), and a fallback would misstate the alphabet.
+    let size = u32::try_from(alphabet.len()).map_err(|_| GenerateError::AlphabetTooLarge)?;
     if size == 0 {
         return Err(GenerateError::NoClasses);
     }
@@ -162,10 +167,11 @@ pub fn password(policy: &Policy) -> Result<Zeroizing<String>, GenerateError> {
         let mut out = Zeroizing::new(String::with_capacity(policy.length));
         for _ in 0..policy.length {
             let index = uniform_below(size)?;
-            let byte = alphabet
-                .get(usize::try_from(index).unwrap_or(0))
-                .copied()
-                .unwrap_or(b'?');
+            // Both conversions propagate: a fallback would weaken the password silently.
+            let position = usize::try_from(index).map_err(|_| GenerateError::AlphabetTooLarge)?;
+            let byte = *alphabet
+                .get(position)
+                .ok_or(GenerateError::AlphabetIndexOutOfRange)?;
             out.push(char::from(byte));
         }
         if !policy.require_one_of_each || satisfies_all_classes(policy, &out) {

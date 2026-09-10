@@ -1,0 +1,78 @@
+{
+  "note": "Published reference vectors for the primitives ADR-0002 names, each with its source and the strength of that evidence.",
+  "hkdf_sha256": {
+    "source": "RFC 5869 Appendix A.1 and A.3",
+    "evidence": "published, and reproduced by an independent implementation",
+    "vectors": [
+      {
+        "name": "A.1 basic, with salt and info",
+        "ikm_hex": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+        "salt_hex": "000102030405060708090a0b0c",
+        "info_hex": "f0f1f2f3f4f5f6f7f8f9",
+        "length": 42,
+        "prk_hex": "077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5",
+        "okm_hex": "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"
+      },
+      {
+        "name": "A.3 zero-length salt and info",
+        "ikm_hex": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+        "salt_hex": "",
+        "info_hex": "",
+        "length": 42,
+        "prk_hex": "19ef24a32c717b167f33a91d6f648bdf96596776afdb6377ac434c1c293ccb04",
+        "okm_hex": "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8"
+      }
+    ]
+  },
+  "chacha20poly1305": {
+    "source": "RFC 8439 section 2.8.2",
+    "evidence": "published, and reproduced by an independent implementation",
+    "key_hex": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+    "nonce_hex": "070000004041424344454647",
+    "aad_hex": "50515253c0c1c2c3c4c5c6c7",
+    "plaintext_utf8": "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.",
+    "ciphertext_hex": "d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b6116",
+    "tag_hex": "1ae10b594f09e26a7e902ecbd0600691"
+  },
+  "hchacha20": {
+    "source": "draft-irtf-cfrg-xchacha, HChaCha20 test vector",
+    "evidence": "published, and reproduced by an independent implementation",
+    "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "nonce_hex": "000000090000004a0000000031415927",
+    "subkey_hex": "82413b4227b27bfed30e42508a877d73a0f9e4d58a74a853c12ec41326d3ecdc"
+  },
+  "xchacha20poly1305": {
+    "source": "Composed, not published: HChaCha20 over the first 16 nonce bytes, then RFC 8439 AEAD under the subkey with nonce 00000000||n[16..24].",
+    "evidence": "cross-implementation (independent Python vs the Rust crate)",
+    "key_hex": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+    "nonce_hex": "404142434445464748494a4b4c4d4e4f5051525354555657",
+    "aad_hex": "50515253c0c1c2c3c4c5c6c7",
+    "plaintext_utf8": "Chiavora item payload, sealed under an Item Key.",
+    "ciphertext_hex": "b2641a952d9f863bdb7b03b69b8eed344b2b1d0f6168bc9fafdb9969267578a66459625d4a03bf3445b68c6925f62774",
+    "tag_hex": "240cadbf0bf39ef65c1f71dba2c670c4"
+  },
+  "x25519": {
+    "source": "RFC 7748 section 6.1",
+    "evidence": "published. No independent implementation was run here, so this is the recalled RFC value checked against x25519-dalek only - two sources, one of which is the code under test. The test computes the agreement in both directions and derives each public key from its private key, so a wrong value fails rather than passing.",
+    "alice_private_hex": "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+    "alice_public_hex": "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a",
+    "bob_private_hex": "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb",
+    "bob_public_hex": "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f",
+    "shared_secret_hex": "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742"
+  },
+  "argon2id": {
+    "source": "RFC 9106 section 5.3",
+    "evidence": "published. No independent implementation was available here (argon2-cffi is not installed), so this is the recalled RFC value checked against the argon2 crate only - two sources, one of which is the code under test. Weaker than the HKDF and ChaCha entries, and labelled so in the test.",
+    "note": "m = 32 KiB is below this project's I4 floor, so the test builds the primitive directly rather than through derive::KdfParams, which refuses it.",
+    "version": 19,
+    "m_cost_kib": 32,
+    "t_cost": 3,
+    "p_cost": 4,
+    "tag_length": 32,
+    "password_hex": "0101010101010101010101010101010101010101010101010101010101010101",
+    "salt_hex": "02020202020202020202020202020202",
+    "secret_hex": "0303030303030303",
+    "associated_data_hex": "040404040404040404040404",
+    "tag_hex": "0d640df58d78766c08c037a34a8b53c9d01ef0452d75b65eb52520e96b01e659"
+  }
+}

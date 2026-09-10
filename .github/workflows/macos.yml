@@ -2,15 +2,6 @@
 name: CI (macOS)
 
 on:
-  schedule:
-    - cron: "41 4 * * *"
-  pull_request:
-    paths:
-      - "crates/ffi-mobile/**"
-      - "scripts/ffi-smoke-swift.sh"
-      - ".github/workflows/macos.yml"
-      - "rust-toolchain.toml"
-      - "Cargo.lock"
   workflow_dispatch:
 
 concurrency:

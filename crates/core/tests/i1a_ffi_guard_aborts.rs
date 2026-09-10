@@ -13,7 +13,7 @@ fn run_child_if_asked() {
     let Ok(mode) = std::env::var(MODE) else {
         return;
     };
-    let secret = Secret::<Muk>::new(vec![0x5A; 32]);
+    let secret = Secret::<Muk>::from_derived_bytes(vec![0x5A; 32]);
     let bytes = secret.expose().to_vec();
 
     match mode.as_str() {
@@ -100,7 +100,7 @@ fn the_abort_message_names_no_bytes() {
 #[test]
 fn the_guard_lets_unrelated_buffers_through_in_this_process() {
     let count_before = live_key_material_count();
-    let secret = Secret::<Muk>::new(vec![0x11; 32]);
+    let secret = Secret::<Muk>::from_derived_bytes(vec![0x11; 32]);
     assert!(live_key_material_count() > count_before);
 
     assert_not_key_material(b"chiavora-ffi-node:ok");

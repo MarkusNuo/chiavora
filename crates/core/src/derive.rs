@@ -145,25 +145,26 @@ pub fn derive_root_key(
     zeroize::Zeroize::zeroize(&mut pass_key);
     zeroize::Zeroize::zeroize(&mut secret_key_kd);
 
-    Ok(Secret::new(root))
+    Ok(Secret::from_derived_bytes(root))
 }
 
 pub fn derive_muk(root_key: &Secret<RootKey>) -> Result<Secret<Muk>, DeriveError> {
     let mut out = vec![0_u8; KEY_LEN];
     hkdf_sha256(root_key.expose(), INFO_MUK, &mut out)?;
-    Ok(Secret::new(out))
+    Ok(Secret::from_derived_bytes(out))
 }
 
 /// The MUK's sibling, not its child (§2.1); nothing in this crate derives it from the MUK.
 pub fn derive_srp_x(root_key: &Secret<RootKey>) -> Result<Secret<SrpX>, DeriveError> {
     let mut out = vec![0_u8; KEY_LEN];
     hkdf_sha256(root_key.expose(), INFO_SRP, &mut out)?;
-    Ok(Secret::new(out))
+    Ok(Secret::from_derived_bytes(out))
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
+    use zeroize::Zeroizing;
 
     use super::{
         derive_muk, derive_root_key, derive_srp_x, AccountIdentifiers, DeriveError, KdfParams,
@@ -186,11 +187,11 @@ mod tests {
     }
 
     fn password() -> Secret<AccountPassword> {
-        Secret::new(b"correct horse battery staple".to_vec())
+        Secret::from_external_bytes(Zeroizing::new(b"correct horse battery staple".to_vec()))
     }
 
     fn secret_key() -> Secret<SecretKeyMaterial> {
-        Secret::new(vec![0xAB; 16])
+        Secret::from_external_bytes(Zeroizing::new(vec![0xAB; 16]))
     }
 
     #[test]
@@ -231,7 +232,8 @@ mod tests {
         let (id, salt) = (b"account-id-16byt".as_slice(), [0x11_u8; 32]);
         let with_one =
             derive_root_key(&password(), &secret_key(), ids(id, &salt), floor_params()).unwrap();
-        let other_secret = Secret::<SecretKeyMaterial>::new(vec![0xCD; 16]);
+        let other_secret =
+            Secret::<SecretKeyMaterial>::from_external_bytes(Zeroizing::new(vec![0xCD; 16]));
         let with_other =
             derive_root_key(&password(), &other_secret, ids(id, &salt), floor_params()).unwrap();
         assert_ne!(with_one.expose(), with_other.expose());
@@ -242,7 +244,9 @@ mod tests {
         let (id, salt) = (b"account-id-16byt".as_slice(), [0x11_u8; 32]);
         let with_one =
             derive_root_key(&password(), &secret_key(), ids(id, &salt), floor_params()).unwrap();
-        let other_password = Secret::<AccountPassword>::new(b"a different password".to_vec());
+        let other_password = Secret::<AccountPassword>::from_external_bytes(Zeroizing::new(
+            b"a different password".to_vec(),
+        ));
         let with_other = derive_root_key(
             &other_password,
             &secret_key(),

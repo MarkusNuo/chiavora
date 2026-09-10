@@ -16,7 +16,17 @@ pub enum LockState {
 
 pub trait SecretKind: sealed::Sealed {
     const NAME: &'static str;
+
+    /// Human-chosen material is never fingerprinted by [`crate::ffi_guard`], whose registry is
+    /// not mlocked, so a hash of the password cannot reach swap.
+    const LOW_ENTROPY: bool;
 }
+
+/// Only `Secret::from_external_bytes` builds one, and [`Secret::from_derived_bytes`] refuses it.
+pub trait ExternalKind: SecretKind {}
+
+/// Disjoint from [`ExternalKind`]: each brand declares exactly one provenance.
+pub trait DerivedKind: SecretKind {}
 
 mod sealed {
     pub trait Sealed {}
@@ -24,10 +34,10 @@ mod sealed {
 
 pub mod kind {
     use super::sealed::Sealed;
-    use super::SecretKind;
+    use super::{DerivedKind, ExternalKind, SecretKind};
 
     macro_rules! brand {
-        ($(#[doc = $doc:literal] $name:ident => $label:literal;)+) => {
+        ($(#[doc = $doc:literal] $name:ident => $label:literal, $origin:ident, $low_entropy:literal;)+) => {
             $(
                 #[doc = $doc]
                 #[derive(Debug, Clone, Copy)]
@@ -35,20 +45,30 @@ pub mod kind {
                 impl Sealed for $name {}
                 impl SecretKind for $name {
                     const NAME: &'static str = $label;
+                    const LOW_ENTROPY: bool = $low_entropy;
                 }
+                impl $origin for $name {}
             )+
         };
     }
 
     brand! {
-        AccountPassword => "AccountPassword";
-        SecretKeyMaterial => "SecretKey";
-        RootKey => "RootKey";
-        Muk => "MUK";
-        SrpX => "srpX";
-        VaultKey => "VaultKey";
-        ItemKey => "ItemKey";
-        AutofillKey => "AutofillKey";
+        #[doc = "The account password, as the user typed it (§2.1)."]
+        AccountPassword => "AccountPassword", ExternalKind, true;
+        #[doc = "The 128-bit Secret Key from the Emergency Kit (§2.1)."]
+        SecretKeyMaterial => "SecretKey", ExternalKind, false;
+        #[doc = "`rootKey`, derived and never stored (§2.1)."]
+        RootKey => "RootKey", DerivedKind, false;
+        #[doc = "The Master Unlock Key, a domain-separated child of `rootKey` (§2.1)."]
+        Muk => "MUK", DerivedKind, false;
+        #[doc = "`srpX`, the MUK's sibling and the input to the SRP-6a verifier (§2.1, §2.3)."]
+        SrpX => "srpX", DerivedKind, false;
+        #[doc = "A Vault Key, which wraps Item Keys and is rotated on member removal (§2.2)."]
+        VaultKey => "VaultKey", DerivedKind, false;
+        #[doc = "An Item Key, one per item, which encrypts that item's payload (§2.2)."]
+        ItemKey => "ItemKey", DerivedKind, false;
+        #[doc = "The Autofill Key, which unwraps `login` and `TOTP` Item Keys only (§2.2, §3.3, ADR-0003)."]
+        AutofillKey => "AutofillKey", DerivedKind, false;
     }
 }
 
@@ -58,12 +78,31 @@ pub struct Secret<K: SecretKind> {
     kind: PhantomData<K>,
 }
 
-impl<K: SecretKind> Secret<K> {
+impl<K: SecretKind + DerivedKind> Secret<K> {
+    /// Public because no crate above `core` can obtain such bytes, with one named exception:
+    /// the stored MUK, which re-enters through [`crate::device::muk_from_keystore`].
     #[must_use]
-    pub fn new(bytes: Vec<u8>) -> Self {
-        let bytes = Zeroizing::new(bytes);
+    pub fn from_derived_bytes(bytes: Vec<u8>) -> Self {
+        Self::from_parts(Zeroizing::new(bytes))
+    }
+}
+
+impl<K: SecretKind + ExternalKind> Secret<K> {
+    /// Crate-private, so [`crate::entry::accept`] is the only public way to brand raw input.
+    #[must_use]
+    pub(crate) fn from_external_bytes(bytes: Zeroizing<Vec<u8>>) -> Self {
+        Self::from_parts(bytes)
+    }
+}
+
+impl<K: SecretKind> Secret<K> {
+    /// The one place a `Secret` is built.
+    fn from_parts(bytes: Zeroizing<Vec<u8>>) -> Self {
         let lock = lock_buffer(&bytes);
-        crate::ffi_guard::register(&bytes);
+        // The FFI guard keeps a hash, and nothing at all for a password.
+        if !K::LOW_ENTROPY {
+            crate::ffi_guard::register(&bytes);
+        }
         Self {
             bytes,
             lock,
@@ -111,7 +150,11 @@ impl<K: SecretKind> fmt::Debug for Secret<K> {
 /// `Zeroizing` wipes them.
 impl<K: SecretKind> Drop for Secret<K> {
     fn drop(&mut self) {
-        crate::ffi_guard::deregister(&self.bytes);
+        // Mirrors `from_parts`, or another `Secret` with the same bytes would
+        // lose its registration.
+        if !K::LOW_ENTROPY {
+            crate::ffi_guard::deregister(&self.bytes);
+        }
     }
 }
 
@@ -134,12 +177,44 @@ fn lock_buffer(buffer: &[u8]) -> LockState {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
+    use zeroize::Zeroizing;
+
     use super::kind::{AccountPassword, ItemKey, Muk, SrpX};
     use super::{LockState, Secret};
 
     #[test]
+    fn only_the_brand_macro_grants_a_provenance() {
+        let source = include_str!("secret.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("the file has production code before its tests");
+        for provenance in ["ExternalKind", "DerivedKind"] {
+            let needle = format!("impl {provenance} for ");
+            let sites: Vec<&str> = production
+                .match_indices(&needle)
+                .map(|_| provenance)
+                .collect();
+            assert!(
+                sites.is_empty(),
+                "{provenance} is implemented by hand {} time(s) outside the \
+                 `brand!` macro. Every brand takes its provenance as a macro \
+                 argument so that exactly one applies; a hand-written impl can \
+                 give a brand both, and the disjointness claim in \
+                 `ExternalKind`'s docs stops holding.",
+                sites.len()
+            );
+        }
+        assert_eq!(
+            production.matches("impl $origin for $name {}").count(),
+            1,
+            "the macro must grant provenance in exactly one place"
+        );
+    }
+
+    #[test]
     fn i1a_debug_never_renders_the_bytes() {
-        let secret = Secret::<Muk>::new(b"super-secret-key-material".to_vec());
+        let secret = Secret::<Muk>::from_derived_bytes(b"super-secret-key-material".to_vec());
         let rendered = format!("{secret:?}");
         assert!(
             !rendered.contains("super-secret"),
@@ -159,9 +234,15 @@ mod tests {
     fn i1a_debug_of_every_brand_is_redacted() {
         let plaintext = b"leak-me-if-you-can".to_vec();
         let rendered = [
-            format!("{:?}", Secret::<AccountPassword>::new(plaintext.clone())),
-            format!("{:?}", Secret::<ItemKey>::new(plaintext.clone())),
-            format!("{:?}", Secret::<SrpX>::new(plaintext)),
+            format!(
+                "{:?}",
+                Secret::<AccountPassword>::from_external_bytes(Zeroizing::new(plaintext.clone()))
+            ),
+            format!(
+                "{:?}",
+                Secret::<ItemKey>::from_derived_bytes(plaintext.clone())
+            ),
+            format!("{:?}", Secret::<SrpX>::from_derived_bytes(plaintext)),
         ];
         for line in &rendered {
             assert!(
@@ -173,7 +254,7 @@ mod tests {
 
     #[test]
     fn expose_returns_the_bytes_it_was_given() {
-        let secret = Secret::<ItemKey>::new(vec![1, 2, 3, 4]);
+        let secret = Secret::<ItemKey>::from_derived_bytes(vec![1, 2, 3, 4]);
         assert_eq!(secret.expose(), &[1, 2, 3, 4]);
         assert_eq!(secret.len(), 4);
         assert!(!secret.is_empty());
@@ -181,7 +262,7 @@ mod tests {
 
     #[test]
     fn lock_state_is_reported_rather_than_assumed() {
-        let secret = Secret::<Muk>::new(vec![0_u8; 32]);
+        let secret = Secret::<Muk>::from_derived_bytes(vec![0_u8; 32]);
         // The platform may refuse the lock, so either answer is fine.
         assert!(matches!(
             secret.lock_state(),
@@ -191,7 +272,7 @@ mod tests {
 
     #[test]
     fn an_empty_secret_reports_unlocked_and_does_not_panic() {
-        let secret = Secret::<Muk>::new(Vec::new());
+        let secret = Secret::<Muk>::from_derived_bytes(Vec::new());
         assert!(secret.is_empty());
         assert_eq!(secret.lock_state(), LockState::Unlocked);
     }

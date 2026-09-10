@@ -76,7 +76,7 @@ fn fixture_dir() -> PathBuf {
 }
 
 fn item_key(fill: u8) -> Secret<ItemKey> {
-    Secret::new(vec![fill; 32])
+    Secret::from_derived_bytes(vec![fill; 32])
 }
 
 fn apply_item_payload(f: &Fixture) -> Outcome {
@@ -118,8 +118,8 @@ fn apply_wrapped_key(f: &Fixture) -> Outcome {
         item_id: &item_id,
     };
 
-    let vault_key = Secret::<VaultKey>::new(vec![0x11; 32]);
-    let autofill_key = Secret::<AutofillKey>::new(vec![0x22; 32]);
+    let vault_key = Secret::<VaultKey>::from_derived_bytes(vec![0x11; 32]);
+    let autofill_key = Secret::<AutofillKey>::from_derived_bytes(vec![0x22; 32]);
 
     let result = match mutation {
         "swap-slots" => {

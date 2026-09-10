@@ -19,15 +19,15 @@ fn key32(fill: u8) -> Vec<u8> {
 }
 
 fn item_key(fill: u8) -> Secret<ItemKey> {
-    Secret::new(key32(fill))
+    Secret::from_derived_bytes(key32(fill))
 }
 
 fn vault_key() -> Secret<VaultKey> {
-    Secret::new(key32(0x11))
+    Secret::from_derived_bytes(key32(0x11))
 }
 
 fn autofill_key() -> Secret<AutofillKey> {
-    Secret::new(key32(0x22))
+    Secret::from_derived_bytes(key32(0x22))
 }
 
 const VAULT_ID: &[u8] = b"vault-1";
@@ -258,7 +258,7 @@ fn the_binding_is_length_prefixed() {
 #[test]
 fn a_wrapping_key_of_the_wrong_length_is_refused() {
     let original = item_key(0xAB);
-    let short = Secret::<VaultKey>::new(vec![0x11; 16]);
+    let short = Secret::<VaultKey>::from_derived_bytes(vec![0x11; 16]);
     assert_eq!(
         err_of(VaultOnly::wrap(&original, &short, ctx())),
         Some(WrapError::BadWrappingKeyLength)

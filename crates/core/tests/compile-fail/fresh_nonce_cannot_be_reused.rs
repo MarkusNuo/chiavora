@@ -5,7 +5,7 @@ use chiavora_core::nonce::FreshNonce;
 use chiavora_core::secret::{kind::ItemKey, Secret};
 
 fn main() {
-    let key = Secret::<ItemKey>::new(vec![0; 32]);
+    let key = Secret::<ItemKey>::from_derived_bytes(vec![0; 32]);
     let fields = AadFields::ItemPayload {
         vault_id: b"v".to_vec(),
         item_id: b"i".to_vec(),

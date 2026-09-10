@@ -11,7 +11,7 @@ use chiavora_core::nonce::FreshNonce;
 use chiavora_core::secret::{kind::ItemKey, Secret};
 
 fn item_key(fill: u8) -> Secret<ItemKey> {
-    Secret::new(vec![fill; 32])
+    Secret::from_derived_bytes(vec![fill; 32])
 }
 
 fn fields(item_id: &[u8], version: u64) -> AadFields {
@@ -177,7 +177,7 @@ fn only_the_item_payload_record_type_is_accepted() {
 
 #[test]
 fn an_item_key_of_the_wrong_length_is_refused() {
-    let short = Secret::<ItemKey>::new(vec![0xAB; 16]);
+    let short = Secret::<ItemKey>::from_derived_bytes(vec![0xAB; 16]);
     assert_eq!(
         err_of(seal(
             &short,

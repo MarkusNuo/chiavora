@@ -5,6 +5,8 @@ struct MyOwnKeyKind;
 
 impl SecretKind for MyOwnKeyKind {
     const NAME: &'static str = "MyOwnKeyKind";
+    // Every item is implemented, so the seal is the only error.
+    const LOW_ENTROPY: bool = false;
 }
 
 fn main() {}

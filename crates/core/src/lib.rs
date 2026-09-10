@@ -2,6 +2,7 @@
 
 pub mod aad;
 pub mod derive;
+pub mod entry;
 pub mod ffi_guard;
 pub mod item;
 pub mod nonce;

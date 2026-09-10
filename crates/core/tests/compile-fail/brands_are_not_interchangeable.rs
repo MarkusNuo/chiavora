@@ -7,6 +7,6 @@ use chiavora_core::secret::{
 fn takes_the_muk(_muk: &Secret<Muk>) {}
 
 fn main() {
-    let srp_x = Secret::<SrpX>::new(b"key material".to_vec());
+    let srp_x = Secret::<SrpX>::from_derived_bytes(b"key material".to_vec());
     takes_the_muk(&srp_x);
 }

@@ -1,0 +1,24 @@
+error[E0277]: the trait bound `BiometricPromptField: entry::sealed::Sealed` is not satisfied
+ --> tests/compile-fail/entry_point_is_sealed.rs:9:21
+  |
+9 | impl EntryPoint for BiometricPromptField {
+  |                     ^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+  |
+help: the trait `entry::sealed::Sealed` is not implemented for `BiometricPromptField`
+ --> tests/compile-fail/entry_point_is_sealed.rs:7:1
+  |
+7 | struct BiometricPromptField;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: the trait `entry::sealed::Sealed` is implemented for `PasswordField`
+  --> src/entry.rs
+   |
+   | impl sealed::Sealed for PasswordField {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `EntryPoint`
+  --> src/entry.rs
+   |
+   | pub trait EntryPoint: sealed::Sealed {
+   |                       ^^^^^^^^^^^^^^ required by this bound in `EntryPoint`
+   = note: `EntryPoint` is a "sealed trait", because to implement it you also need to implement `chiavora_core::entry::sealed::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
+   = help: the following type implements the trait:
+             chiavora_core::entry::PasswordField

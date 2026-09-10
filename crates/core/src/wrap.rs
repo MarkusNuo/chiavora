@@ -134,7 +134,7 @@ fn unwrap_one<K: SecretKind>(
     if plaintext.len() != WRAPPING_KEY_LEN {
         return Err(WrapError::BadItemKeyLength);
     }
-    Ok(Secret::new(plaintext))
+    Ok(Secret::from_derived_bytes(plaintext))
 }
 
 /// For kinds the autofill provider must not reach.

@@ -36,3 +36,11 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.77"
 publish = false
+
+# Only silences the failed-symbol prints napi-sys makes when a test binary loads it outside Node.
+[profile.dev.package.napi-sys]
+debug-assertions = false
+
+# Per-package overrides are not inherited by `test`.
+[profile.test.package.napi-sys]
+debug-assertions = false

@@ -4,7 +4,7 @@ use zeroize::Zeroizing;
 use crate::csprng::{self, CsprngError};
 use crate::secret::{kind::SecretKeyMaterial, Secret};
 
-const ALPHABET: &[u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 /// It versions the format, not the key.
 pub const PREFIX: &str = "CHV1-";
@@ -31,9 +31,6 @@ pub enum SecretKeyError {
     InvalidCharacter {
         at: usize,
     },
-    AmbiguousDigitOne {
-        at: usize,
-    },
     NonCanonicalTrailingBits,
     ChecksumMismatch,
     /// No weaker source, so no retry.
@@ -50,11 +47,6 @@ impl core::fmt::Display for SecretKeyError {
             Self::InvalidCharacter { at } => {
                 write!(f, "character {at} is not in the base32 alphabet")
             }
-            Self::AmbiguousDigitOne { at } => write!(
-                f,
-                "character {at} is '1', which could be 'I' or 'L'; \
-                 check the Emergency Kit rather than guessing"
-            ),
             Self::NonCanonicalTrailingBits => {
                 f.write_str("the final character carries non-zero padding bits")
             }
@@ -140,7 +132,7 @@ pub(crate) fn decode(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, SecretKeyError>
         if *byte == b'-' || byte.is_ascii_whitespace() {
             continue;
         }
-        normalised.push(byte.to_ascii_uppercase());
+        normalised.push(normalise(byte.to_ascii_uppercase()));
     }
 
     let symbols: Zeroizing<Vec<u8>> = Zeroizing::new(
@@ -193,16 +185,18 @@ fn alphabet_at(value: u8) -> u8 {
         .unwrap_or(b'A')
 }
 
-fn symbol_value(byte: u8, at: usize) -> Result<u8, SecretKeyError> {
-    let mapped = match byte {
-        b'0' => b'O',
-        b'8' => b'B',
-        b'1' => return Err(SecretKeyError::AmbiguousDigitOne { at }),
+const fn normalise(byte: u8) -> u8 {
+    match byte {
+        b'O' => b'0',
+        b'I' | b'L' => b'1',
         other => other,
-    };
+    }
+}
+
+fn symbol_value(byte: u8, at: usize) -> Result<u8, SecretKeyError> {
     ALPHABET
         .iter()
-        .position(|c| *c == mapped)
+        .position(|c| *c == byte)
         .and_then(|p| u8::try_from(p).ok())
         .ok_or(SecretKeyError::InvalidCharacter { at })
 }
@@ -313,38 +307,54 @@ mod tests {
     }
 
     #[test]
-    fn zero_maps_to_o_and_eight_maps_to_b() {
+    fn crockford_normalises_o_to_zero_and_i_and_l_to_one() {
         let secret = key(vec![0x00; KEY_LEN]);
         let canonical = render(&secret).unwrap();
         let canonical = canonical.expose_for_printing().to_owned();
-        assert!(canonical.contains('A'), "sanity: the all-zero key is all A");
+        assert!(canonical.contains('0'), "the all-zero key renders as zeros");
 
-        for (digit, letter) in [('0', 'O'), ('8', 'B')] {
-            let secret = key(vec![0xFF; KEY_LEN]);
-            let line = render(&secret).unwrap();
-            let text = line.expose_for_printing().to_owned();
-            if !text.contains(letter) {
-                continue;
-            }
-            let typo = text.replace(letter, &digit.to_string());
+        for (digit, letter) in [('0', 'O'), ('0', 'o')] {
+            let typo = canonical.replace(digit, &letter.to_string());
             let decoded = decode(typo.as_bytes())
-                .unwrap_or_else(|e| panic!("{digit} must map to {letter}: {e}"));
+                .unwrap_or_else(|e| panic!("{letter} must normalise to {digit}: {e}"));
             assert_eq!(&*decoded, secret.expose());
+        }
+
+        // A key whose rendering contains a `1`, for the I/L direction.
+        let ones = key(vec![
+            0x08, 0x42, 0x10, 0x84, 0x21, 0x08, 0x42, 0x10, 0x84, 0x21, 0x08, 0x42, 0x10, 0x84,
+            0x21, 0x08,
+        ]);
+        let rendered = render(&ones).unwrap();
+        let rendered = rendered.expose_for_printing().to_owned();
+        if rendered.contains('1') {
+            for letter in ['I', 'L', 'i', 'l'] {
+                let typo = rendered.replace('1', &letter.to_string());
+                let decoded = decode(typo.as_bytes())
+                    .unwrap_or_else(|e| panic!("{letter} must normalise to 1: {e}"));
+                assert_eq!(&*decoded, ones.expose());
+            }
         }
     }
 
     #[test]
-    fn the_digit_one_is_refused_rather_than_guessed() {
-        let secret = key(vec![0x21; KEY_LEN]);
-        let line = render(&secret).unwrap();
-        let text = line.expose_for_printing().to_owned();
-        let candidate = if text.contains('I') { 'I' } else { 'L' };
-        if !text.contains(candidate) {
-            return;
+    fn u_is_not_in_the_alphabet_and_nothing_maps_to_it() {
+        let secret = key(vec![0x5A; KEY_LEN]);
+        let rendered = render(&secret).unwrap();
+        let rendered = rendered.expose_for_printing().to_owned();
+        assert!(!rendered.contains('U'), "U must never be emitted");
+
+        let mut chars: Vec<char> = rendered.chars().collect();
+        // Position 5 is the first character after `CHV1-`.
+        if let Some(slot) = chars.get_mut(5) {
+            *slot = 'U';
         }
-        let typo = text.replacen(candidate, "1", 1);
-        let error = decode(typo.as_bytes()).expect_err("'1' must be refused");
-        assert!(matches!(error, SecretKeyError::AmbiguousDigitOne { .. }));
+        let typo: String = chars.into_iter().collect();
+        let error = decode(typo.as_bytes()).expect_err("U must be refused");
+        assert!(
+            matches!(error, SecretKeyError::InvalidCharacter { .. }),
+            "expected InvalidCharacter, got {error:?}"
+        );
     }
 
     #[test]
@@ -360,9 +370,9 @@ mod tests {
             .collect();
         // For an all-zero key the 26th character is `0`; `1` adds a non-zero padding bit.
         let mut mutated: Vec<char> = symbols.chars().collect();
-        assert_eq!(mutated.get(DATA_CHARS - 1), Some(&'A'));
+        assert_eq!(mutated.get(DATA_CHARS - 1), Some(&'0'));
         if let Some(slot) = mutated.get_mut(DATA_CHARS - 1) {
-            *slot = 'B';
+            *slot = '1';
         }
         let rebuilt: String = format!("{PREFIX}{}", mutated.into_iter().collect::<String>());
         let error = decode(rebuilt.as_bytes()).expect_err("non-canonical must be refused");
@@ -411,7 +421,7 @@ mod tests {
             Some(SecretKeyError::WrongPrefix)
         );
         assert!(matches!(
-            decode(b"CHV1-AAAA").err(),
+            decode(b"CHV1-0000").err(),
             Some(SecretKeyError::WrongLength { .. })
         ));
     }

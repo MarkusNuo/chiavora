@@ -79,7 +79,7 @@ fn covered_points() -> Vec<CoveredPoint> {
             accept::<PasswordField>(b"a-real-password".to_vec()).map(|s| format!("{s:?}"))
         }),
         ("Secret Key field", || {
-            accept::<SecretKeyField>(b"CHV1-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AA53".to_vec())
+            accept::<SecretKeyField>(b"CHV1-0000-0000-0000-0000-0000-0000-00XV".to_vec())
                 .map(|s| format!("{s:?}"))
         }),
     ]

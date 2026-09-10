@@ -36,3 +36,11 @@ path = "fuzz_targets/secret_key_decode.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "emergency_kit_parse"
+path = "fuzz_targets/emergency_kit_parse.rs"
+test = false
+doc = false
+bench = false
+

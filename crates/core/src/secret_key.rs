@@ -1,10 +1,15 @@
-use sha2::{Digest, Sha256};
+//! The checksum is a typo aid, not integrity: a wrong key is caught by the derivation failing.
+//!
+//! ```text
+//! CHV1-000G-40R4-0M30-E209-185G-R38E-1WCH
+//! ```
+
 use zeroize::Zeroizing;
+
+use crate::base32::{self, Base32Error};
 
 use crate::csprng::{self, CsprngError};
 use crate::secret::{kind::SecretKeyMaterial, Secret};
-
-const ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 /// It versions the format, not the key.
 pub const PREFIX: &str = "CHV1-";
@@ -62,6 +67,17 @@ impl core::fmt::Display for SecretKeyError {
 
 impl core::error::Error for SecretKeyError {}
 
+impl From<Base32Error> for SecretKeyError {
+    fn from(error: Base32Error) -> Self {
+        match error {
+            Base32Error::WrongLength { expected } => Self::WrongLength { expected },
+            Base32Error::InvalidCharacter { at } => Self::InvalidCharacter { at },
+            Base32Error::NonCanonicalTrailingBits => Self::NonCanonicalTrailingBits,
+            Base32Error::ChecksumMismatch => Self::ChecksumMismatch,
+        }
+    }
+}
+
 impl From<CsprngError> for SecretKeyError {
     fn from(_: CsprngError) -> Self {
         Self::Csprng
@@ -101,143 +117,21 @@ pub fn render(key: &Secret<SecretKeyMaterial>) -> Result<EmergencyKitLine, Secre
             expected: DATA_CHARS + CHECK_CHARS,
         });
     }
-
-    let mut chars = Zeroizing::new(String::with_capacity(DATA_CHARS + CHECK_CHARS));
-    for index in 0..DATA_CHARS {
-        chars.push(char::from(alphabet_at(five_bits_at(bytes, index))));
-    }
-    let check = checksum(bytes);
-    #[allow(clippy::cast_possible_truncation)]
-    let high = ((check >> 5) & 0x1F) as u8;
-    #[allow(clippy::cast_possible_truncation)]
-    let low = (check & 0x1F) as u8;
-    chars.push(char::from(alphabet_at(high)));
-    chars.push(char::from(alphabet_at(low)));
-
-    let mut out = Zeroizing::new(String::with_capacity(PREFIX.len() + 35));
+    let chars = base32::encode_with_checksum(bytes);
+    let mut out = Zeroizing::new(String::with_capacity(PREFIX.len() + chars.len() + 8));
     out.push_str(PREFIX);
-    for (position, character) in chars.chars().enumerate() {
-        if position > 0 && position % GROUP_LEN == 0 {
-            out.push('-');
-        }
-        out.push(character);
-    }
+    out.push_str(&base32::group(&chars));
     Ok(EmergencyKitLine(out))
 }
 
 /// The public path is [`crate::entry::accept`].
 pub(crate) fn decode(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, SecretKeyError> {
-    let mut normalised: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(input.len()));
-    for byte in input {
-        if *byte == b'-' || byte.is_ascii_whitespace() {
-            continue;
-        }
-        normalised.push(normalise(byte.to_ascii_uppercase()));
-    }
-
-    let symbols: Zeroizing<Vec<u8>> = Zeroizing::new(
-        normalised
-            .strip_prefix(PREFIX_TAG.as_bytes())
-            .ok_or(SecretKeyError::WrongPrefix)?
-            .to_vec(),
-    );
-
-    if symbols.len() != DATA_CHARS + CHECK_CHARS {
-        return Err(SecretKeyError::WrongLength {
-            expected: DATA_CHARS + CHECK_CHARS,
-        });
-    }
-
-    let mut values = Zeroizing::new(Vec::with_capacity(symbols.len()));
-    for (at, byte) in symbols.iter().enumerate() {
-        values.push(symbol_value(*byte, at)?);
-    }
-
-    let last_data = values
-        .get(DATA_CHARS - 1)
-        .copied()
-        .ok_or(SecretKeyError::WrongLength {
-            expected: DATA_CHARS + CHECK_CHARS,
-        })?;
-    if last_data & 0x03 != 0 {
-        return Err(SecretKeyError::NonCanonicalTrailingBits);
-    }
-
-    let mut key = Zeroizing::new(vec![0_u8; KEY_LEN]);
-    for (index, value) in values.iter().take(DATA_CHARS).enumerate() {
-        write_five_bits(&mut key, index, *value);
-    }
-
-    let expected = checksum(&key);
-    let given = u16::from(values.get(DATA_CHARS).copied().unwrap_or(0)) << 5
-        | u16::from(values.get(DATA_CHARS + 1).copied().unwrap_or(0));
-    if given != expected {
-        return Err(SecretKeyError::ChecksumMismatch);
-    }
-
-    Ok(key)
-}
-
-fn alphabet_at(value: u8) -> u8 {
-    ALPHABET
-        .get(usize::from(value & 0x1F))
-        .copied()
-        .unwrap_or(b'A')
-}
-
-const fn normalise(byte: u8) -> u8 {
-    match byte {
-        b'O' => b'0',
-        b'I' | b'L' => b'1',
-        other => other,
-    }
-}
-
-fn symbol_value(byte: u8, at: usize) -> Result<u8, SecretKeyError> {
-    ALPHABET
-        .iter()
-        .position(|c| *c == byte)
-        .and_then(|p| u8::try_from(p).ok())
-        .ok_or(SecretKeyError::InvalidCharacter { at })
-}
-
-fn five_bits_at(bytes: &[u8], index: usize) -> u8 {
-    let bit = index * 5;
-    let mut value = 0_u8;
-    for offset in 0..5 {
-        let position = bit + offset;
-        let byte_index = position / 8;
-        let in_byte = position % 8;
-        let bit_set = bytes
-            .get(byte_index)
-            .copied()
-            .is_some_and(|b| (b >> (7 - in_byte)) & 1 == 1);
-        value = (value << 1) | u8::from(bit_set);
-    }
-    value
-}
-
-fn write_five_bits(bytes: &mut [u8], index: usize, value: u8) {
-    let bit = index * 5;
-    for offset in 0..5 {
-        let position = bit + offset;
-        let byte_index = position / 8;
-        let in_byte = position % 8;
-        let bit_set = (value >> (4 - offset)) & 1 == 1;
-        if !bit_set {
-            continue;
-        }
-        if let Some(slot) = bytes.get_mut(byte_index) {
-            *slot |= 1 << (7 - in_byte);
-        }
-    }
-}
-
-fn checksum(key: &[u8]) -> u16 {
-    let digest = Sha256::digest(key);
-    let high = u16::from(digest.get(30).copied().unwrap_or(0) & 0x03);
-    let low = u16::from(digest.get(31).copied().unwrap_or(0));
-    (high << 8) | low
+    // Normalised before the prefix is matched, so `CHVI` and spaces for hyphens still decode.
+    let normalised = base32::normalise_input(input);
+    let symbols = normalised
+        .strip_prefix(PREFIX_TAG.as_bytes())
+        .ok_or(SecretKeyError::WrongPrefix)?;
+    base32::decode_with_checksum(symbols, KEY_LEN).map_err(SecretKeyError::from)
 }
 
 #[cfg(test)]

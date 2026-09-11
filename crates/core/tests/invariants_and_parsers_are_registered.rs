@@ -435,6 +435,82 @@ fn all_declared() -> Vec<(String, String)> {
     found
 }
 
+const MID_FILE_CFG_TEST_FIXTURE: &str = r"
+//! A module.
+
+pub fn before_the_marker(bytes: &[u8]) -> usize {
+    bytes.len()
+}
+
+/// Test-only, and deliberately in the middle of the file.
+#[cfg(test)]
+pub(crate) fn only_for_tests(bytes: &[u8]) -> usize {
+    if bytes.is_empty() {
+        return 0;
+    }
+    bytes.len()
+}
+
+pub fn after_the_marker(outgoing: &[u8]) {
+    let _ = outgoing;
+}
+
+#[cfg(test)]
+mod tests {
+    pub fn inside_the_test_module(bytes: &[u8]) -> usize {
+        bytes.len()
+    }
+}
+";
+
+#[test]
+fn the_stripping_keeps_production_code_after_a_mid_file_cfg_test() {
+    let stripped = production_code(MID_FILE_CFG_TEST_FIXTURE);
+    let found: Vec<String> = declared_functions(&stripped)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+
+    assert!(
+        found.iter().any(|f| f == "before_the_marker"),
+        "the stripping dropped production code *before* the marker: {found:?}"
+    );
+    assert!(
+        found.iter().any(|f| f == "after_the_marker"),
+        "**the regression this test exists for.** Production code after a \
+         mid-file #[cfg(test)] item was dropped, so every classification check \
+         is blind to the rest of the file and cannot notice: {found:?}"
+    );
+    assert!(
+        !found.iter().any(|f| f == "only_for_tests"),
+        "the #[cfg(test)] item itself must still be skipped: {found:?}"
+    );
+    assert!(
+        !found.iter().any(|f| f == "inside_the_test_module"),
+        "the trailing test module must still be dropped: {found:?}"
+    );
+}
+
+#[test]
+fn the_crate_the_finding_came_from_still_has_the_shape_that_hid_it() {
+    let guard = read("crates/core/src/ffi_guard.rs");
+    let marker = concat!("#[cfg(", "test)]");
+    assert!(
+        guard.matches(marker).count() >= 2,
+        "ffi_guard.rs no longer has a mid-file {marker}. If that is deliberate \
+         the fixture above still guards the stripping, but the real-world case \
+         this came from is gone and the comment should say so."
+    );
+    let visible: Vec<String> = declared_functions(&production_code(&guard))
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert!(
+        visible.iter().any(|f| f == "assert_not_key_material"),
+        "the FFI guard is invisible to the scans again: {visible:?}"
+    );
+}
+
 #[test]
 fn every_parser_in_the_source_is_classified() {
     let mut unclassified: Vec<String> = Vec::new();

@@ -111,7 +111,7 @@ fn i5_and_i6_are_absent_on_purpose() {
     }
 }
 
-const PARSERS: [Parser; 5] = [
+const PARSERS: [Parser; 6] = [
     Parser {
         file: "core/src/aad.rs",
         function: "decode",
@@ -135,6 +135,12 @@ const PARSERS: [Parser; 5] = [
         function: "parse",
         target: "emergency_kit_parse",
         why: "a QR code a camera read",
+    },
+    Parser {
+        file: "core/src/stored_record.rs",
+        function: "StoredRecord::decode",
+        target: "stored_record_decode",
+        why: "a record on disk written by *some* build, possibly a newer one, in a file A4 can rewrite",
     },
     Parser {
         file: "core/src/model.rs",
@@ -185,7 +191,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 25] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 31] = [
     (
         "core/src/base32.rs",
         "decode_with_checksum",
@@ -343,6 +349,42 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 25] = [
         "Item::field",
         "SAFE BY CONSTRUCTION: a linear search comparing a name to names \
          already validated by Name::new",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::put_raw",
+        "SAFE BY CONSTRUCTION: the opaque-record obligation. The identifiers are \
+         opaque keys and the bytes are stored exactly and never read -- a \
+         record this build cannot open goes in and comes out identical, so \
+         the manifest's ciphertextDigest over it still holds (I6d)",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::get_raw",
+        "SAFE BY CONSTRUCTION: identifiers used as opaque lookup keys; returns \
+         bytes unread",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::delete",
+        "SAFE BY CONSTRUCTION: identifiers used as opaque keys",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::list",
+        "SAFE BY CONSTRUCTION: an identifier used as an opaque key",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::high_water_mark",
+        "SAFE BY CONSTRUCTION: an identifier used as an opaque map key over \
+         metadata already authenticated on open",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::set_high_water_mark",
+        "SAFE BY CONSTRUCTION: an identifier used as an opaque map key; the value \
+         is refused if it decreases (I6f), then re-MAC'd",
     ),
     (
         "protocol/src/lib.rs",

@@ -11,6 +11,8 @@ use chiavora_core::item::ItemError;
 use chiavora_core::model::ModelError;
 use chiavora_core::nonce::NonceError;
 use chiavora_core::secret_key::SecretKeyError;
+use chiavora_core::store::StoreError;
+use chiavora_core::stored_record::StoredRecordError;
 use chiavora_core::wrap::WrapError;
 use chiavora_protocol::WireError;
 
@@ -142,6 +144,8 @@ fn no_item_or_wrap_error_variant_carries_key_material() {
         WrapError::Aad(AadError::BadMagic),
         WrapError::BadItemKeyLength,
         WrapError::I7Disagreement,
+        WrapError::MissingAutofillWrap,
+        WrapError::UnexpectedAutofillWrap,
     );
 }
 
@@ -182,6 +186,45 @@ fn no_model_error_variant_carries_key_material() {
 }
 
 #[test]
+fn no_store_error_variant_carries_key_material() {
+    use chiavora_core::derive::DeriveError;
+    check!(
+        StoreError::Database(rusqlite::Error::QueryReturnedNoRows),
+        StoreError::MetadataTampered,
+        StoreError::MetadataRewound {
+            stored: 3,
+            anchor: 5
+        },
+        StoreError::MetadataMissing,
+        StoreError::MetadataMalformed,
+        StoreError::UnsupportedStoreSchema { found: 2 },
+        StoreError::HighWaterMarkDecrease {
+            current: 9,
+            proposed: 8
+        },
+        StoreError::VersionOutOfRange,
+        StoreError::Derive(DeriveError::HkdfExpand),
+        StoreError::Wire(WireError::Truncated),
+        StoreError::AnchorFailed,
+        StoreError::MacKeyLength,
+    );
+}
+
+#[test]
+fn no_stored_record_error_variant_carries_key_material() {
+    check!(
+        StoredRecordError::Wire(WireError::Truncated),
+        StoredRecordError::Aad(AadError::BadMagic),
+        StoredRecordError::Wrap(WrapError::MissingAutofillWrap),
+        StoredRecordError::MissingField { tag: 2 },
+        StoredRecordError::RepeatedField { at: 1 },
+        StoredRecordError::Malformed { at: 2 },
+        StoredRecordError::NotAnItemPayload,
+        StoredRecordError::UnknownKind,
+    );
+}
+
+#[test]
 fn no_base32_error_variant_carries_key_material() {
     check!(
         chiavora_core::base32::Base32Error::WrongLength { expected: 28 },
@@ -195,7 +238,7 @@ fn no_base32_error_variant_carries_key_material() {
 
 #[test]
 fn the_variant_lists_match_the_source() {
-    const EXPECTED: [(&str, &str, usize); 13] = [
+    const EXPECTED: [(&str, &str, usize); 15] = [
         ("core/src/aad.rs", "AadError", 8),
         ("core/src/base32.rs", "Base32Error", 4),
         ("core/src/derive.rs", "DeriveError", 3),
@@ -207,7 +250,9 @@ fn the_variant_lists_match_the_source() {
         ("core/src/model.rs", "ModelError", 11),
         ("core/src/nonce.rs", "NonceError", 1),
         ("core/src/secret_key.rs", "SecretKeyError", 6),
-        ("core/src/wrap.rs", "WrapError", 5),
+        ("core/src/wrap.rs", "WrapError", 7),
+        ("core/src/store.rs", "StoreError", 12),
+        ("core/src/stored_record.rs", "StoredRecordError", 8),
         ("protocol/src/lib.rs", "WireError", 6),
     ];
 

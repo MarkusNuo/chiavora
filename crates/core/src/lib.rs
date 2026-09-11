@@ -15,4 +15,6 @@ pub mod nonce;
 pub(crate) mod scan;
 pub mod secret;
 pub mod secret_key;
+pub mod store;
+pub mod stored_record;
 pub mod wrap;

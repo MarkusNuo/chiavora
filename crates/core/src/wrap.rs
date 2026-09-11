@@ -62,6 +62,8 @@ pub enum WrapError {
     Aad(aad::AadError),
     BadItemKeyLength,
     I7Disagreement,
+    MissingAutofillWrap,
+    UnexpectedAutofillWrap,
 }
 
 impl core::fmt::Display for WrapError {
@@ -74,6 +76,12 @@ impl core::fmt::Display for WrapError {
             Self::I7Disagreement => f.write_str(
                 "I7 violated: the Vault-Key and Autofill-Key wraps yielded different Item Keys",
             ),
+            Self::MissingAutofillWrap => {
+                f.write_str("a double-wrapped kind was stored with no Autofill wrap")
+            }
+            Self::UnexpectedAutofillWrap => {
+                f.write_str("a single-wrapped kind was stored with an Autofill wrap")
+            }
         }
     }
 }
@@ -260,11 +268,26 @@ pub trait WrapSet: Sized + sealed::Sealed {
         ctx: WrapContext<'_>,
     ) -> Result<Self, WrapError>;
 
+    /// The kind, not the stored bytes, decides whether an Autofill wrap must be present.
+    fn from_stored_parts(
+        vault: WrappedKey,
+        autofill: Option<WrappedKey>,
+    ) -> Result<Self, WrapError>;
+
     const WRAP_COUNT: usize;
 }
 
 impl sealed::Sealed for VaultOnly {}
 impl WrapSet for VaultOnly {
+    fn from_stored_parts(
+        vault: WrappedKey,
+        autofill: Option<WrappedKey>,
+    ) -> Result<Self, WrapError> {
+        if autofill.is_some() {
+            return Err(WrapError::UnexpectedAutofillWrap);
+        }
+        Ok(Self::from_stored_parts(vault))
+    }
     fn wrap_into(
         item_key: &Secret<ItemKey>,
         keys: VaultKeys<'_>,
@@ -277,6 +300,13 @@ impl WrapSet for VaultOnly {
 
 impl sealed::Sealed for VaultAndAutofill {}
 impl WrapSet for VaultAndAutofill {
+    fn from_stored_parts(
+        vault: WrappedKey,
+        autofill: Option<WrappedKey>,
+    ) -> Result<Self, WrapError> {
+        let autofill = autofill.ok_or(WrapError::MissingAutofillWrap)?;
+        Ok(Self::from_stored_parts(vault, autofill))
+    }
     fn wrap_into(
         item_key: &Secret<ItemKey>,
         keys: VaultKeys<'_>,
@@ -340,6 +370,19 @@ macro_rules! item_type {
                 }
             }
 
+            pub fn wraps_from_stored_parts(
+                self,
+                vault: WrappedKey,
+                autofill: Option<WrappedKey>,
+            ) -> Result<AnyWrapSet, WrapError> {
+                match self {
+                    $(Self::$name => <<$name as ItemType>::Wraps as WrapSet>::from_stored_parts(
+                        vault, autofill,
+                    )
+                    .map(Into::into),)+
+                }
+            }
+
             pub fn wrap(
                 self,
                 item_key: &Secret<ItemKey>,
@@ -376,6 +419,21 @@ impl From<VaultAndAutofill> for AnyWrapSet {
 }
 
 impl AnyWrapSet {
+    #[must_use]
+    pub const fn vault_wrap(&self) -> &WrappedKey {
+        match self {
+            Self::VaultOnly(set) => set.vault_wrap(),
+            Self::VaultAndAutofill(set) => set.vault_wrap(),
+        }
+    }
+
+    #[must_use]
+    pub const fn autofill_wrap(&self) -> Option<&WrappedKey> {
+        match self {
+            Self::VaultOnly(_) => None,
+            Self::VaultAndAutofill(set) => Some(set.autofill_wrap()),
+        }
+    }
 
     #[must_use]
     pub const fn wrap_count(&self) -> usize {

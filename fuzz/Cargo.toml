@@ -51,3 +51,10 @@ path = "fuzz_targets/item_body_decode.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "stored_record_decode"
+path = "fuzz_targets/stored_record_decode.rs"
+test = false
+doc = false
+bench = false

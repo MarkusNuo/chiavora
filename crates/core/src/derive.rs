@@ -5,7 +5,7 @@ use hkdf::Hkdf;
 use sha2::Sha256;
 
 use crate::secret::{
-    kind::{AccountPassword, Muk, RootKey, SecretKeyMaterial, SrpX},
+    kind::{AccountPassword, Muk, RootKey, SecretKeyMaterial, SrpX, StoreKey},
     Secret,
 };
 
@@ -13,6 +13,7 @@ const INFO_SALT: &[u8] = b"chiavora-salt|";
 const INFO_SKK: &[u8] = b"chiavora-skk|";
 const INFO_MUK: &[u8] = b"chiavora-muk";
 const INFO_SRP: &[u8] = b"chiavora-srp";
+const INFO_STORE: &[u8] = b"chiavora-store";
 
 const SALT_LEN: usize = 16;
 const KEY_LEN: usize = 32;
@@ -162,6 +163,13 @@ pub fn derive_muk(root_key: &Secret<RootKey>) -> Result<Secret<Muk>, DeriveError
 pub fn derive_srp_x(root_key: &Secret<RootKey>) -> Result<Secret<SrpX>, DeriveError> {
     let mut out = vec![0_u8; KEY_LEN];
     hkdf_sha256(root_key.expose(), INFO_SRP, &mut out)?;
+    Ok(Secret::from_derived_bytes(out))
+}
+
+/// MACs the local store's metadata, so a rewritten SQLite file is detected on open (§2.5).
+pub fn derive_store_key(muk: &Secret<Muk>) -> Result<Secret<StoreKey>, DeriveError> {
+    let mut out = vec![0_u8; KEY_LEN];
+    hkdf_sha256(muk.expose(), INFO_STORE, &mut out)?;
     Ok(Secret::from_derived_bytes(out))
 }
 

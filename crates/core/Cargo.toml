@@ -19,6 +19,9 @@ sha2 = "0.10"
 subtle = "2.6"
 chacha20poly1305 = "0.10"
 chiavora-protocol = { workspace = true }
+# `bundled` builds SQLite from source, so the file format does not depend on the platform.
+rusqlite = { version = "0.32", features = ["bundled"] }
+hmac = "0.12"
 
 [dev-dependencies]
 x25519-dalek = { version = "2.0", default-features = false, features = ["static_secrets"] }

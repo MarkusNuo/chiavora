@@ -69,6 +69,8 @@ pub mod kind {
         ItemKey => "ItemKey", DerivedKind, false;
         #[doc = "The Autofill Key, which unwraps `login` and `TOTP` Item Keys only (§2.2, §3.3, ADR-0003)."]
         AutofillKey => "AutofillKey", DerivedKind, false;
+        #[doc = "The Store Key, a child of the MUK that MACs the local store's metadata so a rewritten SQLite file is detected (§2.5, I6f)."]
+        StoreKey => "StoreKey", DerivedKind, false;
     }
 }
 

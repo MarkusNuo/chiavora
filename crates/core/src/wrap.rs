@@ -247,6 +247,46 @@ pub trait ItemType: sealed::Sealed {
     const PROVIDER_READABLE: bool;
 }
 
+#[derive(Clone, Copy)]
+pub struct VaultKeys<'a> {
+    pub vault: &'a Secret<VaultKey>,
+    pub autofill: &'a Secret<AutofillKey>,
+}
+
+pub trait WrapSet: Sized + sealed::Sealed {
+    fn wrap_into(
+        item_key: &Secret<ItemKey>,
+        keys: VaultKeys<'_>,
+        ctx: WrapContext<'_>,
+    ) -> Result<Self, WrapError>;
+
+    const WRAP_COUNT: usize;
+}
+
+impl sealed::Sealed for VaultOnly {}
+impl WrapSet for VaultOnly {
+    fn wrap_into(
+        item_key: &Secret<ItemKey>,
+        keys: VaultKeys<'_>,
+        ctx: WrapContext<'_>,
+    ) -> Result<Self, WrapError> {
+        Self::wrap(item_key, keys.vault, ctx)
+    }
+    const WRAP_COUNT: usize = 1;
+}
+
+impl sealed::Sealed for VaultAndAutofill {}
+impl WrapSet for VaultAndAutofill {
+    fn wrap_into(
+        item_key: &Secret<ItemKey>,
+        keys: VaultKeys<'_>,
+        ctx: WrapContext<'_>,
+    ) -> Result<Self, WrapError> {
+        Self::wrap(item_key, keys.vault, keys.autofill, ctx)
+    }
+    const WRAP_COUNT: usize = 2;
+}
+
 /// `ItemKind` comes from the same list, so the runtime dispatch cannot disagree with the types.
 macro_rules! item_type {
     ($(#[doc = $doc:literal] $name:ident => $label:literal, $wraps:ty, $readable:literal;)+) => {
@@ -261,7 +301,89 @@ macro_rules! item_type {
                 const PROVIDER_READABLE: bool = $readable;
             }
         )+
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum ItemKind {
+            $(#[doc = $doc] $name,)+
+        }
+
+        impl ItemKind {
+            pub const ALL: &'static [Self] = &[$(Self::$name,)+];
+
+            #[must_use]
+            pub const fn tag(self) -> &'static str {
+                match self {
+                    $(Self::$name => <$name as ItemType>::NAME,)+
+                }
+            }
+
+            #[must_use]
+            pub const fn provider_readable(self) -> bool {
+                match self {
+                    $(Self::$name => <$name as ItemType>::PROVIDER_READABLE,)+
+                }
+            }
+
+            #[must_use]
+            pub const fn wrap_count(self) -> usize {
+                match self {
+                    $(Self::$name => <<$name as ItemType>::Wraps as WrapSet>::WRAP_COUNT,)+
+                }
+            }
+
+            /// Case-sensitive, since a stored tag is a format.
+            #[must_use]
+            pub fn from_tag(tag: &str) -> Option<Self> {
+                match tag {
+                    $(<$name as ItemType>::NAME => Some(Self::$name),)+
+                    _ => None,
+                }
+            }
+
+            pub fn wrap(
+                self,
+                item_key: &Secret<ItemKey>,
+                keys: VaultKeys<'_>,
+                ctx: WrapContext<'_>,
+            ) -> Result<AnyWrapSet, WrapError> {
+                match self {
+                    $(Self::$name => <<$name as ItemType>::Wraps as WrapSet>::wrap_into(
+                        item_key, keys, ctx,
+                    )
+                    .map(Into::into),)+
+                }
+            }
+        }
     };
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnyWrapSet {
+    VaultOnly(VaultOnly),
+    VaultAndAutofill(VaultAndAutofill),
+}
+
+impl From<VaultOnly> for AnyWrapSet {
+    fn from(set: VaultOnly) -> Self {
+        Self::VaultOnly(set)
+    }
+}
+
+impl From<VaultAndAutofill> for AnyWrapSet {
+    fn from(set: VaultAndAutofill) -> Self {
+        Self::VaultAndAutofill(set)
+    }
+}
+
+impl AnyWrapSet {
+
+    #[must_use]
+    pub const fn wrap_count(&self) -> usize {
+        match *self {
+            Self::VaultOnly(_) => <VaultOnly as WrapSet>::WRAP_COUNT,
+            Self::VaultAndAutofill(_) => <VaultAndAutofill as WrapSet>::WRAP_COUNT,
+        }
+    }
 }
 
 item_type! {

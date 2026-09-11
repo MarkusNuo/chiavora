@@ -120,7 +120,7 @@ const PARSERS: [Parser; 4] = [
     },
     Parser {
         file: "protocol/src/lib.rs",
-        function: "decode",
+        function: "Record::decode",
         target: "wire_record_decode",
         why: "every encrypted record fetched from the server (A1)",
     },
@@ -179,7 +179,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 19] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 24] = [
     (
         "core/src/base32.rs",
         "decode_with_checksum",
@@ -213,7 +213,7 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 19] = [
     ),
     (
         "core/src/nonce.rs",
-        "from_stored_bytes",
+        "StoredNonce::from_stored_bytes",
         "SAFE BY CONSTRUCTION: takes a fixed-size array, so there is no length \
          or structure to get wrong, and a wrong nonce fails the AEAD tag",
     ),
@@ -256,7 +256,7 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 19] = [
     ),
     (
         "core/src/item.rs",
-        "from_stored_parts",
+        "SealedPayload::from_stored_parts",
         "SAFE BY CONSTRUCTION: reconstitutes a sealed record from SQLite, so \
          the bytes *are* from outside (A4 -- a hostile process on the device \
          can rewrite the file). It parses nothing: a fixed-size nonce array and \
@@ -265,7 +265,7 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 19] = [
     ),
     (
         "core/src/wrap.rs",
-        "from_stored_parts",
+        "WrappedKey::from_stored_parts",
         "SAFE BY CONSTRUCTION: the wrap half of item::from_stored_parts, on the \
          same reasoning",
     ),
@@ -285,27 +285,63 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 19] = [
     ),
     (
         "core/src/secret.rs",
-        "from_derived_bytes",
+        "Secret::from_derived_bytes",
         "NOT A BOUNDARY: takes KDF output produced moments earlier in the same \
          operation",
     ),
     (
         "core/src/secret.rs",
-        "from_external_bytes",
+        "Secret::from_external_bytes",
         "NOT A BOUNDARY: pub(crate), and reached only through entry::accept, \
          which is classified above. The compile-fail case \
          external_secrets_have_no_public_constructor is what makes that true \
          rather than customary",
     ),
     (
+        "core/src/wrap.rs",
+        "ItemKind::from_tag",
+        "SAFE BY CONSTRUCTION: an exact match of a stored tag against six \
+         string literals, returning Option. It parses nothing and allocates \
+         nothing, and an unrecognised tag is None rather than a guess",
+    ),
+    (
+        "core/src/model.rs",
+        "Name::new",
+        "SAFE BY CONSTRUCTION: bounded before anything else, then a character \
+         check. No parsing, no structure, and the bound comes first so a \
+         hostile import cannot make it allocate before refusing",
+    ),
+    (
+        "core/src/model.rs",
+        "ItemField::new",
+        "SAFE BY CONSTRUCTION: delegates the name to Name::new and treats the \
+         value as opaque bytes -- the value is never parsed here, only sealed \
+         later",
+    ),
+    (
+        "core/src/model.rs",
+        "Item::new",
+        "SAFE BY CONSTRUCTION: delegates every name to Name::new and compares \
+         names for duplicates. Quadratic in the field count, which is bounded \
+         by the caller rather than here -- stated because a hostile import with \
+         a million fields is the shape that would matter, and is where \
+         that bound belongs",
+    ),
+    (
+        "core/src/model.rs",
+        "Item::field",
+        "SAFE BY CONSTRUCTION: a linear search comparing a name to names \
+         already validated by Name::new",
+    ),
+    (
         "protocol/src/lib.rs",
-        "new",
+        "Field::new",
         "NOT A BOUNDARY: the encode direction -- a field this crate is about to \
          serialise. Record::decode is the inbound half and has a target",
     ),
     (
         "protocol/src/lib.rs",
-        "with_field",
+        "Record::with_field",
         "NOT A BOUNDARY: the encode direction, and the same reasoning as new",
     ),
 ];
@@ -363,48 +399,107 @@ fn production_code(source: &str) -> String {
 
 fn declared_functions(code: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    for (offset, _) in code.match_indices("fn ") {
-        let line_start = code
-            .get(..offset)
-            .and_then(|c| c.rfind('\n'))
-            .map_or(0, |i| i + 1);
-        let Some(prefix) = code.get(line_start..offset).map(str::trim) else {
-            continue;
-        };
-        if !matches!(
-            prefix,
-            "pub" | "pub(crate)" | "pub const" | "pub(crate) const" | "pub unsafe"
-        ) {
-            continue;
+    // (implementing type, the brace depth the impl block opened at)
+    let mut scopes: Vec<(String, usize)> = Vec::new();
+    let mut depth = 0_usize;
+    let mut offset = 0_usize;
+
+    for line in code.lines() {
+        let trimmed = line.trim_start();
+
+        if trimmed.starts_with("impl") && !trimmed.starts_with("impl_") {
+            if let Some(ty) = implementing_type(trimmed) {
+                scopes.push((ty, depth));
+            }
         }
-        let Some(rest) = code.get(offset + "fn ".len()..) else {
-            continue;
-        };
-        let name: String = rest
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '_')
-            .collect();
-        let Some(open) = rest.find('(') else { continue };
+
+        if let Some(rest) = trimmed.strip_prefix("pub ").or_else(|| {
+            trimmed
+                .strip_prefix("pub(crate) ")
+                .filter(|_| trimmed.starts_with("pub(crate) "))
+        }) {
+            let rest = rest
+                .trim_start_matches("const ")
+                .trim_start_matches("unsafe ");
+            if let Some(after_fn) = rest.strip_prefix("fn ") {
+                let name: String = after_fn
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect();
+                if !name.is_empty() {
+                    if let Some(params) = balanced_params(code, offset + (line.len() - rest.len()))
+                    {
+                        let qualified = scopes
+                            .last()
+                            .map_or_else(|| name.clone(), |(ty, _)| format!("{ty}::{name}"));
+                        out.push((qualified, params));
+                    }
+                }
+            }
+        }
+
+        depth += line.matches('{').count();
+        depth = depth.saturating_sub(line.matches('}').count());
+        while scopes.last().is_some_and(|(_, opened)| depth <= *opened) {
+            scopes.pop();
+        }
+        offset += line.len() + 1;
+    }
+    out
+}
+
+fn implementing_type(line: &str) -> Option<String> {
+    let rest = line.strip_prefix("impl")?;
+    let rest = if rest.starts_with('<') {
         let mut depth = 0_usize;
-        let mut params = None;
-        for (at, ch) in rest.get(open..).unwrap_or_default().char_indices() {
+        let mut end = None;
+        for (at, ch) in rest.char_indices() {
             match ch {
-                '(' => depth += 1,
-                ')' => {
+                '<' => depth += 1,
+                '>' => {
                     depth -= 1;
                     if depth == 0 {
-                        params = rest.get(open..=open.saturating_add(at)).map(str::to_owned);
+                        end = Some(at + 1);
                         break;
                     }
                 }
                 _ => {}
             }
         }
-        if let (Some(params), false) = (params, name.is_empty()) {
-            out.push((name, params));
+        rest.get(end?..)?
+    } else {
+        rest
+    };
+    let rest = rest.split_once(" for ").map_or(rest, |(_, after)| after);
+    let ty: String = rest
+        .trim()
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    if ty.is_empty() || !ty.starts_with(|c: char| c.is_uppercase()) {
+        None
+    } else {
+        Some(ty)
+    }
+}
+
+fn balanced_params(code: &str, from: usize) -> Option<String> {
+    let rest = code.get(from..)?;
+    let open = rest.find('(')?;
+    let mut depth = 0_usize;
+    for (at, ch) in rest.get(open..)?.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return rest.get(open..=open.saturating_add(at)).map(str::to_owned);
+                }
+            }
+            _ => {}
         }
     }
-    out
+    None
 }
 
 fn takes_bytes_or_text(params: &str) -> bool {
@@ -518,23 +613,13 @@ fn every_parser_in_the_source_is_classified() {
         if !name.contains("/src/") {
             continue;
         }
-        for line in production_code(&source).lines() {
-            let line = line.trim();
-            let is_parser = (line.starts_with("pub fn ") || line.starts_with("pub(crate) fn "))
-                && ["decode", "parse", "from_stored_bytes", "looks_like"]
-                    .iter()
-                    .any(|verb| line.contains(&format!("fn {verb}")));
-            if !is_parser {
-                continue;
-            }
-            let declared = line
-                .split("fn ")
-                .nth(1)
-                .and_then(|rest| rest.split(['(', '<']).next())
-                .unwrap_or_default()
-                .trim();
-            if !is_classified(&name, declared) {
-                unclassified.push(format!("{name}: {line}"));
+        for (function, params) in declared_functions(&production_code(&source)) {
+            let bare = function.rsplit("::").next().unwrap_or(&function);
+            let is_parser = ["decode", "parse", "from_stored_bytes", "looks_like"]
+                .iter()
+                .any(|verb| bare.starts_with(verb));
+            if is_parser && !is_classified(&name, &function) {
+                unclassified.push(format!("{name}: fn {function}{params}"));
             }
         }
     }
@@ -545,6 +630,49 @@ fn every_parser_in_the_source_is_classified() {
          recorded reason for not needing one. Classify each — a parser nobody \
          decided about is a parser nobody fuzzed:\n  {}",
         unclassified.join("\n  ")
+    );
+}
+
+#[test]
+fn no_two_boundary_functions_share_a_key() {
+    let mut collisions: Vec<String> = Vec::new();
+    for (name, source) in test_sources() {
+        if !name.contains("/src/") {
+            continue;
+        }
+        let mut seen: Vec<String> = Vec::new();
+        for (function, params) in declared_functions(&production_code(&source)) {
+            if !takes_bytes_or_text(&params) {
+                continue;
+            }
+            if seen.contains(&function) {
+                collisions.push(format!("{name}::{function}"));
+            }
+            seen.push(function);
+        }
+    }
+    assert!(
+        collisions.is_empty(),
+        "these boundary functions share a classification key, so one row would \
+         cover several: {collisions:?}"
+    );
+}
+
+#[test]
+fn no_free_function_is_attributed_to_an_impl() {
+    // `aad.rs` declares the free function `decode` after an `impl Reader` block.
+    let aad = read("crates/core/src/aad.rs");
+    let names: Vec<String> = declared_functions(&production_code(&aad))
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert!(
+        names.iter().any(|n| n == "decode"),
+        "aad::decode is a free function and must be keyed unqualified: {names:?}"
+    );
+    assert!(
+        !names.iter().any(|n| n.ends_with("::decode")),
+        "a free function was attributed to an impl block: {names:?}"
     );
 }
 

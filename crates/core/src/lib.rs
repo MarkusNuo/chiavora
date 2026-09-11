@@ -9,6 +9,7 @@ pub mod entry;
 pub mod ffi_guard;
 pub mod generate;
 pub mod item;
+pub mod model;
 pub mod nonce;
 #[cfg(test)]
 pub(crate) mod scan;

@@ -1,5 +1,5 @@
-error[E0599]: no method named `unwrap_for_provider` found for struct `VaultOnly` in the current scope
+error[E0599]: no method named `unwrap_for_provider` found for struct `chiavora_core::wrap::VaultOnly` in the current scope
   --> tests/compile-fail/vault_only_has_no_provider_path.rs:14:17
    |
 14 |     let _ = set.unwrap_for_provider(&autofill_key, ctx);
-   |                 ^^^^^^^^^^^^^^^^^^^ method not found in `VaultOnly`
+   |                 ^^^^^^^^^^^^^^^^^^^ method not found in `chiavora_core::wrap::VaultOnly`

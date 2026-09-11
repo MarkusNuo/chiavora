@@ -1,0 +1,8 @@
+error[E0277]: `SearchIndex` is not an iterator
+ --> tests/compile-fail/search_index_cannot_be_iterated.rs:6:19
+  |
+6 |     for _entry in index {}
+  |                   ^^^^^ `SearchIndex` is not an iterator
+  |
+  = help: the trait `Iterator` is not implemented for `SearchIndex`
+  = note: required for `SearchIndex` to implement `IntoIterator`

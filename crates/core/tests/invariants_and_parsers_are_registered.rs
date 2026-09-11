@@ -191,7 +191,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 31] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 34] = [
     (
         "core/src/base32.rs",
         "decode_with_checksum",
@@ -385,6 +385,24 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 31] = [
         "Store::set_high_water_mark",
         "SAFE BY CONSTRUCTION: an identifier used as an opaque map key; the value \
          is refused if it decreases (I6f), then re-MAC'd",
+    ),
+    (
+        "core/src/search.rs",
+        "SearchIndex::insert",
+        "SAFE BY CONSTRUCTION: the identifier is an opaque key; the item's three \
+         searched fields are lowercased into Zeroizing buffers -- copied, not parsed",
+    ),
+    (
+        "core/src/search.rs",
+        "SearchIndex::remove",
+        "SAFE BY CONSTRUCTION: an identifier used as an opaque key",
+    ),
+    (
+        "core/src/search.rs",
+        "SearchIndex::search",
+        "SAFE BY CONSTRUCTION: the query is lowercased and compared by substring \
+         against fields already in memory. No parsing, no allocation per entry, \
+         and the result carries identifiers rather than text",
     ),
     (
         "protocol/src/lib.rs",

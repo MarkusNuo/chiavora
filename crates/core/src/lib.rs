@@ -13,6 +13,7 @@ pub mod model;
 pub mod nonce;
 #[cfg(test)]
 pub(crate) mod scan;
+pub mod search;
 pub mod secret;
 pub mod secret_key;
 pub mod store;

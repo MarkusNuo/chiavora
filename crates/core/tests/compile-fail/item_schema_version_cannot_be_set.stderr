@@ -1,0 +1,5 @@
+error[E0616]: field `schema_version` of struct `Item` is private
+  --> tests/compile-fail/item_schema_version_cannot_be_set.rs:12:10
+   |
+12 |     item.schema_version = 1;
+   |          ^^^^^^^^^^^^^^ private field

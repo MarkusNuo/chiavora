@@ -44,3 +44,10 @@ test = false
 doc = false
 bench = false
 
+
+[[bin]]
+name = "item_body_decode"
+path = "fuzz_targets/item_body_decode.rs"
+test = false
+doc = false
+bench = false

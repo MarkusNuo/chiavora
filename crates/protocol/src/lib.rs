@@ -101,6 +101,15 @@ impl Record {
         })
     }
 
+    /// For a caller that owns its tags' meaning, as the item body does: a repeated tag is a list.
+    #[must_use]
+    pub fn with_fields(&self, fields: Vec<Field>) -> Self {
+        Self {
+            version: self.version,
+            fields,
+        }
+    }
+
     /// ```text
     /// "CHVR" || u16le(version) || u32le(fieldCount)
     ///        || fieldCount × ( u16le(tag) || u32le(len) || value )

@@ -8,6 +8,7 @@ use chiavora_core::emergency_kit::{Field, KitError};
 use chiavora_core::entry::EntryError;
 use chiavora_core::generate::GenerateError;
 use chiavora_core::item::ItemError;
+use chiavora_core::model::ModelError;
 use chiavora_core::nonce::NonceError;
 use chiavora_core::secret_key::SecretKeyError;
 use chiavora_core::wrap::WrapError;
@@ -164,6 +165,23 @@ fn no_nonce_secret_key_or_wire_error_variant_carries_key_material() {
 }
 
 #[test]
+fn no_model_error_variant_carries_key_material() {
+    check!(
+        ModelError::Empty,
+        ModelError::TooLong { max: 256 },
+        ModelError::NotText,
+        ModelError::DuplicateField { at: 3 },
+        ModelError::UnknownKind,
+        ModelError::MissingHeader { tag: 2 },
+        ModelError::RepeatedHeader { at: 2 },
+        ModelError::Malformed { at: 4 },
+        ModelError::UnsupportedSchemaVersion,
+        ModelError::NameTooLongForWire,
+        ModelError::Wire(WireError::Truncated),
+    );
+}
+
+#[test]
 fn no_base32_error_variant_carries_key_material() {
     check!(
         chiavora_core::base32::Base32Error::WrongLength { expected: 28 },
@@ -177,7 +195,7 @@ fn no_base32_error_variant_carries_key_material() {
 
 #[test]
 fn the_variant_lists_match_the_source() {
-    const EXPECTED: [(&str, &str, usize); 12] = [
+    const EXPECTED: [(&str, &str, usize); 13] = [
         ("core/src/aad.rs", "AadError", 8),
         ("core/src/base32.rs", "Base32Error", 4),
         ("core/src/derive.rs", "DeriveError", 3),
@@ -186,6 +204,7 @@ fn the_variant_lists_match_the_source() {
         ("core/src/entry.rs", "EntryError", 6),
         ("core/src/generate.rs", "GenerateError", 7),
         ("core/src/item.rs", "ItemError", 4),
+        ("core/src/model.rs", "ModelError", 11),
         ("core/src/nonce.rs", "NonceError", 1),
         ("core/src/secret_key.rs", "SecretKeyError", 6),
         ("core/src/wrap.rs", "WrapError", 5),

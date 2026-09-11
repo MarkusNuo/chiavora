@@ -327,11 +327,22 @@ fn every_rule_in_the_index_is_either_mechanised_here_or_says_why_not() {
         .next()
         .expect("bounded by the first rule");
 
-    for rule in ["R1", "R2", "R3", "R4", "R5", "R6", "R7"] {
-        let row = index
-            .lines()
-            .find(|l| l.contains(&format!("**[{rule}](")))
-            .unwrap_or_else(|| panic!("{rule} has no row in the rules index"));
+    let rows: Vec<&str> = index
+        .lines()
+        .filter(|l| l.starts_with("| **[R") && l.contains("](#r"))
+        .collect();
+    assert!(
+        rows.len() >= 8,
+        "the rules index has {} rows; at least R1-R8 exist, so the derivation \
+         did not read the table",
+        rows.len()
+    );
+    for row in rows {
+        let rule = row
+            .split("**[")
+            .nth(1)
+            .and_then(|rest| rest.split("](").next())
+            .unwrap_or_default();
         assert!(
             row.contains('`') || row.to_lowercase().contains("not mechanis"),
             "{rule}'s index row must name its assertion in backticks, or say it \

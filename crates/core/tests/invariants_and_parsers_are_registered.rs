@@ -111,7 +111,7 @@ fn i5_and_i6_are_absent_on_purpose() {
     }
 }
 
-const PARSERS: [Parser; 4] = [
+const PARSERS: [Parser; 5] = [
     Parser {
         file: "core/src/aad.rs",
         function: "decode",
@@ -135,6 +135,12 @@ const PARSERS: [Parser; 4] = [
         function: "parse",
         target: "emergency_kit_parse",
         why: "a QR code a camera read",
+    },
+    Parser {
+        file: "core/src/model.rs",
+        function: "Item::from_bytes",
+        target: "item_body_decode",
+        why: "an item body written by a *newer* client, which this build must read and edit; inside the AEAD, but not produced by this build",
     },
 ];
 
@@ -179,7 +185,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 24] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 25] = [
     (
         "core/src/base32.rs",
         "decode_with_checksum",
@@ -326,6 +332,11 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 24] = [
          by the caller rather than here -- stated because a hostile import with \
          a million fields is the shape that would matter, and is where \
          that bound belongs",
+    ),
+    (
+        "core/src/model.rs",
+        "Item::remove_field",
+        "SAFE BY CONSTRUCTION: compares a name against names already validated          by Name::new and retains the rest. No parsing; the slot list is the          representation and retain cannot reorder it",
     ),
     (
         "core/src/model.rs",

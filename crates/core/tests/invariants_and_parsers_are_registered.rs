@@ -179,46 +179,271 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 19] = [
+    (
+        "core/src/base32.rs",
+        "decode_with_checksum",
+        "COVERED ELSEWHERE: reached only through secret_key::decode and \
+         emergency_kit::parse, both of which are fuzzed; it takes an \
+         already-normalised symbol slice rather than raw input",
+    ),
+    (
+        "core/src/base32.rs",
+        "normalise_input",
+        "COVERED ELSEWHERE: the first step of all three classified decoders, so \
+         every byte a fuzzer feeds any of them passes through here first",
+    ),
+    (
+        "core/src/base32.rs",
+        "checksum",
+        "COVERED ELSEWHERE: a truncated SHA-256 over a slice, reached from both \
+         the encode and the decode direction and fuzzed through the decoders",
+    ),
+    (
+        "core/src/base32.rs",
+        "encode_with_checksum",
+        "NOT A BOUNDARY: the encode direction. Its input is a key or an \
+         accountId this crate generated moments earlier",
+    ),
+    (
+        "core/src/base32.rs",
+        "group",
+        "NOT A BOUNDARY: presentation over the encoder's own output; the \
+         decoder strips separators, so this never sees input",
+    ),
+    (
+        "core/src/nonce.rs",
+        "from_stored_bytes",
+        "SAFE BY CONSTRUCTION: takes a fixed-size array, so there is no length \
+         or structure to get wrong, and a wrong nonce fails the AEAD tag",
+    ),
+    (
+        "core/src/secret_key.rs",
+        "looks_like_rendered_key_material",
+        "COVERED ELSEWHERE: attacker-facing -- a hostile app can write the \
+         clipboard (A8) -- and its whole body is base32::normalise_input plus a \
+         length comparison and a prefix match",
+    ),
+    (
+        "core/src/entry.rs",
+        "accept",
+        "COVERED ELSEWHERE: the decoding half dispatches to secret_key::decode, \
+         which is fuzzed. The validating half is is_empty, a length bound, \
+         is_ascii and two whitespace checks -- total functions over a slice, \
+         with no parsing and no allocation. A target here would explore \
+         is_ascii and report a coverage figure for it, which is R7's own \
+         failure wearing a fuzzer",
+    ),
+    (
+        "core/src/ffi_guard.rs",
+        "assert_not_key_material",
+        "SAFE BY CONSTRUCTION: a 32-byte-window substring search over a slice. \
+         A fuzz target here is **impossible** rather than unnecessary -- the \
+         failure path is abort, so a fuzzer that found key material would kill \
+         itself instead of reporting it. Covered by i1a_ffi_guard_aborts.rs, \
+         which re-executes its own binary as a child",
+    ),
+    (
+        "core/src/ffi_guard.rs",
+        "register",
+        "NOT A BOUNDARY: takes key material this crate produced, from \
+         Secret::new, and never anything from outside",
+    ),
+    (
+        "core/src/ffi_guard.rs",
+        "deregister",
+        "NOT A BOUNDARY: the Drop half of register, over the same bytes",
+    ),
+    (
+        "core/src/item.rs",
+        "from_stored_parts",
+        "SAFE BY CONSTRUCTION: reconstitutes a sealed record from SQLite, so \
+         the bytes *are* from outside (A4 -- a hostile process on the device \
+         can rewrite the file). It parses nothing: a fixed-size nonce array and \
+         an opaque ciphertext vector go into a struct, and a tampered \
+         ciphertext fails the AEAD tag. The same shape as nonce::from_stored_bytes",
+    ),
+    (
+        "core/src/wrap.rs",
+        "from_stored_parts",
+        "SAFE BY CONSTRUCTION: the wrap half of item::from_stored_parts, on the \
+         same reasoning",
+    ),
+    (
+        "core/src/item.rs",
+        "seal",
+        "NOT A BOUNDARY: the plaintext is opaque to the AEAD. It is encrypted, \
+         not parsed, so there is no structure here for a hostile value to \
+         exploit -- item *decoding* is the schema's work and gets its own \
+         targets",
+    ),
+    (
+        "core/src/scan.rs",
+        "production",
+        "NOT A BOUNDARY: reads this crate's own source text, checked in beside \
+         the code it reads",
+    ),
+    (
+        "core/src/secret.rs",
+        "from_derived_bytes",
+        "NOT A BOUNDARY: takes KDF output produced moments earlier in the same \
+         operation",
+    ),
+    (
+        "core/src/secret.rs",
+        "from_external_bytes",
+        "NOT A BOUNDARY: pub(crate), and reached only through entry::accept, \
+         which is classified above. The compile-fail case \
+         external_secrets_have_no_public_constructor is what makes that true \
+         rather than customary",
+    ),
+    (
+        "protocol/src/lib.rs",
+        "new",
+        "NOT A BOUNDARY: the encode direction -- a field this crate is about to \
+         serialise. Record::decode is the inbound half and has a target",
+    ),
+    (
+        "protocol/src/lib.rs",
+        "with_field",
+        "NOT A BOUNDARY: the encode direction, and the same reasoning as new",
+    ),
+];
+
+const REASON_KINDS: [&str; 3] = [
+    "COVERED ELSEWHERE:",
+    "SAFE BY CONSTRUCTION:",
+    "NOT A BOUNDARY:",
+];
+
+fn production_code(source: &str) -> String {
+    let marker = concat!("#[cfg(", "test)]");
+    let lines: Vec<&str> = source.lines().collect();
+    let mut out = String::with_capacity(source.len());
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines.get(i).copied().unwrap_or_default();
+        let trimmed = line.trim();
+        if trimmed.starts_with("//") {
+            i += 1;
+            continue;
+        }
+        if trimmed != marker {
+            out.push_str(line);
+            out.push('\n');
+            i += 1;
+            continue;
+        }
+        let is_test_module = lines
+            .get(i..)
+            .unwrap_or_default()
+            .iter()
+            .take(4)
+            .any(|l| l.trim_start().starts_with("mod tests"));
+        if is_test_module {
+            break;
+        }
+        i += 1;
+        let mut depth = 0_usize;
+        let mut started = false;
+        while let Some(inner) = lines.get(i) {
+            depth += inner.matches('{').count();
+            if depth > 0 {
+                started = true;
+            }
+            depth = depth.saturating_sub(inner.matches('}').count());
+            i += 1;
+            if started && depth == 0 {
+                break;
+            }
+        }
+    }
+    out
+}
+
+fn declared_functions(code: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (offset, _) in code.match_indices("fn ") {
+        let line_start = code
+            .get(..offset)
+            .and_then(|c| c.rfind('\n'))
+            .map_or(0, |i| i + 1);
+        let Some(prefix) = code.get(line_start..offset).map(str::trim) else {
+            continue;
+        };
+        if !matches!(
+            prefix,
+            "pub" | "pub(crate)" | "pub const" | "pub(crate) const" | "pub unsafe"
+        ) {
+            continue;
+        }
+        let Some(rest) = code.get(offset + "fn ".len()..) else {
+            continue;
+        };
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        let Some(open) = rest.find('(') else { continue };
+        let mut depth = 0_usize;
+        let mut params = None;
+        for (at, ch) in rest.get(open..).unwrap_or_default().char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        params = rest.get(open..=open.saturating_add(at)).map(str::to_owned);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let (Some(params), false) = (params, name.is_empty()) {
+            out.push((name, params));
+        }
+    }
+    out
+}
+
+fn takes_bytes_or_text(params: &str) -> bool {
+    ["&[u8]", "&str", "Vec<u8>", "&[u8;", "String"]
+        .iter()
+        .any(|ty| params.contains(ty))
+}
+
+fn is_classified(file: &str, function: &str) -> bool {
+    PARSERS
+        .iter()
+        .any(|p| p.file == file && p.function == function)
+        || NOT_SEPARATELY_FUZZED
+            .iter()
+            .any(|(f, fun, _)| *f == file && *fun == function)
+}
+
+fn all_declared() -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    for (name, source) in test_sources() {
+        if !name.contains("/src/") {
+            continue;
+        }
+        for (function, _) in declared_functions(&production_code(&source)) {
+            found.push((name.clone(), function));
+        }
+    }
+    found
+}
+
 #[test]
 fn every_parser_in_the_source_is_classified() {
-    const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 3] = [
-        (
-            "core/src/base32.rs",
-            "decode_with_checksum",
-            "COVERED ELSEWHERE: reached only through secret_key::decode and \
-             emergency_kit::parse, both of which are fuzzed; it takes an \
-             already-normalised symbol slice rather than raw input",
-        ),
-        (
-            "core/src/nonce.rs",
-            "from_stored_bytes",
-            "SAFE BY CONSTRUCTION: takes a fixed-size array, so there is no \
-             length or structure to get wrong, and a wrong nonce fails the \
-             AEAD tag",
-        ),
-        (
-            "core/src/secret_key.rs",
-            "looks_like_rendered_key_material",
-            "COVERED ELSEWHERE: attacker-facing -- a hostile app can write the \
-             clipboard (A8) -- and its whole body is base32::normalise_input \
-             plus a length comparison and a prefix match. normalise_input is \
-             exercised on arbitrary bytes by the secret_key_decode target, so a \
-             fifth target would be fuzzing `>=` and `starts_with`",
-        ),
-    ];
     let mut unclassified: Vec<String> = Vec::new();
     for (name, source) in test_sources() {
         if !name.contains("/src/") {
             continue;
         }
-        let marker = concat!("#[cfg(", "test)]");
-        let code = source.split(marker).next().unwrap_or(&source);
-
-        for line in code.lines() {
+        for line in production_code(&source).lines() {
             let line = line.trim();
-            if line.starts_with("//") {
-                continue;
-            }
             let is_parser = (line.starts_with("pub fn ") || line.starts_with("pub(crate) fn "))
                 && ["decode", "parse", "from_stored_bytes", "looks_like"]
                     .iter()
@@ -232,13 +457,7 @@ fn every_parser_in_the_source_is_classified() {
                 .and_then(|rest| rest.split(['(', '<']).next())
                 .unwrap_or_default()
                 .trim();
-            let known = PARSERS
-                .iter()
-                .any(|p| p.file == name && p.function == declared)
-                || NOT_SEPARATELY_FUZZED
-                    .iter()
-                    .any(|(file, function, _why)| *file == name && *function == declared);
-            if !known {
+            if !is_classified(&name, declared) {
                 unclassified.push(format!("{name}: {line}"));
             }
         }
@@ -246,10 +465,79 @@ fn every_parser_in_the_source_is_classified() {
 
     assert!(
         unclassified.is_empty(),
-        ": these parsers are classified neither as attacker-facing (with \
-         a fuzz target) nor as deliberately not. Classify each — a parser \
-         nobody decided about is a parser nobody fuzzed:\n  {}",
+        ": these parsers have neither a fuzz target of their own nor a \
+         recorded reason for not needing one. Classify each — a parser nobody \
+         decided about is a parser nobody fuzzed:\n  {}",
         unclassified.join("\n  ")
+    );
+}
+
+#[test]
+fn every_function_taking_bytes_or_text_is_classified() {
+    let mut unclassified: Vec<String> = Vec::new();
+    let mut boundary_count = 0_usize;
+    for (name, source) in test_sources() {
+        if !name.contains("/src/") {
+            continue;
+        }
+        for (function, params) in declared_functions(&production_code(&source)) {
+            if !takes_bytes_or_text(&params) {
+                continue;
+            }
+            boundary_count += 1;
+            if !is_classified(&name, &function) {
+                unclassified.push(format!("{name}: fn {function}{params}"));
+            }
+        }
+    }
+
+    // Before the count checks, so the failure names the function.
+    assert!(
+        unclassified.is_empty(),
+        ": these functions take bytes or text from a caller and are classified nowhere. Add each to PARSERS with a fuzz target, or to NOT_SEPARATELY_FUZZED with one of the three reason kinds:
+  {}",
+        unclassified.join("
+  ")
+    );
+    assert!(
+        all_declared().len() >= 40,
+        "the signature scan found only {} functions in the two crates, which is          too few to have read them",
+        all_declared().len()
+    );
+    assert_eq!(
+        boundary_count,
+        PARSERS.len() + NOT_SEPARATELY_FUZZED.len() - 1,
+        "the classified lists and the signature scan disagree on how many          functions take bytes or text -- so a row is classified that the scan          cannot see, or the reverse. The -1 is nonce::from_stored_bytes, which          takes a fixed-size array by value and is classified because the *name*          scan reaches it: the one row the signature scan does not see, stated          here rather than left as a drifting number"
+    );
+}
+
+#[test]
+fn every_reason_names_one_of_the_three_kinds() {
+    for (file, function, why) in NOT_SEPARATELY_FUZZED {
+        assert!(
+            REASON_KINDS.iter().any(|kind| why.starts_with(kind)),
+            "{file}::{function}'s reason begins with none of {REASON_KINDS:?}: {why}"
+        );
+    }
+}
+
+#[test]
+fn no_classification_names_a_function_that_is_gone() {
+    let found = all_declared();
+    let mut stale: Vec<String> = Vec::new();
+    for (file, function, _) in NOT_SEPARATELY_FUZZED {
+        if !found.iter().any(|(f, fun)| f == file && fun == function) {
+            stale.push(format!("{file}::{function}"));
+        }
+    }
+    for Parser { file, function, .. } in PARSERS {
+        if !found.iter().any(|(f, fun)| f == file && fun == function) {
+            stale.push(format!("{file}::{function}"));
+        }
+    }
+    assert!(
+        stale.is_empty(),
+        ": these classifications name functions that no longer exist: {stale:?}"
     );
 }
 

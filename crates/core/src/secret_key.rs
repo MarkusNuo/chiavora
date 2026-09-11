@@ -26,6 +26,16 @@ pub const CHECK_CHARS: usize = 2;
 
 pub const GROUP_LEN: usize = 4;
 
+/// The product tag every key-material rendering begins with: `CHV1` and the Kit's `CHVKT1`.
+pub const RENDERED_PREFIX: &str = "CHV";
+
+/// Symbols in a canonical Secret Key after normalisation; the shortest key-material
+/// rendering, so the length threshold for recognising a paste.
+pub const RENDERED_CHARS: usize = PREFIX_TAG.len() + DATA_CHARS + CHECK_CHARS;
+
+/// The threshold must not exceed the Kit's length, or a pasted Kit would slip under it.
+const _: () = assert!(crate::emergency_kit::COMPACT_CHARS_WITHOUT_CHECKPOINT >= RENDERED_CHARS);
+
 /// No variant carries any of the input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecretKeyError {
@@ -134,6 +144,13 @@ pub(crate) fn decode(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, SecretKeyError>
     base32::decode_with_checksum(symbols, KEY_LEN).map_err(SecretKeyError::from)
 }
 
+/// Checks the tag and the length, not a full decode, so a mistyped key is caught too.
+/// No defence against A8: the key has already been on the clipboard.
+pub(crate) fn looks_like_rendered_key_material(input: &[u8]) -> bool {
+    let normalised = base32::normalise_input(input);
+    normalised.len() >= RENDERED_CHARS && normalised.starts_with(RENDERED_PREFIX.as_bytes())
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
@@ -175,6 +192,52 @@ mod tests {
             render(&short),
             Err(SecretKeyError::WrongLength { .. })
         ));
+    }
+
+    #[test]
+    fn the_renderings_share_the_product_tag() {
+        use super::RENDERED_PREFIX;
+        use crate::emergency_kit::HEADER;
+
+        assert!(super::PREFIX_TAG.starts_with(RENDERED_PREFIX));
+        assert!(HEADER.starts_with(RENDERED_PREFIX));
+    }
+
+    #[test]
+    fn a_pasted_secret_key_or_kit_is_recognised_and_a_password_is_not() {
+        use super::looks_like_rendered_key_material as looks_like;
+
+        let secret = generate().expect("CSPRNG");
+        let line = render(&secret).expect("rendered");
+        assert!(looks_like(line.expose_for_printing().as_bytes()));
+
+        let transcribed = line
+            .expose_for_printing()
+            .to_lowercase()
+            .replace('-', " ")
+            .replacen("chv1", "chvi", 1);
+        assert!(looks_like(transcribed.as_bytes()));
+
+        let kit = crate::emergency_kit::Kit::new(
+            [0x11; crate::emergency_kit::ACCOUNT_ID_LEN],
+            [0x22; crate::emergency_kit::ACCOUNT_SALT_LEN],
+            secret,
+            None,
+        )
+        .expect("kit");
+        assert!(looks_like(kit.render_compact().as_bytes()));
+
+        // The third normalises to `CHV10USH1PP0`, which starts with the tag.
+        for password in [
+            "a-real-password",
+            "correct horse battery staple",
+            "chvious-hippo",
+        ] {
+            assert!(
+                !looks_like(password.as_bytes()),
+                "{password} was mistaken for key material"
+            );
+        }
     }
 
     #[test]

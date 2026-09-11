@@ -111,6 +111,8 @@ fn no_entry_error_variant_carries_key_material() {
         EntryError::NormalizationUndecided,
         EntryError::SurroundingWhitespace,
         EntryError::SecretKeyFormat(SecretKeyError::ChecksumMismatch),
+        // Raised by input that is key material, so it must not describe the input.
+        EntryError::PastedKeyMaterial,
     );
 }
 
@@ -181,7 +183,7 @@ fn the_variant_lists_match_the_source() {
         ("core/src/derive.rs", "DeriveError", 3),
         ("core/src/emergency_kit.rs", "KitError", 6),
         ("core/src/emergency_kit.rs", "Field", 4),
-        ("core/src/entry.rs", "EntryError", 5),
+        ("core/src/entry.rs", "EntryError", 6),
         ("core/src/generate.rs", "GenerateError", 7),
         ("core/src/item.rs", "ItemError", 4),
         ("core/src/nonce.rs", "NonceError", 1),

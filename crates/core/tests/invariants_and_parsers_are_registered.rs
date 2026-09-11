@@ -181,16 +181,29 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
 
 #[test]
 fn every_parser_in_the_source_is_classified() {
-    const NOT_ATTACKER_FACING: [(&str, &str, &str); 2] = [
+    const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 3] = [
         (
             "core/src/base32.rs",
             "decode_with_checksum",
-            "reached only through secret_key::decode and emergency_kit::parse,              both of which are fuzzed; it takes an already-normalised symbol              slice rather than raw input",
+            "COVERED ELSEWHERE: reached only through secret_key::decode and \
+             emergency_kit::parse, both of which are fuzzed; it takes an \
+             already-normalised symbol slice rather than raw input",
         ),
         (
             "core/src/nonce.rs",
             "from_stored_bytes",
-            "takes a fixed-size array, so there is no length or structure to              get wrong; safe on any bytes by construction, and a wrong nonce              fails the AEAD tag",
+            "SAFE BY CONSTRUCTION: takes a fixed-size array, so there is no \
+             length or structure to get wrong, and a wrong nonce fails the \
+             AEAD tag",
+        ),
+        (
+            "core/src/secret_key.rs",
+            "looks_like_rendered_key_material",
+            "COVERED ELSEWHERE: attacker-facing -- a hostile app can write the \
+             clipboard (A8) -- and its whole body is base32::normalise_input \
+             plus a length comparison and a prefix match. normalise_input is \
+             exercised on arbitrary bytes by the secret_key_decode target, so a \
+             fifth target would be fuzzing `>=` and `starts_with`",
         ),
     ];
     let mut unclassified: Vec<String> = Vec::new();
@@ -207,7 +220,7 @@ fn every_parser_in_the_source_is_classified() {
                 continue;
             }
             let is_parser = (line.starts_with("pub fn ") || line.starts_with("pub(crate) fn "))
-                && ["decode", "parse", "from_stored_bytes"]
+                && ["decode", "parse", "from_stored_bytes", "looks_like"]
                     .iter()
                     .any(|verb| line.contains(&format!("fn {verb}")));
             if !is_parser {
@@ -222,7 +235,7 @@ fn every_parser_in_the_source_is_classified() {
             let known = PARSERS
                 .iter()
                 .any(|p| p.file == name && p.function == declared)
-                || NOT_ATTACKER_FACING
+                || NOT_SEPARATELY_FUZZED
                     .iter()
                     .any(|(file, function, _why)| *file == name && *function == declared);
             if !known {

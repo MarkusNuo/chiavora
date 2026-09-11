@@ -20,6 +20,8 @@ pub enum EntryError {
     NormalizationUndecided,
     SurroundingWhitespace,
     SecretKeyFormat(crate::secret_key::SecretKeyError),
+    /// The key has already been on the clipboard by then; the refusal cannot undo that.
+    PastedKeyMaterial,
 }
 
 impl core::fmt::Display for EntryError {
@@ -36,6 +38,10 @@ impl core::fmt::Display for EntryError {
                 "leading or trailing whitespace is refused until trimming is decided",
             ),
             Self::SecretKeyFormat(inner) => write!(f, "{inner}"),
+            Self::PastedKeyMaterial => f.write_str(
+                "this looks like a Secret Key or an Emergency Kit; type it or scan the QR code \
+                 rather than pasting it",
+            ),
         }
     }
 }
@@ -115,10 +121,67 @@ impl EntryPoint for SecretKeyField {
     }
 }
 
+/// A pasted Secret Key or Kit line is refused (A8); otherwise exactly [`PasswordField`].
+pub struct ClipboardPaste;
+
+impl sealed::Sealed for ClipboardPaste {}
+
+impl EntryPoint for ClipboardPaste {
+    type Yields = kind::AccountPassword;
+
+    const NAME: &'static str = "clipboard paste";
+
+    fn transform(raw: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, EntryError> {
+        // The bound comes first: the key-material check normalises a copy.
+        if raw.is_empty() {
+            return Err(EntryError::Empty);
+        }
+        if raw.len() > MAX_PASSWORD_BYTES {
+            return Err(EntryError::TooLong {
+                max: MAX_PASSWORD_BYTES,
+            });
+        }
+        // Before the password checks, so a pasted Kit line gets the right error.
+        if crate::secret_key::looks_like_rendered_key_material(&raw) {
+            return Err(EntryError::PastedKeyMaterial);
+        }
+        PasswordField::transform(raw)
+    }
+}
+
+/// Exactly one trailing `\n` or `\r\n` is removed as transport framing; spaces are kept.
+pub struct CliStdin;
+
+impl sealed::Sealed for CliStdin {}
+
+impl EntryPoint for CliStdin {
+    type Yields = kind::AccountPassword;
+
+    const NAME: &'static str = "CLI stdin";
+
+    fn transform(mut raw: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, EntryError> {
+        // `\r\n` is checked first, or a CRLF line would keep its `\r`.
+        let terminator = if raw.ends_with(b"\r\n") {
+            2
+        } else {
+            usize::from(raw.ends_with(b"\n"))
+        };
+        let keep = raw.len().saturating_sub(terminator);
+        raw.truncate(keep);
+        PasswordField::transform(raw)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryStatus {
-    Covered,
+    CoveredInCore,
+    CarriesNoSecret,
     Owed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HostRecord {
+    pub surface: &'static str,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -127,8 +190,10 @@ pub struct EntryPointRecord {
     pub gate_phrase: &'static str,
     pub statement: &'static str,
     pub status: EntryStatus,
+    pub host: Option<HostRecord>,
     pub yields: Option<&'static str>,
     pub blocked_on: Option<&'static str>,
+    pub resolved_by: Option<&'static str>,
 }
 
 pub const REGISTRY: [EntryPointRecord; 6] = [
@@ -136,55 +201,74 @@ pub const REGISTRY: [EntryPointRecord; 6] = [
         name: "password field",
         gate_phrase: "the password field",
         statement: "",
-        status: EntryStatus::Covered,
+        status: EntryStatus::CoveredInCore,
         yields: Some("AccountPassword"),
+        host: Some(HostRecord {
+            surface: "mobile/app",
+        }),
         blocked_on: None,
+        resolved_by: Some("built; nothing about the bytes it accepts is undecided"),
     },
     EntryPointRecord {
         name: "Secret Key field",
         gate_phrase: "the Secret Key field",
         statement: "",
-        status: EntryStatus::Covered,
+        status: EntryStatus::CoveredInCore,
         yields: Some("SecretKey"),
+        host: Some(HostRecord {
+            surface: "mobile/app",
+        }),
         blocked_on: None,
+        resolved_by: Some("docs/adr/0004 decided the CHV1- format"),
     },
     EntryPointRecord {
         name: "Emergency Kit QR decode path",
         gate_phrase: "the Emergency Kit QR decode path",
         statement: "",
-        status: EntryStatus::Owed,
+        status: EntryStatus::CoveredInCore,
         yields: Some("SecretKey"),
-        blocked_on: Some(
-            " (the Emergency Kit); the format half closed in docs/adr/0004",
-        ),
+        host: Some(HostRecord {
+            surface: "mobile/app",
+        }),
+        blocked_on: None,
+        resolved_by: Some("docs/adr/0004 closed the format half; built the Kit"),
     },
     EntryPointRecord {
         name: "clipboard paste",
         gate_phrase: "clipboard paste",
         statement: "",
-        status: EntryStatus::Owed,
-        yields: None,
-        blocked_on: Some(" - which secret a paste carries"),
+        status: EntryStatus::CoveredInCore,
+        yields: Some("AccountPassword"),
+        host: Some(HostRecord {
+            surface: "mobile/app",
+        }),
+        blocked_on: None,
+        resolved_by: Some(" - the password only, and a pasted Kit line is refused"),
     },
     EntryPointRecord {
         name: "CLI stdin",
         gate_phrase: "CLI stdin",
         statement: "",
-        status: EntryStatus::Owed,
-        yields: None,
-        blocked_on: Some(
-            " - docs/security-design.md does not say whether stdin carries the password or the Secret Key",
+        status: EntryStatus::CoveredInCore,
+        yields: Some("AccountPassword"),
+        host: Some(HostRecord {
+            surface: "cli",
+        }),
+        blocked_on: None,
+        resolved_by: Some(
+            " - the password only; the CLI unlocks an enrolled vault and does not enroll",
         ),
     },
     EntryPointRecord {
         name: "inbound native messaging",
         gate_phrase: "inbound native messaging",
         statement: "",
-        status: EntryStatus::Owed,
+        // The extension holds no keys (§3.3), so nothing may brand bytes here.
+        status: EntryStatus::CarriesNoSecret,
         yields: None,
-        blocked_on: Some(
-            " - and what arrives inbound may be item data rather than key material",
-        ),
+        host: None,
+        blocked_on: None,
+        resolved_by: Some(" - neither secret crosses here, and no EntryPoint may exist"),
     },
 ];
 
@@ -315,11 +399,99 @@ mod tests {
     }
 
     #[test]
-    fn the_entry_point_names_itself_the_same_way_the_registry_does() {
-        let covered = super::REGISTRY
+    fn the_clipboard_carries_the_password_and_refuses_a_pasted_kit_line() {
+        use super::ClipboardPaste;
+        use crate::emergency_kit::{Kit, ACCOUNT_ID_LEN, ACCOUNT_SALT_LEN};
+
+        let secret = accept::<ClipboardPaste>(b"correct-horse-battery-staple".to_vec())
+            .expect("a plain ASCII password pastes");
+        assert!(format!("{secret:?}").contains("AccountPassword"));
+
+        let key = crate::secret_key::generate().expect("CSPRNG");
+        let line = crate::secret_key::render(&key).expect("rendered");
+        assert_eq!(
+            accept::<ClipboardPaste>(line.expose_for_printing().as_bytes().to_vec()).err(),
+            Some(EntryError::PastedKeyMaterial)
+        );
+
+        let kit =
+            Kit::new([0x11; ACCOUNT_ID_LEN], [0x22; ACCOUNT_SALT_LEN], key, None).expect("kit");
+        assert_eq!(
+            accept::<ClipboardPaste>(kit.render_compact().as_bytes().to_vec()).err(),
+            Some(EntryError::PastedKeyMaterial)
+        );
+    }
+
+    #[test]
+    fn the_clipboard_checks_its_resource_bound_before_it_normalises() {
+        // Over-long and key-like, so the error shows which check ran first.
+        use super::ClipboardPaste;
+
+        let mut huge = b"CHV1".to_vec();
+        huge.extend(std::iter::repeat_n(b'0', MAX_PASSWORD_BYTES));
+        assert_eq!(
+            accept::<ClipboardPaste>(huge).err(),
+            Some(EntryError::TooLong {
+                max: MAX_PASSWORD_BYTES
+            }),
+            "the bound must refuse before the normalisation pass runs"
+        );
+    }
+
+    #[test]
+    fn stdin_strips_one_line_terminator_as_transport_framing() {
+        use super::CliStdin;
+
+        for raw in [
+            &b"correct-horse-battery-staple"[..],
+            &b"correct-horse-battery-staple\n"[..],
+            &b"correct-horse-battery-staple\r\n"[..],
+        ] {
+            let accepted = accept::<CliStdin>(raw.to_vec());
+            assert!(accepted.is_ok(), "{raw:?} was refused: {accepted:?}");
+            let secret = accepted.expect("just asserted");
+            assert_eq!(
+                secret.expose(),
+                b"correct-horse-battery-staple",
+                "the terminator reached the secret"
+            );
+        }
+    }
+
+    #[test]
+    fn the_framing_rule_is_not_a_trim() {
+        use super::CliStdin;
+
+        for raw in [
+            &b"a-real-password \n"[..],
+            &b" a-real-password\n"[..],
+            &b"a-real-password\n\n"[..],
+            &b"a-real-password\t"[..],
+        ] {
+            assert_eq!(
+                accept::<CliStdin>(raw.to_vec()).err(),
+                Some(EntryError::SurroundingWhitespace),
+                "{raw:?} was accepted, so the framing rule has become a trim"
+            );
+        }
+    }
+
+    #[test]
+    fn every_entry_point_names_itself_the_way_the_registry_does() {
+        use super::{CliStdin, ClipboardPaste, EntryStatus, SecretKeyField, REGISTRY};
+
+        let covered: Vec<&str> = REGISTRY
             .iter()
-            .find(|r| r.status == super::EntryStatus::Covered)
-            .expect("one covered row");
-        assert_eq!(PasswordField::NAME, covered.name);
+            .filter(|r| r.status == EntryStatus::CoveredInCore)
+            .map(|r| r.name)
+            .collect();
+        for name in [
+            PasswordField::NAME,
+            SecretKeyField::NAME,
+            ClipboardPaste::NAME,
+            CliStdin::NAME,
+        ] {
+            assert!(covered.contains(&name), "{name} is not a covered row");
+        }
     }
 }

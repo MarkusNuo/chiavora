@@ -4,6 +4,10 @@ use zeroize::Zeroizing;
 
 use crate::csprng::{uniform_below, CsprngError};
 
+pub const MAX_LENGTH: usize = 128;
+
+pub const MAX_PASSPHRASE_WORDS: usize = 12;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CharClass {
     Lowercase,
@@ -41,6 +45,9 @@ pub struct Policy {
 pub enum GenerateError {
     /// An empty password that looks generated is worse than an error.
     ZeroLength,
+    TooLong {
+        max: usize,
+    },
     NoClasses,
     AlphabetEmptyAfterExclusions,
     LengthBelowClassCount,
@@ -53,6 +60,7 @@ impl core::fmt::Display for GenerateError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match *self {
             Self::ZeroLength => f.write_str("a password of length zero is refused"),
+            Self::TooLong { max } => write!(f, "a password longer than {max} characters"),
             Self::NoClasses => f.write_str("no character classes selected"),
             Self::AlphabetEmptyAfterExclusions => {
                 f.write_str("excluding ambiguous characters left an empty alphabet")
@@ -86,6 +94,9 @@ impl Policy {
     ) -> Result<Self, GenerateError> {
         if length == 0 {
             return Err(GenerateError::ZeroLength);
+        }
+        if length > MAX_LENGTH {
+            return Err(GenerateError::TooLong { max: MAX_LENGTH });
         }
         if classes.is_empty() {
             return Err(GenerateError::NoClasses);
@@ -164,7 +175,8 @@ pub fn password(policy: &Policy) -> Result<Zeroizing<String>, GenerateError> {
     }
 
     for _ in 0..MAX_ATTEMPTS {
-        let mut out = Zeroizing::new(String::with_capacity(policy.length));
+        // Sized by the ceiling, which `Policy::new` enforces, not by the request.
+        let mut out = Zeroizing::new(String::with_capacity(MAX_LENGTH));
         for _ in 0..policy.length {
             let index = uniform_below(size)?;
             // Both conversions propagate: a fallback would weaken the password silently.
@@ -253,6 +265,19 @@ mod tests {
                 "generated a character outside the alphabet: {byte:#04x}"
             );
         }
+    }
+
+    #[test]
+    fn the_length_ceiling_is_refused_above_and_accepted_at() {
+        let at = Policy::new(super::MAX_LENGTH, &[CharClass::Lowercase], false, false);
+        assert!(at.is_ok(), "the ceiling itself is accepted");
+        let over = Policy::new(super::MAX_LENGTH + 1, &[CharClass::Lowercase], false, false);
+        assert_eq!(
+            over.err(),
+            Some(GenerateError::TooLong {
+                max: super::MAX_LENGTH
+            })
+        );
     }
 
     #[test]

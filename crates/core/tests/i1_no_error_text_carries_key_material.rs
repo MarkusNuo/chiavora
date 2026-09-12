@@ -132,6 +132,7 @@ fn no_generate_error_variant_carries_key_material() {
         GenerateError::Csprng,
         GenerateError::AlphabetTooLarge,
         GenerateError::AlphabetIndexOutOfRange,
+        GenerateError::TooLong { max: 128 },
     );
 }
 
@@ -323,7 +324,7 @@ fn the_variant_lists_match_the_source() {
         ("core/src/emergency_kit.rs", "KitError", 6),
         ("core/src/emergency_kit.rs", "Field", 4),
         ("core/src/entry.rs", "EntryError", 6),
-        ("core/src/generate.rs", "GenerateError", 7),
+        ("core/src/generate.rs", "GenerateError", 8),
         ("core/src/import.rs", "ImportError", 11),
         ("core/src/item.rs", "ItemError", 4),
         ("core/src/model.rs", "ModelError", 11),

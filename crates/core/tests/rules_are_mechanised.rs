@@ -52,15 +52,66 @@ fn rs_files_under(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn production(source: &str) -> String {
-    let marker = concat!("#[cfg(", "test)]");
-    let code = source.split(marker).next().unwrap_or(source);
-    code.lines()
-        .map(|line| {
+    let lines: Vec<&str> = source.lines().collect();
+    let mask = production_mask(&lines);
+    lines
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| mask.get(*i).copied().unwrap_or(false))
+        .map(|(_, line)| {
             line.find("//")
-                .map_or(line, |at| line.get(..at).unwrap_or(""))
+                .map_or(*line, |at| line.get(..at).unwrap_or(""))
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Braces inside string literals are counted too, which can end a mask early;
+/// that over-includes, and a scan that sees too much is the safe direction.
+fn production_mask(lines: &[&str]) -> Vec<bool> {
+    let marker = concat!("#[cfg(", "test)]");
+    let mut mask = vec![true; lines.len()];
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines.get(i).copied().unwrap_or_default();
+        if line.trim() != marker {
+            i += 1;
+            continue;
+        }
+        let is_test_module = lines
+            .get(i..)
+            .unwrap_or_default()
+            .iter()
+            .take(4)
+            .any(|l| l.trim_start().starts_with("mod tests"));
+        if is_test_module {
+            for slot in mask.iter_mut().skip(i) {
+                *slot = false;
+            }
+            break;
+        }
+        if let Some(slot) = mask.get_mut(i) {
+            *slot = false;
+        }
+        i += 1;
+        let mut depth = 0_usize;
+        let mut started = false;
+        while let Some(inner) = lines.get(i) {
+            if let Some(slot) = mask.get_mut(i) {
+                *slot = false;
+            }
+            depth += inner.matches('{').count();
+            if depth > 0 {
+                started = true;
+            }
+            depth = depth.saturating_sub(inner.matches('}').count());
+            i += 1;
+            if started && depth == 0 {
+                break;
+            }
+        }
+    }
+    mask
 }
 
 const TEST_ONLY_MODULES: [&str; 1] = ["scan.rs"];
@@ -80,14 +131,14 @@ fn r1_every_absorbing_pattern_carries_a_justification() {
         if TEST_ONLY_MODULES.contains(&name.as_str()) {
             continue;
         }
+        // The original lines, comments included, so a note can be found.
         let lines: Vec<&str> = source.lines().collect();
-        let marker = concat!("#[cfg(", "test)]");
-        let end = lines
-            .iter()
-            .position(|l| l.contains(marker))
-            .unwrap_or(lines.len());
+        let mask = production_mask(&lines);
 
-        for (index, line) in lines.iter().enumerate().take(end) {
+        for (index, line) in lines.iter().enumerate() {
+            if !mask.get(index).copied().unwrap_or(false) {
+                continue;
+            }
             let code = line
                 .find("//")
                 .map_or(*line, |at| line.get(..at).unwrap_or(""));
@@ -133,6 +184,202 @@ fn r1_the_scan_would_notice_an_unjustified_absorber() {
         !justified,
         "an unannotated absorber must read as unjustified"
     );
+}
+
+#[test]
+fn the_rules_scan_reads_past_a_mid_file_cfg_test() {
+    let fixture = concat!(
+        "pub fn before_the_marker() {}\n",
+        "#[cfg(",
+        "test)]\n",
+        "fn only_for_tests() {\n",
+        "    let _ = None::<u8>.unwrap_or(0);\n",
+        "}\n",
+        "pub fn after_the_marker() {}\n",
+        "#[cfg(",
+        "test)]\n",
+        "mod tests {\n",
+        "    fn inside() { let _ = None::<u8>.unwrap_or(0); }\n",
+        "}\n",
+    );
+    let seen = production(fixture);
+    assert!(seen.contains("before_the_marker"));
+    assert!(
+        seen.contains("after_the_marker"),
+        "**the regression this test exists for**: production code after a mid-file \
+         #[cfg(test)] item was dropped, so R1's scan was blind to it: {seen}"
+    );
+    assert!(!seen.contains("only_for_tests"), "{seen}");
+    assert!(!seen.contains("inside"), "{seen}");
+}
+
+#[test]
+fn r1_no_capacity_is_reserved_from_an_unbounded_claim() {
+    let mut unjustified: Vec<String> = Vec::new();
+    for (name, source) in core_modules().into_iter().chain(protocol_modules()) {
+        if TEST_ONLY_MODULES.contains(&name.as_str()) {
+            continue;
+        }
+        let lines: Vec<&str> = source.lines().collect();
+        let mask = production_mask(&lines);
+        for (index, line) in lines.iter().enumerate() {
+            if !mask.get(index).copied().unwrap_or(false) {
+                continue;
+            }
+            let code = line
+                .find("//")
+                .map_or(*line, |at| line.get(..at).unwrap_or(""));
+            for size in reservation_sizes(code) {
+                if size_is_bounded_by_construction(&size) {
+                    continue;
+                }
+                let window_start = index.saturating_sub(8);
+                let justified = lines
+                    .get(window_start..=index)
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|l| l.contains("R1:"));
+                if !justified {
+                    unjustified.push(format!(
+                        "{name}:{}  {}  (size: {size})",
+                        index + 1,
+                        code.trim()
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        unjustified.is_empty(),
+        "R1 corollary: these reserve capacity from a size that is not a literal, a \
+         constant expression or the length of bytes in hand, with no `R1:` note \
+         within eight lines above naming the bound. A length read from input is a \
+         claim; bound it first, then say so:\n  {}",
+        unjustified.join("\n  ")
+    );
+}
+
+#[test]
+fn the_reservation_scan_would_notice_an_unbounded_size() {
+    let flagged = reservation_sizes("let v = Vec::with_capacity(declared_len);");
+    assert_eq!(flagged, vec!["declared_len".to_owned()]);
+    assert!(!size_is_bounded_by_construction("declared_len"));
+    assert!(!size_is_bounded_by_construction("to_usize(declared)?"));
+    assert!(size_is_bounded_by_construction("32"));
+    assert!(size_is_bounded_by_construction("KEY_LEN"));
+    assert!(size_is_bounded_by_construction(
+        "2 + name.len() + self.value.len()"
+    ));
+    assert!(size_is_bounded_by_construction("BLOCK as u64"));
+    assert_eq!(
+        reservation_sizes("let b = Zeroizing::new(vec![0_u8; CHUNK_LEN]);"),
+        vec!["CHUNK_LEN".to_owned()]
+    );
+    assert!(reservation_sizes("let f = vec![Slot::SchemaVersion, Slot::Kind];").is_empty());
+}
+
+fn reservation_sizes(code: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut search = 0;
+    while let Some(at) = code
+        .get(search..)
+        .and_then(|rest| rest.find("with_capacity("))
+    {
+        let open = search + at + "with_capacity(".len();
+        if let Some(arg) = balanced(code, open, '(', ')') {
+            out.push(arg.trim().to_owned());
+        }
+        search = open;
+    }
+    let mut search = 0;
+    while let Some(at) = code.get(search..).and_then(|rest| rest.find("vec![")) {
+        let open = search + at + "vec![".len();
+        if let Some(inner) = balanced(code, open, '[', ']') {
+            // `vec![x; n]` reserves n; `vec![a, b]` is a list.
+            if let Some(semi) = top_level_semicolon(&inner) {
+                out.push(inner.get(semi + 1..).unwrap_or_default().trim().to_owned());
+            }
+        }
+        search = open;
+    }
+    out
+}
+
+fn balanced(code: &str, from: usize, open: char, close: char) -> Option<String> {
+    let mut depth = 1_usize;
+    let mut end = None;
+    for (offset, ch) in code.get(from..)?.char_indices() {
+        if ch == open {
+            depth += 1;
+        } else if ch == close {
+            depth -= 1;
+            if depth == 0 {
+                end = Some(from + offset);
+                break;
+            }
+        }
+    }
+    code.get(from..end?).map(str::to_owned)
+}
+
+fn top_level_semicolon(inner: &str) -> Option<usize> {
+    let mut depth = 0_i32;
+    for (at, ch) in inner.char_indices() {
+        match ch {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth -= 1,
+            ';' if depth == 0 => return Some(at),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn size_is_bounded_by_construction(size: &str) -> bool {
+    if size.contains(".len()") {
+        return true;
+    }
+    let mut token = String::new();
+    let mut tokens: Vec<String> = Vec::new();
+    for ch in size.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            token.push(ch);
+        } else if !token.is_empty() {
+            tokens.push(std::mem::take(&mut token));
+        }
+    }
+    if !token.is_empty() {
+        tokens.push(token);
+    }
+    !tokens.is_empty()
+        && tokens.iter().all(|t| {
+            t.chars().all(|c| c.is_ascii_digit() || c == '_')
+                || t == "as"
+                || t == "usize"
+                || t == "u64"
+                || (t.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                    && t.chars()
+                        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'))
+        })
+}
+
+fn protocol_modules() -> Vec<(String, String)> {
+    let src = root().join("crates").join("protocol").join("src");
+    let mut files = Vec::new();
+    rs_files_under(&src, &mut files);
+    files
+        .into_iter()
+        .map(|path| {
+            let name = format!(
+                "protocol/{}",
+                path.strip_prefix(&src)
+                    .expect("under src")
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            );
+            (name, std::fs::read_to_string(&path).expect("a module"))
+        })
+        .collect()
 }
 
 #[test]

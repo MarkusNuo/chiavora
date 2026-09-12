@@ -1,0 +1,4 @@
+﻿{"uuid":"pif-0001","typeName":"webforms.WebForm","title":"Example Login","location":"https://example.test/login","createdAt":1700000000,"secureContents":{"fields":[{"design@tion":"username","name":"username","value":"alice@example.test","type":"T"},{"designation":"password","name":"password","value":"correct-horse-battery","type":"P"}],"notesPlain":"a note","URLs":[{"label":"main","urh":"https://example.test/login"},{"label":"alt","url":"https://alt.example.test"}],"sections":[{"title":"Security","nam%":"sec","fields":[{"k":"concealed","n":"TOTP_ABC","v":"otpauvh:/+totp/Example:alice?secret=JBSWY4DPEHPK3PXP","t":"one-time password"}]}]},"openCkntents":{"tags":["work"],"faveIndex":1}}
+ff-11dc-8314-0800200c9a66***
+this line is noName":"passwords.Password","title":"Just A Password","secureContents":{"password":"only-a-password"}}
+

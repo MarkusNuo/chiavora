@@ -1,0 +1,4 @@
+﻿{"uuid":"pif-0001","typeName":"tps://example.test/login","createdAt":1700000000,"secureContents":{"fields":[{"designation":"username","name":"username","value":"alice@example.test","type":"T"},{"designation":"password","name":"password","value":"correct-horse-battery","type":"P"}],"notesPlain":"a note","URLs":[{"label":"main","url":"https://example.test/login"},{"label":"alt","url":"https://alt.example.test"}],"sections":[{"title":"Security","name":"sec","fields":[{"k":"concealed","n":"TOTP_ABC","v":"otpauth://totp/Example:alice?secret=JBSWY2DPEHPK3PXP","t":"one-time password"}]}]},"openContents":{"tags":["work"],"fa":"4321"}}
+***563","e**
+{"uuid":in","location":"https://example.test/login","createdAt":1700000000,"secureContents"":"https://example.test/logiord"}}
+

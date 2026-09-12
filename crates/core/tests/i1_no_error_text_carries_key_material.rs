@@ -8,6 +8,7 @@ use chiavora_core::derive::DeriveError;
 use chiavora_core::emergency_kit::{Field, KitError};
 use chiavora_core::entry::EntryError;
 use chiavora_core::generate::GenerateError;
+use chiavora_core::import::ImportError;
 use chiavora_core::item::ItemError;
 use chiavora_core::model::ModelError;
 use chiavora_core::nonce::NonceError;
@@ -15,6 +16,7 @@ use chiavora_core::secret_key::SecretKeyError;
 use chiavora_core::store::StoreError;
 use chiavora_core::stored_record::StoredRecordError;
 use chiavora_core::wrap::WrapError;
+use chiavora_core::zip::ZipError;
 use chiavora_protocol::WireError;
 
 const CANARIES: [&str; 5] = [
@@ -253,6 +255,50 @@ fn no_attachment_error_variant_carries_key_material() {
 }
 
 #[test]
+fn no_zip_or_import_error_variant_carries_key_material() {
+    check!(
+        ZipError::NoEndOfCentralDirectory,
+        ZipError::Malformed { at: 7 },
+        ZipError::CentralDirectoryTooLarge { max: 64 << 20 },
+        ZipError::Zip64Unsupported { at: 9 },
+        ZipError::TooManyEntries { max: 10_000 },
+        ZipError::EntryTooLarge { entry: 1, max: 5 },
+        ZipError::TotalTooLarge { entry: 2, max: 6 },
+        ZipError::RatioTooHigh { entry: 3, max: 100 },
+        ZipError::PathTraversal { entry: 4 },
+        ZipError::Symlink { entry: 5 },
+        ZipError::NestedArchive { entry: 6 },
+        ZipError::Encrypted { entry: 7 },
+        ZipError::UnsupportedMethod {
+            entry: 8,
+            method: 12
+        },
+        ZipError::SizeMismatch { entry: 9 },
+        ZipError::CrcMismatch { entry: 10 },
+        ZipError::Inflate { entry: 11 },
+        ZipError::Refused { entry: 12 },
+        ZipError::NoSuchEntry { entry: 13 },
+        ZipError::IsDirectory { entry: 14 },
+        ZipError::TooLargeForTarget { bytes: 1 },
+        ZipError::Io(std::io::ErrorKind::Other),
+        ImportError::Zip(ZipError::NoEndOfCentralDirectory),
+        ImportError::Io(std::io::ErrorKind::UnexpectedEof),
+        ImportError::MissingMember,
+        ImportError::Json { line: 1, column: 2 },
+        ImportError::NotTheExpectedShape,
+        ImportError::RecordTooLong {
+            at: 0,
+            max: 16 << 20
+        },
+        ImportError::Model {
+            at: 1,
+            error: ModelError::UnknownKind
+        },
+        ImportError::AttachmentTooLarge { max: 100 << 20 },
+    );
+}
+
+#[test]
 fn no_base32_error_variant_carries_key_material() {
     check!(
         chiavora_core::base32::Base32Error::WrongLength { expected: 28 },
@@ -266,7 +312,7 @@ fn no_base32_error_variant_carries_key_material() {
 
 #[test]
 fn the_variant_lists_match_the_source() {
-    const EXPECTED: [(&str, &str, usize); 16] = [
+    const EXPECTED: [(&str, &str, usize); 18] = [
         ("core/src/aad.rs", "AadError", 8),
         ("core/src/attachment.rs", "AttachmentError", 18),
         ("core/src/base32.rs", "Base32Error", 4),
@@ -275,11 +321,13 @@ fn the_variant_lists_match_the_source() {
         ("core/src/emergency_kit.rs", "Field", 4),
         ("core/src/entry.rs", "EntryError", 6),
         ("core/src/generate.rs", "GenerateError", 7),
+        ("core/src/import.rs", "ImportError", 8),
         ("core/src/item.rs", "ItemError", 4),
         ("core/src/model.rs", "ModelError", 11),
         ("core/src/nonce.rs", "NonceError", 1),
         ("core/src/secret_key.rs", "SecretKeyError", 6),
         ("core/src/wrap.rs", "WrapError", 7),
+        ("core/src/zip.rs", "ZipError", 21),
         ("core/src/store.rs", "StoreError", 12),
         ("core/src/stored_record.rs", "StoredRecordError", 8),
         ("protocol/src/lib.rs", "WireError", 6),

@@ -1,0 +1,11 @@
+Ôªø{"uuid":"pif-0001","typeName":"webfl":"https://example.test/login"},{"label":"alt","url":"https://alt.example.test"}],"sections":[{"title":"Security","name":"sec","reContents":{"notesPlain":"the bod{"typeName""webforms.WebForm","title":"t","secureContents":{"sections":[{"fields":[{"k":"conceanld","e":"TOTP_[1,3]
+:"otpauth:/?totp/aex":1}}
+***5642bee8-a5ff-11dc-8314-0800200c9a66***
+{"uuid":"pif-0002","typeName":"securenotes.SecureNote","title":"Example Note","secureContents":{"notesPlain":"the bod{"typeName":"webforms.WebForm","title":"t","secureContents":{"sections":[{"fields":[{"k":"conceanld","e":"TOTP_X","v":"otpauth:/?totp/a?secret=JBSWY3DP"}]}]}}411111111111111±","cvv":"123","expiry_mm":"12","expiry_yy":"202ƒ›”›úûçõholder":"Alice Example"}}
+***5642bee8-a5ff-11dc-8314-0800200c9a66***
+this line is not JSON but it contains password=hunter2-ish and must not vanish
+***5642bee8-a5ff-11dc-8314-0800200c9a66***
+{"uuid":"pif-0005","typeName":"wallet.membership.Membership","title":"Gym","trashed":true,"secureContents":{"membership_no":"M-1234","pin":"4ÕÕŒ›}}
+***5642bee8-a5ff-11dc-8314-0800200c9a66***
+{"uuid":"pif-0006",Contents":{"password":"only-a-password"}}
+

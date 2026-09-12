@@ -1,0 +1,4 @@
+﻿{"uuid":"pif-0001","typeName":"we note","URLs":[{"label":"main","url":"https://example.test/login"},{"label":"alt","url":"https://alt.example.test"}],"sections":[{"title":"Security","name":"sec","fields":[{"k":"concealed","n":"TOTP_ABC","v":"otpauth://totp/Example:alice?sbforms.WebForm","title":"Example`Login","typeNare":"https://example.test/login","createdAt":1700000000,"secureCo-1ntents":{"fields":[{"design@tion":"usezname","name":"username","value":"alice@example.test","type":"T"},{"designation":"password","name":"password","value":"corre(2#
+
+ct-horse-battery","vype":"P"}],"notesPlain":"a note","URLs":[{"label":"main","url":"https://example.test/login"},{"label":"alt","url":"https://alt.example.test,]
+"}],"sections":[{"title

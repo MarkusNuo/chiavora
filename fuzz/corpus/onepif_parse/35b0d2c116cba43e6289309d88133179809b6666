@@ -1,0 +1,10 @@
+ï»¿{"uuid":"pif-0001","typeName":"webforms.WebForm","title":"Exampl:[{"label":"m":"https://example.test/login"},{"label":"alt","url":"https://alt.example.test"}],"sections":[{"title":"Security","name":"sec","fields":[{"k":"concealed","n":"TOTP_ABC","v":"otpauth://totp/Example:alice?secret=J not vanish
+***5642bee7-a5ff-11dc-8314-0800200c9a66***
+{"uuid":"pif-0005","typeName":"wallet.membership.Membership","title":"Gym","trashed":true,"secureContents":{"rdhol0c9a66***
+{"uuid":"†pif-0005","typeName":"wallet.membership.Membership","title":"Gym","trashed":tru***5642bee8-a5ff-11dc-8314-0800200c9a66***
+{"uuid":"pif-0005","typeName":"wallet.membership.Membership","titl99999999999999999999999999999999999999999999e":"securenote":"Gym","trashed":true,"secureContents":{"membership_no":"M-1234","pin":"4321"}}
+***5642bee8-a5ff-1100c9a66***
+{"uuid":"pif-0005","typeName":"wallet.membership.Membership","title":"Gym","trashed":true,"secureContents":{"rdhol0c9a66***
+{"uuid":"pif-0005","typeName":"wallet.membership.Membership","title":"Gym","trashed":true,"sedc-8314-0800200c9a66***
+{"uuid":"pif-0006","typeName":"vasswordlet.membership.Membership","title":"Gym","trashed":true,"secuword":"only-a-password"}}
+

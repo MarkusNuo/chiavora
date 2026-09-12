@@ -163,7 +163,7 @@ fn i5_and_i6_are_absent_on_purpose() {
     }
 }
 
-const PARSERS: [Parser; 7] = [
+const PARSERS: [Parser; 10] = [
     Parser {
         file: "core/src/aad.rs",
         function: "decode",
@@ -187,6 +187,24 @@ const PARSERS: [Parser; 7] = [
         function: "parse",
         target: "emergency_kit_parse",
         why: "a QR code a camera read",
+    },
+    Parser {
+        file: "core/src/zip.rs",
+        function: "parse",
+        target: "zip_parse",
+        why: "a 1PUX export is a zip archive a person downloaded from somewhere else; the classic bomb and traversal surface, and puts it inside core so it is here",
+    },
+    Parser {
+        file: "core/src/onepux.rs",
+        function: "parse",
+        target: "onepux_parse",
+        why: "the JSON inside a 1PUX archive: attacker-supplied by docs/security-design.md's own classification; every import parser must survive a malformed corpus",
+    },
+    Parser {
+        file: "core/src/onepif.rs",
+        function: "parse",
+        target: "onepif_parse",
+        why: "1Password's older line-oriented export (names both)",
     },
     Parser {
         file: "core/src/attachment.rs",
@@ -249,7 +267,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 40] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 55] = [
     (
         "core/src/base32.rs",
         "decode_with_checksum",
@@ -499,6 +517,87 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 40] = [
          type is bounded and copied into the AAD, and the attachment bytes are \
          read one chunk at a time and sealed -- never parsed. The policy limit is \
          applied before the first read",
+    ),
+    (
+        "core/src/zip.rs",
+        "Archive::find",
+        "SAFE BY CONSTRUCTION: compares a caller's member name against the parsed \
+         central directory; parses nothing",
+    ),
+    (
+        "core/src/import.rs",
+        "Node::get",
+        "SAFE BY CONSTRUCTION: compares a key against parsed object keys",
+    ),
+    (
+        "core/src/import.rs",
+        "Node::str_of",
+        "SAFE BY CONSTRUCTION: Node::get with a type check",
+    ),
+    (
+        "core/src/import.rs",
+        "Node::str_or_empty",
+        "SAFE BY CONSTRUCTION: Node::get with a type check and an empty default",
+    ),
+    (
+        "core/src/import.rs",
+        "Node::list_of",
+        "SAFE BY CONSTRUCTION: Node::get with a type check and an empty default",
+    ),
+    (
+        "core/src/import.rs",
+        "parse_json",
+        "COVERED ELSEWHERE: every byte it parses arrives through onepux::parse or \
+         onepif::parse, both fuzzed; the JSON grammar underneath is serde_json's",
+    ),
+    (
+        "core/src/import.rs",
+        "ItemBuilder::name_of_value",
+        "SAFE BY CONSTRUCTION: compares bytes against the values already held; \
+         parses nothing",
+    ),
+    (
+        "core/src/import.rs",
+        "ItemBuilder::has_field",
+        "SAFE BY CONSTRUCTION: compares a name",
+    ),
+    (
+        "core/src/import.rs",
+        "ItemBuilder::field",
+        "SAFE BY CONSTRUCTION: the names are bounded and copied into the item and \
+         the report; the value is opaque bytes, sealed later and never parsed",
+    ),
+    (
+        "core/src/import.rs",
+        "ItemBuilder::preserved",
+        "SAFE BY CONSTRUCTION: ItemBuilder::field with a different move kind",
+    ),
+    (
+        "core/src/import.rs",
+        "ItemBuilder::tag",
+        "SAFE BY CONSTRUCTION: bounded and copied",
+    ),
+    (
+        "core/src/import.rs",
+        "ItemBuilder::attachment",
+        "SAFE BY CONSTRUCTION: the source path is copied into the report",
+    ),
+    (
+        "core/src/import.rs",
+        "ItemBuilder::attachment_refused",
+        "SAFE BY CONSTRUCTION: the source path is copied into the report; the \
+         reason is rendered from an error that carries no content",
+    ),
+    (
+        "core/src/import.rs",
+        "ItemBuilder::finish",
+        "SAFE BY CONSTRUCTION: the source type name is copied into the report",
+    ),
+    (
+        "core/src/import.rs",
+        "AttachmentHandle::new",
+        "SAFE BY CONSTRUCTION: the file name is copied; it is content for the \
+         report and the caller, not parsed",
     ),
     (
         "protocol/src/lib.rs",
@@ -875,11 +974,90 @@ fn every_function_taking_bytes_or_text_is_classified() {
         "the signature scan found only {} functions in the two crates, which is          too few to have read them",
         all_declared().len()
     );
+    let declared = all_declared_with_params();
+    let mut visible = 0_usize;
+    let mut invisible: Vec<(String, String)> = Vec::new();
+    let classified = PARSERS
+        .iter()
+        .map(|p| (p.file, p.function))
+        .chain(NOT_SEPARATELY_FUZZED.iter().map(|(f, fun, _)| (*f, *fun)));
+    for (file, function) in classified {
+        let params = declared
+            .iter()
+            .find(|(f, fun, _)| f == file && fun == function)
+            .map(|(_, _, p)| p.as_str());
+        match params {
+            Some(p) if takes_bytes_or_text(p) => visible += 1,
+            Some(_) => invisible.push((file.to_owned(), function.to_owned())),
+            None => {
+                // Gone from the source; reported as stale by another test.
+                invisible.push((file.to_owned(), function.to_owned()));
+            }
+        }
+    }
+    for (file, function, _) in INVISIBLE_TO_THE_SIGNATURE_SCAN {
+        assert!(
+            invisible
+                .iter()
+                .any(|(f, fun)| f == file && fun == function),
+            "{file}::{function} is listed as invisible to the signature scan, but the \
+             scan sees it (or it is gone). Remove it from INVISIBLE_TO_THE_SIGNATURE_SCAN"
+        );
+    }
+    for (file, function) in &invisible {
+        assert!(
+            INVISIBLE_TO_THE_SIGNATURE_SCAN
+                .iter()
+                .any(|(f, fun, _)| f == file && fun == function),
+            "{file}::{function} is classified but takes no bare slice, so the signature \
+             scan cannot see it (R7 case 8). Either the signature should carry the \
+             bytes -- or this is a known blind spot: add it to \
+             INVISIBLE_TO_THE_SIGNATURE_SCAN with the reason"
+        );
+    }
     assert_eq!(
-        boundary_count,
-        PARSERS.len() + NOT_SEPARATELY_FUZZED.len() - 1,
-        "the classified lists and the signature scan disagree on how many          functions take bytes or text -- so a row is classified that the scan          cannot see, or the reverse. The -1 is nonce::from_stored_bytes, which          takes a fixed-size array by value and is classified because the *name*          scan reaches it: the one row the signature scan does not see, stated          here rather than left as a drifting number"
+        boundary_count, visible,
+        "the signature scan found {boundary_count} functions taking bytes or text; the \
+         classified rows it can see number {visible}. A row is classified twice, or \
+         the scan sees a function the lists do not name"
     );
+}
+
+const INVISIBLE_TO_THE_SIGNATURE_SCAN: [(&str, &str, &str); 4] = [
+    (
+        "core/src/nonce.rs",
+        "StoredNonce::from_stored_bytes",
+        "takes a fixed-size array by value, not a slice; the name scan reaches it",
+    ),
+    (
+        "core/src/zip.rs",
+        "parse",
+        "takes a generic `Read + Seek`: the bytes arrive through a reader, not a slice. \
+         Registered in PARSERS by name, with its own target",
+    ),
+    (
+        "core/src/onepux.rs",
+        "parse",
+        "the same generic reader, over the archive. Registered in PARSERS by name",
+    ),
+    (
+        "core/src/onepif.rs",
+        "parse",
+        "takes a generic `BufRead`, line by line. Registered in PARSERS by name",
+    ),
+];
+
+fn all_declared_with_params() -> Vec<(String, String, String)> {
+    let mut found = Vec::new();
+    for (name, source) in test_sources() {
+        if !name.contains("/src/") {
+            continue;
+        }
+        for (function, params) in declared_functions(&production_code(&source)) {
+            found.push((name.clone(), function, params));
+        }
+    }
+    found
 }
 
 #[test]

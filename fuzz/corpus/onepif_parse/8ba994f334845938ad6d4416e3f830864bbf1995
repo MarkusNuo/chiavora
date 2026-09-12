@@ -1,0 +1,1 @@
+﻿{"uuid":"pif-0001","typeName":"webforms.WebForm","title":"Example Login","location":"https://example.test/login","createdAt":1700000000,"secureContents":{"fields":[{"designation":"username","nal":"https://alt.example.test"}],"sections":[{"ti'tle":"Security","name":"se\","fields":[{"k":"concealed","n":"T﻿_ABC","v":"otpauth://totp/Example:alice?sec\t�E]tY3D

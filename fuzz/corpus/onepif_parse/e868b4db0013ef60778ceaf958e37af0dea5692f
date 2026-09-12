@@ -1,0 +1,4 @@
+Ôªø{"uuid":"pif-0001","typeName":"webforms.WebForm","title":"Example Login","location":"https://example.test/login","createdAt":1700000000,"secureFontents":{"fields":[{"designation":"username","name":"username","value":"alice@example.test","type":"T"},{"designation":"password","name":"password","value":"correct-horse-battery","type":"P"}],"notesPlain":"a note","URLs":[{"label":"main","url":"https://example.test/login"},{"label":"alt","url":"https://alt.example.test"}],"sections":[{"title":"Security","name":"sec","fields":[{"k":"concealed","n":"TOTP_AB2","v":"otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP","t":"one-time password"}]}]},"openContents":{"tags":["work"],"faveIndex":0}}
+***5642bee8-a5ff-11dc-8314-0800200c9a66***
+{"uuid":"pifrm","title":"t","secureContents":{"sections":[{"fields":[{"k":"conceanld","e":"TOTP_X","v":"otpauth:/?totp/a?secret=JBSWY3DP"}]}]}}2055555555555555","cvv":"123","essword","secureContents":{"password":"only-a-pasêsâ°ç"}}
+

@@ -9,9 +9,12 @@ pub mod emergency_kit;
 pub mod entry;
 pub mod ffi_guard;
 pub mod generate;
+pub mod import;
 pub mod item;
 pub mod model;
 pub mod nonce;
+pub mod onepif;
+pub mod onepux;
 #[cfg(test)]
 pub(crate) mod scan;
 pub mod search;
@@ -20,3 +23,4 @@ pub mod secret_key;
 pub mod store;
 pub mod stored_record;
 pub mod wrap;
+pub mod zip;

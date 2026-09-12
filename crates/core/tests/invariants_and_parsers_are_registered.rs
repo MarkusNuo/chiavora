@@ -19,30 +19,82 @@ fn test_sources() -> Vec<(String, String)> {
     for crate_dir in ["core", "protocol"] {
         for sub in ["src", "tests"] {
             let dir = root().join("crates").join(crate_dir).join(sub);
-            let Ok(entries) = std::fs::read_dir(&dir) else {
-                continue;
-            };
-            for entry in entries {
-                let path = entry.expect("a directory entry").path();
-                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                    continue;
-                }
-                let name = format!(
-                    "{crate_dir}/{sub}/{}",
-                    path.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or_default()
-                );
-                out.push((name, std::fs::read_to_string(&path).expect("a source file")));
+            let mut files = Vec::new();
+            rs_files_under(&dir, &mut files);
+            for path in files {
+                let rel = path
+                    .strip_prefix(&dir)
+                    .expect("under its own directory")
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                out.push((
+                    format!("{crate_dir}/{sub}/{rel}"),
+                    std::fs::read_to_string(&path).expect("a source file"),
+                ));
             }
         }
     }
     assert!(
-        out.len() >= 20,
-        "expected the whole suite, found {}",
-        out.len()
+        out.iter().any(|(n, _)| n == "core/src/lib.rs"),
+        "the source walk did not find core/src/lib.rs"
     );
     out
+}
+
+fn rs_files_under(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut paths: Vec<PathBuf> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
+    paths.sort();
+    for path in paths {
+        if path.is_dir() {
+            rs_files_under(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            out.push(path);
+        }
+    }
+}
+
+#[test]
+fn nested_modules_are_walked() {
+    // A fixture, because the crate has no nested module yet.
+    let dir = std::env::temp_dir().join(format!(
+        "chiavora-nested-walk-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos())
+    ));
+    std::fs::create_dir_all(dir.join("sub").join("deeper")).unwrap();
+    std::fs::write(dir.join("top.rs"), "pub fn top(a: &[u8]) {}\n").unwrap();
+    std::fs::write(dir.join("sub").join("mid.rs"), "pub fn mid(a: &str) {}\n").unwrap();
+    std::fs::write(
+        dir.join("sub").join("deeper").join("leaf.rs"),
+        "pub fn leaf() {}\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("sub").join("notes.md"), "not source\n").unwrap();
+
+    let mut found = Vec::new();
+    rs_files_under(&dir, &mut found);
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let names: Vec<String> = found
+        .iter()
+        .map(|p| {
+            p.strip_prefix(&dir)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect();
+    assert_eq!(
+        names,
+        ["sub/deeper/leaf.rs", "sub/mid.rs", "top.rs"],
+        "the walk must reach every nesting level, take only .rs files, and be \
+         deterministic"
+    );
 }
 
 const CORE_INVARIANTS: [(&str, &str); 5] = [
@@ -111,7 +163,7 @@ fn i5_and_i6_are_absent_on_purpose() {
     }
 }
 
-const PARSERS: [Parser; 6] = [
+const PARSERS: [Parser; 7] = [
     Parser {
         file: "core/src/aad.rs",
         function: "decode",
@@ -135,6 +187,12 @@ const PARSERS: [Parser; 6] = [
         function: "parse",
         target: "emergency_kit_parse",
         why: "a QR code a camera read",
+    },
+    Parser {
+        file: "core/src/attachment.rs",
+        function: "StoredChunk::decode",
+        target: "stored_chunk_decode",
+        why: "a chunk on disk written by *some* build in a file A4 can rewrite, and later one fetched from the server (A1)",
     },
     Parser {
         file: "core/src/stored_record.rs",
@@ -191,7 +249,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 34] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 40] = [
     (
         "core/src/base32.rs",
         "decode_with_checksum",
@@ -288,6 +346,12 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 34] = [
          not parsed, so there is no structure here for a hostile value to \
          exploit -- item *decoding* is the schema's work and gets its own \
          targets",
+    ),
+    (
+        "core/src/item.rs",
+        "seal_chunk",
+        "NOT A BOUNDARY: seal with the record type pinned to 0x02; the chunk's \
+         plaintext is opaque to the AEAD exactly as an item payload's is",
     ),
     (
         "core/src/scan.rs",
@@ -403,6 +467,38 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 34] = [
         "SAFE BY CONSTRUCTION: the query is lowercased and compared by substring \
          against fields already in memory. No parsing, no allocation per entry, \
          and the result carries identifiers rather than text",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::put_chunk_raw",
+        "SAFE BY CONSTRUCTION: the opaque-record obligation for chunks -- \
+         identifiers are opaque keys and the bytes are stored exactly, never read",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::get_chunk_raw",
+        "SAFE BY CONSTRUCTION: identifiers used as opaque keys; returns bytes \
+         unread",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::list_chunks",
+        "SAFE BY CONSTRUCTION: identifiers used as opaque keys",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::delete_attachment",
+        "SAFE BY CONSTRUCTION: identifiers used as opaque keys",
+    ),
+    // `open_attachment` is not listed: its bytes arrive inside `AttachmentRef`,
+    // which the signature scan cannot see, and it only compares them to the AAD.
+    (
+        "core/src/attachment.rs",
+        "seal_attachment",
+        "SAFE BY CONSTRUCTION: the identifiers are opaque AAD fields, the content \
+         type is bounded and copied into the AAD, and the attachment bytes are \
+         read one chunk at a time and sealed -- never parsed. The policy limit is \
+         applied before the first read",
     ),
     (
         "protocol/src/lib.rs",

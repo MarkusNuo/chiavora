@@ -1,6 +1,7 @@
 //! Chiavora core: crypto, key hierarchy, item model, manifest and sync engine.
 
 pub mod aad;
+pub mod attachment;
 pub mod base32;
 pub(crate) mod csprng;
 pub mod derive;

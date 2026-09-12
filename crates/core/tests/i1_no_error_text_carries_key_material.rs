@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use chiavora_core::aad::AadError;
+use chiavora_core::attachment::AttachmentError;
 use chiavora_core::derive::DeriveError;
 use chiavora_core::emergency_kit::{Field, KitError};
 use chiavora_core::entry::EntryError;
@@ -225,6 +226,33 @@ fn no_stored_record_error_variant_carries_key_material() {
 }
 
 #[test]
+fn no_attachment_error_variant_carries_key_material() {
+    check!(
+        AttachmentError::TooLarge { max: 100 << 20 },
+        AttachmentError::Empty,
+        AttachmentError::ContentTypeTooLong { max: 256 },
+        AttachmentError::LengthMismatch {
+            declared: 3,
+            read: 2
+        },
+        AttachmentError::ChunkLength { at: 1 },
+        AttachmentError::ChunkMissing { at: 2 },
+        AttachmentError::ChunkBinding { at: 0 },
+        AttachmentError::ExtraChunks,
+        AttachmentError::Io(std::io::Error::other("a canary-free os message")),
+        AttachmentError::Store(StoreError::MetadataTampered),
+        AttachmentError::Payload(ItemError::Aead),
+        AttachmentError::Aad(AadError::BadMagic),
+        AttachmentError::Wire(WireError::Truncated),
+        AttachmentError::Nonce(NonceError::Csprng),
+        AttachmentError::NotAnAttachmentChunk,
+        AttachmentError::MissingField { tag: 1 },
+        AttachmentError::RepeatedField { at: 1 },
+        AttachmentError::Malformed { at: 2 },
+    );
+}
+
+#[test]
 fn no_base32_error_variant_carries_key_material() {
     check!(
         chiavora_core::base32::Base32Error::WrongLength { expected: 28 },
@@ -238,8 +266,9 @@ fn no_base32_error_variant_carries_key_material() {
 
 #[test]
 fn the_variant_lists_match_the_source() {
-    const EXPECTED: [(&str, &str, usize); 15] = [
+    const EXPECTED: [(&str, &str, usize); 16] = [
         ("core/src/aad.rs", "AadError", 8),
+        ("core/src/attachment.rs", "AttachmentError", 18),
         ("core/src/base32.rs", "Base32Error", 4),
         ("core/src/derive.rs", "DeriveError", 3),
         ("core/src/emergency_kit.rs", "KitError", 6),

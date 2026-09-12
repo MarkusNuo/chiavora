@@ -58,3 +58,10 @@ path = "fuzz_targets/stored_record_decode.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "stored_chunk_decode"
+path = "fuzz_targets/stored_chunk_decode.rs"
+test = false
+doc = false
+bench = false

@@ -270,6 +270,14 @@ CREATE TABLE IF NOT EXISTS records (
     bytes    BLOB    NOT NULL,
     PRIMARY KEY (vault_id, item_id)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS chunks (
+    vault_id      BLOB    NOT NULL,
+    item_id       BLOB    NOT NULL,
+    attachment_id BLOB    NOT NULL,
+    chunk_index   INTEGER NOT NULL,
+    bytes         BLOB    NOT NULL,
+    PRIMARY KEY (vault_id, item_id, attachment_id, chunk_index)
+) WITHOUT ROWID;
 ";
 
 impl Store {
@@ -448,6 +456,73 @@ impl Store {
         self.anchor
             .advance(self.meta.generation)
             .map_err(|_| StoreError::AnchorFailed)
+    }
+
+    pub fn put_chunk_raw(
+        &mut self,
+        vault_id: &[u8],
+        item_id: &[u8],
+        attachment_id: &[u8],
+        chunk_index: u32,
+        bytes: &[u8],
+    ) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT INTO chunks (vault_id, item_id, attachment_id, chunk_index, bytes)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (vault_id, item_id, attachment_id, chunk_index) DO UPDATE SET bytes = excluded.bytes",
+            params![vault_id, item_id, attachment_id, i64::from(chunk_index), bytes],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_chunk_raw(
+        &self,
+        vault_id: &[u8],
+        item_id: &[u8],
+        attachment_id: &[u8],
+        chunk_index: u32,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        self.conn
+            .query_row(
+                "SELECT bytes FROM chunks
+                 WHERE vault_id = ?1 AND item_id = ?2 AND attachment_id = ?3 AND chunk_index = ?4",
+                params![vault_id, item_id, attachment_id, i64::from(chunk_index)],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::from)
+    }
+
+    pub fn list_chunks(
+        &self,
+        vault_id: &[u8],
+        item_id: &[u8],
+        attachment_id: &[u8],
+    ) -> Result<Vec<u32>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT chunk_index FROM chunks
+             WHERE vault_id = ?1 AND item_id = ?2 AND attachment_id = ?3 ORDER BY chunk_index",
+        )?;
+        // A row outside `u32` was not written here; rusqlite reports it as a database error.
+        let rows = stmt.query_map(params![vault_id, item_id, attachment_id], |row| {
+            row.get::<_, u32>(0)
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
+    }
+
+    pub fn delete_attachment(
+        &mut self,
+        vault_id: &[u8],
+        item_id: &[u8],
+        attachment_id: &[u8],
+    ) -> Result<usize, StoreError> {
+        self.conn
+            .execute(
+                "DELETE FROM chunks WHERE vault_id = ?1 AND item_id = ?2 AND attachment_id = ?3",
+                params![vault_id, item_id, attachment_id],
+            )
+            .map_err(StoreError::from)
     }
 }
 

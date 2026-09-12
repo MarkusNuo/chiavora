@@ -6,7 +6,7 @@
 )]
 
 use chiavora_core::aad::AadFields;
-use chiavora_core::item::{open, seal, ItemError, SealedPayload};
+use chiavora_core::item::{open, open_chunk, seal, seal_chunk, ItemError, SealedPayload};
 use chiavora_core::nonce::FreshNonce;
 use chiavora_core::secret::{kind::ItemKey, Secret};
 
@@ -166,13 +166,56 @@ fn only_the_item_payload_record_type_is_accepted() {
             wrap_purpose: 0x01,
         },
     ];
-    for f in wrong {
+    for f in wrong.iter().chain(std::iter::once(&chunk_fields())) {
         let expected = ItemError::WrongRecordType(f.record_type());
         assert_eq!(
-            err_of(seal(&key, FreshNonce::generate().unwrap(), &f, b"payload")),
+            err_of(seal(&key, FreshNonce::generate().unwrap(), f, b"payload")),
             Some(expected)
         );
     }
+}
+
+fn chunk_fields() -> AadFields {
+    AadFields::AttachmentChunk {
+        vault_id: b"vault-1".to_vec(),
+        item_id: b"item-1".to_vec(),
+        version: 1,
+        attachment_id: b"att-1".to_vec(),
+        chunk_index: 0,
+        chunk_count: 1,
+        content_type: b"text/plain".to_vec(),
+    }
+}
+
+#[test]
+fn seal_chunk_accepts_only_the_attachment_chunk_record_type() {
+    let key = item_key(0xAB);
+    let item = fields(b"item-1", 1);
+    assert_eq!(
+        err_of(seal_chunk(
+            &key,
+            FreshNonce::generate().unwrap(),
+            &item,
+            b"chunk"
+        )),
+        Some(ItemError::WrongRecordType(0x01))
+    );
+    let sealed = seal_chunk(
+        &key,
+        FreshNonce::generate().unwrap(),
+        &chunk_fields(),
+        b"chunk",
+    )
+    .expect("a chunk seals under its own record type");
+    assert_eq!(
+        err_of(open(&key, &sealed, &chunk_fields())),
+        Some(ItemError::WrongRecordType(0x02)),
+        "the item opener refuses a chunk before touching the AEAD"
+    );
+    assert_eq!(
+        open_chunk(&key, &sealed, &chunk_fields()).expect("opens"),
+        b"chunk".to_vec()
+    );
 }
 
 #[test]

@@ -50,7 +50,7 @@ impl core::fmt::Display for ItemError {
             Self::Aad(e) => write!(f, "the item AAD could not be encoded: {e}"),
             Self::WrongRecordType(t) => write!(
                 f,
-                "an item payload must be bound as record type 0x01, got {t:#04x}"
+                "the AAD record type {t:#04x} is not the one this seal or open binds"
             ),
         }
     }
@@ -61,21 +61,19 @@ impl core::error::Error for ItemError {}
 fn prepare(
     item_key: &Secret<ItemKey>,
     fields: &AadFields,
+    expected: u8,
 ) -> Result<(XChaCha20Poly1305, Vec<u8>), ItemError> {
     let bytes = item_key.expose();
     if bytes.len() != ITEM_KEY_LEN {
         return Err(ItemError::BadItemKeyLength);
     }
     let record_type = fields.record_type();
-    if record_type != aad::RECORD_ITEM_PAYLOAD {
+    if record_type != expected {
         return Err(ItemError::WrongRecordType(record_type));
     }
     let encoded = aad::encode(fields).map_err(ItemError::Aad)?;
     Ok((XChaCha20Poly1305::new(Key::from_slice(bytes)), encoded))
 }
-
-// By value so the nonce is consumed; a reference would let a caller reuse it.
-#[allow(clippy::needless_pass_by_value)]
 
 pub fn seal(
     item_key: &Secret<ItemKey>,
@@ -83,7 +81,35 @@ pub fn seal(
     fields: &AadFields,
     plaintext: &[u8],
 ) -> Result<SealedPayload, ItemError> {
-    let (aead, encoded_aad) = prepare(item_key, fields)?;
+    seal_as(item_key, nonce, fields, plaintext, aad::RECORD_ITEM_PAYLOAD)
+}
+
+/// The AAD names the chunk's place, so a chunk cannot be reordered, moved or truncated.
+pub fn seal_chunk(
+    item_key: &Secret<ItemKey>,
+    nonce: FreshNonce,
+    fields: &AadFields,
+    plaintext: &[u8],
+) -> Result<SealedPayload, ItemError> {
+    seal_as(
+        item_key,
+        nonce,
+        fields,
+        plaintext,
+        aad::RECORD_ATTACHMENT_CHUNK,
+    )
+}
+
+// By value so the nonce is consumed; a reference would let a caller reuse it.
+#[allow(clippy::needless_pass_by_value)]
+fn seal_as(
+    item_key: &Secret<ItemKey>,
+    nonce: FreshNonce,
+    fields: &AadFields,
+    plaintext: &[u8],
+    expected: u8,
+) -> Result<SealedPayload, ItemError> {
+    let (aead, encoded_aad) = prepare(item_key, fields, expected)?;
     let nonce_bytes = *nonce.as_nonce().as_bytes();
     let ciphertext = aead
         .encrypt(
@@ -105,7 +131,24 @@ pub fn open(
     sealed: &SealedPayload,
     fields: &AadFields,
 ) -> Result<Vec<u8>, ItemError> {
-    let (aead, encoded_aad) = prepare(item_key, fields)?;
+    open_as(item_key, sealed, fields, aad::RECORD_ITEM_PAYLOAD)
+}
+
+pub fn open_chunk(
+    item_key: &Secret<ItemKey>,
+    sealed: &SealedPayload,
+    fields: &AadFields,
+) -> Result<Vec<u8>, ItemError> {
+    open_as(item_key, sealed, fields, aad::RECORD_ATTACHMENT_CHUNK)
+}
+
+fn open_as(
+    item_key: &Secret<ItemKey>,
+    sealed: &SealedPayload,
+    fields: &AadFields,
+    expected: u8,
+) -> Result<Vec<u8>, ItemError> {
+    let (aead, encoded_aad) = prepare(item_key, fields, expected)?;
     let nonce = StoredNonce::from_stored_bytes(*sealed.nonce());
     aead.decrypt(
         XNonce::from_slice(nonce.as_nonce().as_bytes()),

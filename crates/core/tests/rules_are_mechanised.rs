@@ -18,25 +18,37 @@ fn read(rel: &str) -> String {
 
 fn core_modules() -> Vec<(String, String)> {
     let src = root().join("crates").join("core").join("src");
+    let mut files = Vec::new();
+    rs_files_under(&src, &mut files);
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(&src).expect("crates/core/src is readable") {
-        let path = entry.expect("a directory entry").path();
-        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-            continue;
-        }
+    for path in files {
         let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or_default()
-            .to_owned();
+            .strip_prefix(&src)
+            .expect("under src")
+            .to_string_lossy()
+            .replace('\\', "/");
         out.push((name, std::fs::read_to_string(&path).expect("a module")));
     }
     assert!(
-        out.len() >= 10,
-        "expected to read every module in crates/core/src, found {}",
-        out.len()
+        out.iter().any(|(n, _)| n == "lib.rs"),
+        "the module walk did not find lib.rs"
     );
     out
+}
+
+fn rs_files_under(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut paths: Vec<PathBuf> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
+    paths.sort();
+    for path in paths {
+        if path.is_dir() {
+            rs_files_under(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            out.push(path);
+        }
+    }
 }
 
 fn production(source: &str) -> String {

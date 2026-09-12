@@ -1,0 +1,25 @@
+url,username,password,totp,extra,name,grouping,fav,mï»¿url,username,password
+httpe notes",Example Card,,0Ô
+http://sn,,,,"NoteType:Server
+Hostname:db.example.test
+Username:root
+Password:server-paditee
+notecolumn 1+e,gpouping,fav
+http:e:Visa
+Number:411111ecember,2028""
+Notes:my card
+more notes",Example Card,,0Ô
+http://sn,,,,"NoteType:Server
+Hostame:dbte:""December,2028""
+Notes:my card
+more notes",Example Card,,0Ô
+http://sn,,,,"NoteType:Server
+Hostame:db.example.test
+Username:root
+Password:server-pass
+Notes:"",DB Server,,0,
+http://sn,,,,"NoteType:Membership
+Organization:Gym
+Membership Number:M-1",Gym,,0,
+https://short.test,u,p
+,,,,,,,,

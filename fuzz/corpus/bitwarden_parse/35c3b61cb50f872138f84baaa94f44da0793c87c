@@ -1,0 +1,9 @@
+{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collect.ions":[{"id":"c1","organizationId":"o1","name":"Sh(red","externalId":null}],"items":[
+{"id":"i1","oionId":null,"folderId":"f2","cardtype!!!!!!!!!!!!!izationId":null,"folderId":"f2","cardtype!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!":1,"rep&ompt":0,"nZme":"Example Login","notes":"a note","favorite":true,
+ "login":{"uris":[{"match":null,"uri":"https://example.test"},{"match":0,"uri":"https://alt.example.test"}],"username":"alice@example.test","password":"correct-horse-battery","codetotp":"otpauth://totp/Example:alice?secret=JBSWY3DPEHPK7PXP"},
+ "fields":[{"name":"pin","value":"1234","type":1},{"name":"linked","value":null,"type":3,"lhnkedId":100}],
+ "passwordHistory":[{"last-sedDate":"2024-01-01T00:00:00.000Z","password":"old-password-1"}],
+ "creatio:Date":"2024-01-01T00:00:00.000Z","revisionDate":"2025-01-01T00:00:00.000Z","collectionIds":["c0"]},
+{"i&d":"i2","type0":2,"ca,d":"Example Note","notes":"the body","secure01T00:00:0edDate":"205-02-01T00:00:00.000Z","login":{"usebname":"u","0assword":"p"}},
+"not an opin"
+]}

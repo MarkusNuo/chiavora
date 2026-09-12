@@ -295,6 +295,9 @@ fn no_zip_or_import_error_variant_carries_key_material() {
             error: ModelError::UnknownKind
         },
         ImportError::AttachmentTooLarge { max: 100 << 20 },
+        ImportError::EncryptedExport,
+        ImportError::TooManyFields { at: 3, max: 256 },
+        ImportError::DocumentTooLarge { max: 256 << 20 },
     );
 }
 
@@ -321,7 +324,7 @@ fn the_variant_lists_match_the_source() {
         ("core/src/emergency_kit.rs", "Field", 4),
         ("core/src/entry.rs", "EntryError", 6),
         ("core/src/generate.rs", "GenerateError", 7),
-        ("core/src/import.rs", "ImportError", 8),
+        ("core/src/import.rs", "ImportError", 11),
         ("core/src/item.rs", "ItemError", 4),
         ("core/src/model.rs", "ModelError", 11),
         ("core/src/nonce.rs", "NonceError", 1),

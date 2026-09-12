@@ -3,7 +3,10 @@
 pub mod aad;
 pub mod attachment;
 pub mod base32;
+pub mod bitwarden;
+pub mod chrome;
 pub(crate) mod csprng;
+pub mod csv;
 pub mod derive;
 pub mod emergency_kit;
 pub mod entry;
@@ -11,6 +14,7 @@ pub mod ffi_guard;
 pub mod generate;
 pub mod import;
 pub mod item;
+pub mod lastpass;
 pub mod model;
 pub mod nonce;
 pub mod onepif;

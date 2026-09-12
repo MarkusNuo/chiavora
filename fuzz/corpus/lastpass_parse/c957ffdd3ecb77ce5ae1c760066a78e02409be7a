@@ -1,0 +1,8 @@
+url,username,password,totp,extra,name,grouping,fav,mfa_backup
+https://example.test/login,alice@exote,Free Note,Notes,0,
+http://sn,,,,"NoteType:Crddit Card
+Namd,,0Ô
+htn:Gym
+Membership Number:M-1",Gym,,0,
+https://short.test,u,p
+,,,,,,,,

@@ -15,12 +15,18 @@ pub const FIELD_NOTES: &str = "notes";
 /// The field a TOTP secret lands in; it stays on the login (ADR-0003).
 pub const FIELD_TOTP: &str = "totp";
 pub const MAX_RECORD_BYTES: usize = 16 << 20;
+pub const MAX_FIELDS_PER_RECORD: usize = 256;
+/// The bound on a whole JSON document (Bitwarden), the same as a 1PUX member.
+pub const MAX_DOCUMENT_BYTES: usize = 256 << 20;
 const UNNAMED: &str = "field";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceFormat {
     OnePux,
     OnePif,
+    Bitwarden,
+    LastPass,
+    Chrome,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -318,6 +324,15 @@ pub enum ImportError {
     AttachmentTooLarge {
         max: u64,
     },
+    EncryptedExport,
+    TooManyFields {
+        /// 0-based row index.
+        at: usize,
+        max: usize,
+    },
+    DocumentTooLarge {
+        max: usize,
+    },
 }
 
 impl fmt::Display for ImportError {
@@ -339,6 +354,11 @@ impl fmt::Display for ImportError {
             Self::AttachmentTooLarge { max } => {
                 write!(f, "attachment declares more than {max} bytes")
             }
+            Self::EncryptedExport => {
+                f.write_str("the export is encrypted; nothing in it can be read")
+            }
+            Self::TooManyFields { at, max } => write!(f, "row {at} has more than {max} fields"),
+            Self::DocumentTooLarge { max } => write!(f, "the document is longer than {max} bytes"),
         }
     }
 }

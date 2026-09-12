@@ -1,0 +1,6 @@
+{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"o1","name":"Shared","externalId":null}],"items":[
+{"id":"i2","type":3,"name":"Example Note","notes":"the body","secureNote":{"type":0}},
+{"id":"i3","type":3,"name":"Example Card","card":{"cardhoassword":"kept-anyway"}},
+{"id":"i7","type":1,"name":"Old","deletedDate":"2025-02-01T00:00:00.000Z","login":{"username":"u","password":"p"}},
+"not an object"
+]}

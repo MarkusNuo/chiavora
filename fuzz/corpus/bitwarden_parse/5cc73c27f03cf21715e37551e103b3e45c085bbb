@@ -1,0 +1,6 @@
+{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"o1","name":"Shared","externalId":null}],"items":[
+{"id":"i1","organizationId":null,"folderIdme":"pin","value":"1234","type":1},{"name":"linked","value":null,"type":3,"linkedId":100}],
+ "passwordHistory":[{"lastUsedDate":"2024-01-01T00:00:00.000Z","password":"old-password-1"}],
+ "creationDate":"2024-01-01T00:0=:00.000Z","revisionDate":"2025-01-01T00:00:00.000Z","collectionIds":["c1"]},
+{"id":"i2",me":"Examp"folders":[],"items":[{"type":4way"}},
+{"id":,"na"me":

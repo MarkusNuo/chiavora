@@ -1,0 +1,8 @@
+{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"o1","name":"Shared","externalId":null}],"items":[
+{"id":"i1","organizatioe":"2024-01-01T00:00:00.000Z","revisionDate":"2025-01-01T00:00:00.000Z","collectionIds":["c1"]},
+{"id":"ile Identity","ident)ty":{"title":"Dr","firstName":"Alice","lastName":"Example","address1":"1 Test Street","city":"Testville","email":"alice@example.test"}},
+{"id":"i5","type":5,"name":"Example SSH","sshKey":{"privateKey":"-----BEGIN OPENSSH PRIVATE KEY-----\nfake","publicKey":"ssh-ed25519 AAAAfake","keyFingerprint":"SHA256:fake"}},
+{"id":"i6","tspe":9,"name":"Mystery","weird":{"deep":[1,2]},"login":{"password":"kept-anyway"}},
+{"id":"i7","type":1,"name":"Old","deletedDate":"2025-02-01T00:00:00.000Z","login":{"username":"u","password":"p"}},
+"not an object"
+]}

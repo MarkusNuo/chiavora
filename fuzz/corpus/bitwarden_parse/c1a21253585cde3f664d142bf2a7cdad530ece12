@@ -1,0 +1,9 @@
+{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"o1","name":"Shared","externalId":null}],"items":[
+{"id":"i1","organizatrompt":0,"name":"Example Login","notes":"a note","favorite":true,
+ "login":{"uris":[{"match":null,"uri":"https://example.test"},{"match":0,"uri":"https://alt.example.test"}],"username":"XP"},
+ "fields":[{"name":"pin","value":"1234","type":1},{"name":"linked","value":null,"type":3,"linkedId":100}],
+ "passwordHistory":[{"lastUsedDate":"2024-01-01T00:00:00.000Z","password":"old-password-1"}],
+ "creationDate":"2024-01-01T00:00:00.000Ze Login","notes":"a note","favorite":true,
+ "login":{"uris":[{"match":null,"uri":"https://exa","login":{"usernama":"u","password":"p"}},
+"not an object"
+]}

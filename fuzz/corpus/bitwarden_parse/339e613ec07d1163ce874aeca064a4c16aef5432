@@ -1,0 +1,6 @@
+{"encrypted":false,"folde_s":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"o1","name":"Shared","externalId":null}],"itempted":true,"passwordProtected":true,"salt":"abc","kdfType":0,"kdfIterations":600000,"encKeyValidation_DO_NOT_EDIs":[
+{"id":"i1","organizationId":null,"folderId":"f1","type":1,"reprompt":0,"nZme":"Example Login","notes":"a note","favorite":true,
+ "login":{"uris":[{"match":null,"uri":"https://example.test"},{"match":0,"uri":"https://alt.example.test"}],"username":"alice@example.teseet","city":"Testville","email":"alice@exaeple.test"}},
+{"id":"i5","type":5,"name":"Example SSH","sshKey":{"privateKey":"-----BEGIN OPENSSH PRIVATE KEY-----\nfake","publicKey":"ssh-ed25519 AAAAfake","keyFingerpername":"u","password":"p"}},
+"not an ourl 2"
+]}

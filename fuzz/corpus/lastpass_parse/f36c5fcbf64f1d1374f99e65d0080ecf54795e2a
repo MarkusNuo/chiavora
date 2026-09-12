@@ -1,0 +1,6 @@
+url,username,password,totp,extra,name,grouping,fav,mfa_backup
+https://example.test/login,alice@example.test,correct-horse-battery,JBSWY6DPEHurl,useÿrname,pWork\Sub,1,backup-1235
+http://sn,,,,just a note,Free Noame,password,extrauping,favte,Notes,0,
+http://sn,,,,"NoteType:Crþedit Card
+Namth
+tp://sn,,,nÿeÿÿu

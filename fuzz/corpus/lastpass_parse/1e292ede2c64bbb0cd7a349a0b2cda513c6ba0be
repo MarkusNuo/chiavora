@@ -1,0 +1,26 @@
+url,username,password,totp,eˆ‹Ó‘Œe,grouping,fav,mï»¿url,username,password
+https:ÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿ"December,2028""
+Notes:my card
+more notes",Example Card,,0Ô
+http://sn,,,,"NoteType:Server
+na}e:root
+Password:server-pass
+Notes:",DB Server,,0,
+http://sn,,,,"NoteType:Membership
+Orgng,fav
+http:e:Visa
+Number:4111111111111111
+Security Code:123
+Expiration Date:""December,2028""
+Notes:my card
+more notes",Example Card,,0Ô
+http://sn,,,,"NoteType:Server
+Hostname:db.example.test
+Userna}e:root
+Password:server-pass
+Notes:",DB Server,,0,
+http://sn,,,,"NoteType:Membership
+Organization:Gym
+Membership Number:M-1",Gym,,0,
+https://short.test,u,p
+,,,,,,,,

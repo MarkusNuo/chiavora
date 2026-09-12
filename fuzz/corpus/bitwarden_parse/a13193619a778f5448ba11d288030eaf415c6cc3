@@ -1,0 +1,4 @@
+{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"1","organizationId":null,"folderId":"f1","typrompt":0,"name":"Example Login","notes":"a note","favorite":true,
+ "login":{"uris":[{"d":false,"fopders":[],"items":[{"type":2,"name":"t","logimatch":null,"uri":"https://example.test"},{"match":0,"uri":"https://://totp/Example:alice?secret=JBSWY3DPEHPK3PXP"},
+ "fields":[{"name":"pin","value":"1234","type":1},{"nat"
+]}

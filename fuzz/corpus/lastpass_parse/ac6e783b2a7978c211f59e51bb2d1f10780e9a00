@@ -1,0 +1,11 @@
+url,username,password,totp,extra,name,grouping,fav,mfa_backup
+https://example.test/login,alice@example.test,correct-horse-batteryçÿÿÿWY3DPEHPK3PXP,"multi
+liup
+https://example.test/login,e.test,correct-horse-batteryçÿÿÿWY3DPEHPK3PXP,"multi
+line note, with comma and " quote""",Exÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿample Login,Work\Sub,0,bhckup-1234
+http://sn,,,,just a note,Free Note,Notes,0,
+http://sn,,,,"NoteType:s:",DB Server,,0,
+httoexample.test,correct-horse-batteryçÿÿÿWY3DPEHPK3PXP,"multi
+line note, with comma and ""quote""",Example Login,Work\Sub,0,bhckup-
+http://sn,,,,"NoteType:s:",DB Server,,0,
+httomn 13,,,,,,,,

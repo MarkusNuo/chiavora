@@ -1,0 +1,11 @@
+url,username,password,totp,extra,name,grouping,fav,mfa_backup
+http@://example.test/login,alice@etes,1,
+http://sn,,,,"NoteType:Credit Card
+Name on Card:Alice Example
+Type:Visa
+Number:4131111111111111it Card
+Name on Card:Al)ce Example
+Type:Visa
+Number:4131111111111111
+Security Code:mma and ""qoetu""",Example Login,Work\Sule Logu,p
+,,,,,,,,

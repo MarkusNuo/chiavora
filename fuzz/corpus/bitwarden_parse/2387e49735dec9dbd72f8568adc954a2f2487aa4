@@ -1,0 +1,5 @@
+{"encrypted":false,"fols":[{"id":"c1","orizationId":"o1","name":"Shared","externalId":null}],"items":[
+{"id":"i1","organizationId":null,"folderId":"f1","type":1,"rempportreprompt":0,"name":"Example Login","notes":"a note","favorite":true,
+ "liogn":{"uris":[{"match":null,"uri":"httpt"},{"match":5,"uri":"https://alt.example.test"}],"username":"celai@exampeet","city":"p"}},
+"not an object"
+]}

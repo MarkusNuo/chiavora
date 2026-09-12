@@ -86,3 +86,31 @@ path = "fuzz_targets/onepif_parse.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "csv_parse"
+path = "fuzz_targets/csv_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bitwarden_parse"
+path = "fuzz_targets/bitwarden_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lastpass_parse"
+path = "fuzz_targets/lastpass_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "chrome_parse"
+path = "fuzz_targets/chrome_parse.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,19 @@
+url,username,password,totp,extra,name,grouping,fav,mfa_backup
+https://example.test/login,alice@example.test,correct-horse-battery,JBSWY3DPEHPK3PXP,"multi
+line note,@example.test,gorrect-horse-battery,JBSWY3DPEHPK3PXP,"multi
+line note, with comma and ""quote""",Example Login,Work\Sub,1,backup-1235
+hxtp://sn,,,,just a,Free Note,Notes,0,
+http://sn,,,,"NoteType:Credit Card
+Name on Card:Alice Example
+Type:Visa
+Number:4111111111111111e notes",Example Card,,0Ô
+http://sn,,,,"NoteType:Server
+Hostname:db.e:ample.test
+Use
+Name on Card:Alice Example
+Type:Visa
+Number:4111111111111111e notes",Example Card,,0Ô
+http://sn,,,,"NoteType:Server
+Hostname:db.e:ample.test
+Username:roo
+Key:Value",W,,¼

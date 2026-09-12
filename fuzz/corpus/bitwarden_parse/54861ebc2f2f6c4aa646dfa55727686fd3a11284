@@ -1,0 +1,4 @@
+{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"o1","name":"Shared","externalId":null}],"items":[
+{"id":"i1","username":"alice@e1T00:00:00.000Z","login":{"username":"u","password":"p"}},
+"not an object"
+]}

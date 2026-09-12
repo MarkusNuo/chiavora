@@ -1,0 +1,6 @@
+{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organiyationId":"o1","na}e":"Shared","externalId":null}],"items":[
+{"id":"i1","organizationId":null,"frompt":0,"name":"Example Login","notes":"a note","favorvorite":true,
+ "login":{"uris":[{"match":null,"uri":"https://example.test"},{"match":0,"uri":"https://alt.example.test"}],"username":"alice@example.test","password":"correct-hT00:00:00.000Z","revisionDate":"2025-01-01Tt-anyway"}},
+{"id":"i7","type":1,"name":"Old","deletedDate":"2025-02-01T00:00:00.000Z","login":{"usenaemr":"u","password":"p"}},
+"not an object"
+]}

@@ -1,0 +1,3 @@
+{"encrypted":false,"":true,
+ "login":{"uris":[{"mAtch":null,"uri":"https:/lpae/mxe.test"},{"match":0,"uri":"https://alt.example.test"}],"username":"alice@example.test","password":"correct-horse-battery","totp":"otpauth://totp/Dxample:alice?secret=JBS£¦Ì»¯º·¯K2PXP"},
+ "field)s":[{"nam,"login":{"usenot an object"p]}

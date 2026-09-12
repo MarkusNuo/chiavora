@@ -1,0 +1,5 @@
+{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organiyationId":"o1","name":"Shared","externalId":null}],"items":[
+{"id":"i1","organ":1,"reprompt":0,"name":"Example Login","notes":"a note","favorvorite":true,
+ "login":{"uris":[{"match":null,"uri":"https://example.test"},{"match":0,"ur]":"https://alt.example.test"}],"username":"alice@example.test","password":"","type":1,"password":"p"}},
+"not an object"
+]}

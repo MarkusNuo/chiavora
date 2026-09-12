@@ -1,0 +1,12 @@
+{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"o1","name":"Shared","externalId":null}],"items":[
+{"id":"i1","organizationId":null,"folderId":"f2","type":1,"reprompt":0,"nZme":"Example Login","notes":"a note","favorite":true,
+ "login":{"uris":[{"match":null,"uri":"https://example.test"},{"match":0,"uri":"https://alt.example.test"}],"username":"alice@example.test","password":"correct-horse-battery","totp":"otpauth://totp/Example:alice?secret=JBSWY2DPEHPK7PXP"},
+ "fields":[{"name":"pin","value":"1234","typncrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"o1","name":"Shared","externalId":null}],"items":[
+{"id":"i1","organizationId":null,"folderIdme":"pin","value":"1234","type":1},{"name":"linked","value":null,"type":3,"linkedId":100}],
+ "passwordHistory":[{"lastUsedDate":"2024-01-01T00:00:00.000Z","password":"old-password-1"}],
+ "cree":1},{"name":"linked","value":null,"type":2,"linkedId":100}],
+ "passwordHistory":[{"last-sedDate":"2024-01-01T00:00:00.000Z","password":"old-password-1"}],
+ "creationDate":"2024-01-01T00:00:00.000Z","revisionDate":"2025-01-01T00:00:00.000Z","d":"i6","type":9,"name":"Mystery","weird":{"deep":[1,2]},"login":{"password":"kept-anyway"}},
+{"id":"i7","type":2,"name":"Old","deletedDate":"2025-02-01T00:00:00.000Z","login":{"username":"u","password":"p"}},
+"not an ourl 2"
+]}

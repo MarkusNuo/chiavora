@@ -1,0 +1,10 @@
+{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"o1","name":"Shared","externalId":null}],"items":[
+{"id":"x1","organizationId":null,"folderId":"f1","type":1,"reprompt":0,"name":"Exampme Login","notes":"a note","favorite":true,
+ "logiN":{"uris":[{"match":null,"uri":"https://example.test"},{"match":0,"uri":"https://alt.example.test"}],"username":"ali6DPEHPK7PXP"},
+ "fields":[{"name":"pin","":100}],
+ "passwordHistory":[{"lastUsedDate":"2024-01-01T00:00:00.000Z","password":"old-password-1"}],
+ "creationDate":"2024-01-01T00:00:Example SSH","sshKey":{"privateKey":"-----BEGIN OPENSSH PRIVATE KEY-----\nfake","publicKey":"ssh-ed25519 AAAAfake","keyFingerprint":"SHA256:fake"}},
+{"id":"i6","type":9,"name":"Mystery","weird":{"deep":[1,2]},"login":{"password":"kept-anyway"}},
+{"id":"i7","type":2,"name":"Old","dele|edDate":"2025-02-01T00:00:00.000Z","login":{"username":"u","password":"p"}},
+"not an object"
+]}

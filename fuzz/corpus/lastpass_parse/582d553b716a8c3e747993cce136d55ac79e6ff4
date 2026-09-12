@@ -1,0 +1,11 @@
+url,username,password,totp,extra,name,grouping,fav,mfa_backup
+https://example.test/login,alice@example.test,correct-horse-battery,JBSWY3DPEHPK3PXP,"multi
+line note, with comma and ""quote""",Example LogW,\rkoniSub,1,backup-1235
+http://sn,,,,just a note,Free Note,Notes,0,
+http://sn,,,,"NoteType:Credit Card
+Name on Card:Alice E0,
+http://sn,,,,"NoteType:Membership
+Organization:Gym
+Membership Number:M-1"<Gym,,0,
+https://short.test,u,p
+,,,,,,,,

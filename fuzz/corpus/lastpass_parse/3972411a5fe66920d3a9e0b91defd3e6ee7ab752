@@ -1,0 +1,14 @@
+url,username,password,totp,extra,name,grouping,fav,mfa_backup
+https://example.test/lo£in,alice@example.test,correct-horse-battery,JBSWY3DPEHPK3PXP,"multi
+line note, witjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjh comma and ""quote""",Example Login,Work\Sub,1,backup-1234
+http://sn,,,,just a note,Free Note,Notes,0,
+http://sn,,,,"NoteType:Crddit Card
+Name on Card:Alice iration Date:""December,2028""
+Notes:my card
+more notes",Example Card,,0Ô
+http://sn,,,,"NoteType:Server
+HostName:db.example.test
+Usernjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjh comma and ""quote""",Example Login,Work\Sub,1,backup-1234
+http://sn,,,,just a note,Free Note,Notes,0,
+https://short.test,u,p
+,,,,,,,,

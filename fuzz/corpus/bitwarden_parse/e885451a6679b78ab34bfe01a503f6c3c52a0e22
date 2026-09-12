@@ -1,0 +1,5 @@
+{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"o1","name":"Shared","externalId":null}],"items":[
+{"id":"i1","organizationId":null,"notes":"a note","favorite":true,
+ "login":{"uris":[{"match":null,"uri":"https://example.test"},{"match":5,"uri":"https://alt.example.test"}],"username":"celai@exampeet","city":"p"}},
+"not an object"
+]}

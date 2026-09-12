@@ -1,0 +1,5 @@
+{"encrypted":false,"folders":[],"items":[{"type":1,"name":"f","fields":[{"name":"a","value":"1","type":0},{"name":"b","value":null,"tyationId":"o1","name":"Shared","externalId":null}],"items":[
+{"id":"i1","organizationId":null,"folderId":"f1","type":1,"reprompt":0,"name":"Example Login","notes":"a note","favorite":true,
+ "login":{"uris":[{"match":null,"uri":"https://example.test"},{"match":0,"uri":"https://alt.example.test"}],"username":"alice@example.test","passields":[{"name":"a","value":"1","type":0},{"name":"b","value":null,"tyationId":"o1","name":"Shared","exts":[],"items":[{"type":1,"name":"f","fields":[{"name":"a","value":0,"name":"Example Login","notes":"a note","favorite":true,
+ "login":{"uris":[{"mse-t"ttery","totp":"otpau-1"}],
+ "creationDate":"2024-01-01T00:00:0011111111111111","code":"123"}0:00:00.000Z","collecti}

@@ -1,0 +1,21 @@
+url,userne,password,totp,extra,naml,username,password,totp,extra,name,grouping,fav,mfa_backup
+https://example.test/login,alice@example.test,correct-horse-battery,JBSWY3DPEHPK3PXP,"multi
+line note, with comma and ""quote""",Example Login,Work\Sub,1,backup-1234
+http://sn,,,,just a note,Free Note,Notes,0,
+http://sn,,,,"NoteType:Credit Card
+Name on Card:Alice Example
+Type:Visa
+Number:4111111111111111
+Security Code:123
+Expiration Date:""December,2028""
+Notes:my card
+more note"sEa,xmple Card,,0,
+http://sn,,,,"NoteType:Server
+Hostname:db.example.test
+Username:root
+Password:server-pass
+Notes:",DB Server,,0,
+http://sn,,,,"NoteType:Membership
+Organization:Gym
+Membership Numberu,p
+,,,,,,,,

@@ -163,7 +163,7 @@ fn i5_and_i6_are_absent_on_purpose() {
     }
 }
 
-const PARSERS: [Parser; 10] = [
+const PARSERS: [Parser; 14] = [
     Parser {
         file: "core/src/aad.rs",
         function: "decode",
@@ -205,6 +205,30 @@ const PARSERS: [Parser; 10] = [
         function: "parse",
         target: "onepif_parse",
         why: "1Password's older line-oriented export (names both)",
+    },
+    Parser {
+        file: "core/src/csv.rs",
+        function: "parse",
+        target: "csv_parse",
+        why: "the CSV reader under LastPass and Chrome exports: quoting, embedded newlines, ragged rows, a BOM -- all from a file a person downloaded",
+    },
+    Parser {
+        file: "core/src/bitwarden.rs",
+        function: "parse",
+        target: "bitwarden_parse",
+        why: "a Bitwarden JSON export, attacker-supplied by docs/security-design.md's classification; it must survive a malformed corpus",
+    },
+    Parser {
+        file: "core/src/lastpass.rs",
+        function: "parse",
+        target: "lastpass_parse",
+        why: "a LastPass CSV export, with a column set that varies by version",
+    },
+    Parser {
+        file: "core/src/chrome.rs",
+        function: "parse",
+        target: "chrome_parse",
+        why: "Chrome's password CSV",
     },
     Parser {
         file: "core/src/attachment.rs",
@@ -267,7 +291,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 55] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 58] = [
     (
         "core/src/base32.rs",
         "decode_with_checksum",
@@ -523,6 +547,22 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 55] = [
         "Archive::find",
         "SAFE BY CONSTRUCTION: compares a caller's member name against the parsed \
          central directory; parses nothing",
+    ),
+    (
+        "core/src/csv.rs",
+        "column",
+        "SAFE BY CONSTRUCTION: looks a field up by column name; parses nothing",
+    ),
+    (
+        "core/src/csv.rs",
+        "Header::index_of",
+        "SAFE BY CONSTRUCTION: compares a column name against the parsed header",
+    ),
+    (
+        "core/src/csv.rs",
+        "row_has_columns",
+        "SAFE BY CONSTRUCTION: compares the required column names against a parsed \
+         row; parses nothing",
     ),
     (
         "core/src/import.rs",
@@ -1023,7 +1063,7 @@ fn every_function_taking_bytes_or_text_is_classified() {
     );
 }
 
-const INVISIBLE_TO_THE_SIGNATURE_SCAN: [(&str, &str, &str); 4] = [
+const INVISIBLE_TO_THE_SIGNATURE_SCAN: [(&str, &str, &str); 8] = [
     (
         "core/src/nonce.rs",
         "StoredNonce::from_stored_bytes",
@@ -1044,6 +1084,26 @@ const INVISIBLE_TO_THE_SIGNATURE_SCAN: [(&str, &str, &str); 4] = [
         "core/src/onepif.rs",
         "parse",
         "takes a generic `BufRead`, line by line. Registered in PARSERS by name",
+    ),
+    (
+        "core/src/csv.rs",
+        "parse",
+        "takes a generic `BufRead` and a row callback. Registered in PARSERS by name",
+    ),
+    (
+        "core/src/bitwarden.rs",
+        "parse",
+        "takes a generic `BufRead`. Registered in PARSERS by name",
+    ),
+    (
+        "core/src/lastpass.rs",
+        "parse",
+        "takes a generic `BufRead`, rows through csv::parse. Registered in PARSERS by name",
+    ),
+    (
+        "core/src/chrome.rs",
+        "parse",
+        "takes a generic `BufRead`, rows through csv::parse. Registered in PARSERS by name",
     ),
 ];
 

@@ -5,7 +5,7 @@ use hkdf::Hkdf;
 use sha2::Sha256;
 
 use crate::secret::{
-    kind::{AccountPassword, Muk, RootKey, SecretKeyMaterial, SrpX, StoreKey},
+    kind::{AccountPassword, ExportKey, Muk, RootKey, SecretKeyMaterial, SrpX, StoreKey},
     Secret,
 };
 
@@ -14,6 +14,7 @@ const INFO_SKK: &[u8] = b"chiavora-skk|";
 const INFO_MUK: &[u8] = b"chiavora-muk";
 const INFO_SRP: &[u8] = b"chiavora-srp";
 const INFO_STORE: &[u8] = b"chiavora-store";
+const INFO_EXPORT: &[u8] = b"chiavora-export";
 
 const SALT_LEN: usize = 16;
 const KEY_LEN: usize = 32;
@@ -170,6 +171,13 @@ pub fn derive_srp_x(root_key: &Secret<RootKey>) -> Result<Secret<SrpX>, DeriveEr
 pub fn derive_store_key(muk: &Secret<Muk>) -> Result<Secret<StoreKey>, DeriveError> {
     let mut out = vec![0_u8; KEY_LEN];
     hkdf_sha256(muk.expose(), INFO_STORE, &mut out)?;
+    Ok(Secret::from_derived_bytes(out))
+}
+
+/// MACs an export's container, so a tampered or foreign file is refused before import.
+pub fn derive_export_key(muk: &Secret<Muk>) -> Result<Secret<ExportKey>, DeriveError> {
+    let mut out = vec![0_u8; KEY_LEN];
+    hkdf_sha256(muk.expose(), INFO_EXPORT, &mut out)?;
     Ok(Secret::from_derived_bytes(out))
 }
 

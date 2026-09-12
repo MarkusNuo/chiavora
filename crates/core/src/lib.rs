@@ -10,6 +10,7 @@ pub mod csv;
 pub mod derive;
 pub mod emergency_kit;
 pub mod entry;
+pub mod export;
 pub mod ffi_guard;
 pub mod generate;
 pub mod import;

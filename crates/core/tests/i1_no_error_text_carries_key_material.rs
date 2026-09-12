@@ -7,6 +7,7 @@ use chiavora_core::attachment::AttachmentError;
 use chiavora_core::derive::DeriveError;
 use chiavora_core::emergency_kit::{Field, KitError};
 use chiavora_core::entry::EntryError;
+use chiavora_core::export::ExportError;
 use chiavora_core::generate::GenerateError;
 use chiavora_core::import::ImportError;
 use chiavora_core::item::ItemError;
@@ -303,6 +304,35 @@ fn no_zip_or_import_error_variant_carries_key_material() {
 }
 
 #[test]
+fn no_export_error_variant_carries_key_material() {
+    check!(
+        ExportError::Store(StoreError::MetadataTampered),
+        ExportError::Derive(DeriveError::HkdfExpand),
+        ExportError::Wire(WireError::Truncated),
+        ExportError::Io(std::io::ErrorKind::Other),
+        ExportError::MacKeyLength,
+        ExportError::BadMagic,
+        ExportError::UnsupportedVersion { version: 2 },
+        ExportError::Truncated { at: 9 },
+        ExportError::EntryTooLarge {
+            at: 1,
+            max: 16 << 20
+        },
+        ExportError::UnknownEntryKind { at: 2, kind: 7 },
+        ExportError::MissingField { at: 3, tag: 6 },
+        ExportError::Malformed { at: 4 },
+        ExportError::MacMismatch,
+        ExportError::CountMismatch {
+            declared: 1,
+            found: 0
+        },
+        ExportError::TrailingBytes { at: 5 },
+        ExportError::StoreNotFresh,
+        ExportError::Vanished { at: 0 },
+    );
+}
+
+#[test]
 fn no_base32_error_variant_carries_key_material() {
     check!(
         chiavora_core::base32::Base32Error::WrongLength { expected: 28 },
@@ -316,7 +346,8 @@ fn no_base32_error_variant_carries_key_material() {
 
 #[test]
 fn the_variant_lists_match_the_source() {
-    const EXPECTED: [(&str, &str, usize); 18] = [
+    // The lists above are hand-written; a variant added without a row here fails.
+    const EXPECTED: [(&str, &str, usize); 19] = [
         ("core/src/aad.rs", "AadError", 8),
         ("core/src/attachment.rs", "AttachmentError", 18),
         ("core/src/base32.rs", "Base32Error", 4),
@@ -324,6 +355,7 @@ fn the_variant_lists_match_the_source() {
         ("core/src/emergency_kit.rs", "KitError", 6),
         ("core/src/emergency_kit.rs", "Field", 4),
         ("core/src/entry.rs", "EntryError", 6),
+        ("core/src/export.rs", "ExportError", 17),
         ("core/src/generate.rs", "GenerateError", 8),
         ("core/src/import.rs", "ImportError", 11),
         ("core/src/item.rs", "ItemError", 4),

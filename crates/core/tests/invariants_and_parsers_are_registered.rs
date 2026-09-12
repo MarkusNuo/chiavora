@@ -163,7 +163,7 @@ fn i5_and_i6_are_absent_on_purpose() {
     }
 }
 
-const PARSERS: [Parser; 14] = [
+const PARSERS: [Parser; 15] = [
     Parser {
         file: "core/src/aad.rs",
         function: "decode",
@@ -231,6 +231,12 @@ const PARSERS: [Parser; 14] = [
         why: "Chrome's password CSV",
     },
     Parser {
+        file: "core/src/export.rs",
+        function: "verify",
+        target: "export_verify",
+        why: "a native export file is read back from wherever the user kept it -- a file A4 can rewrite -- and its framing is parsed before its MAC is checked, so the framing is a parser of attacker-supplied bytes",
+    },
+    Parser {
         file: "core/src/attachment.rs",
         function: "StoredChunk::decode",
         target: "stored_chunk_decode",
@@ -291,7 +297,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 58] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 60] = [
     (
         "core/src/base32.rs",
         "decode_with_checksum",
@@ -526,6 +532,17 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 58] = [
         "core/src/store.rs",
         "Store::list_chunks",
         "SAFE BY CONSTRUCTION: identifiers used as opaque keys",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::list_attachments",
+        "SAFE BY CONSTRUCTION: identifiers used as opaque keys",
+    ),
+    (
+        "core/src/export.rs",
+        "write",
+        "SAFE BY CONSTRUCTION: the vault id is an opaque key into the store; the \
+         bytes it writes are read from the store and MACed, never parsed",
     ),
     (
         "core/src/store.rs",
@@ -1063,7 +1080,7 @@ fn every_function_taking_bytes_or_text_is_classified() {
     );
 }
 
-const INVISIBLE_TO_THE_SIGNATURE_SCAN: [(&str, &str, &str); 8] = [
+const INVISIBLE_TO_THE_SIGNATURE_SCAN: [(&str, &str, &str); 9] = [
     (
         "core/src/nonce.rs",
         "StoredNonce::from_stored_bytes",
@@ -1104,6 +1121,11 @@ const INVISIBLE_TO_THE_SIGNATURE_SCAN: [(&str, &str, &str); 8] = [
         "core/src/chrome.rs",
         "parse",
         "takes a generic `BufRead`, rows through csv::parse. Registered in PARSERS by name",
+    ),
+    (
+        "core/src/export.rs",
+        "verify",
+        "takes a generic `Read + Seek`. Registered in PARSERS by name",
     ),
 ];
 

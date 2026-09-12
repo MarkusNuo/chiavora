@@ -114,3 +114,10 @@ path = "fuzz_targets/chrome_parse.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "export_verify"
+path = "fuzz_targets/export_verify.rs"
+test = false
+doc = false
+bench = false

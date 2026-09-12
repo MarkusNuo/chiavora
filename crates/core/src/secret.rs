@@ -71,6 +71,8 @@ pub mod kind {
         AutofillKey => "AutofillKey", DerivedKind, false;
         #[doc = "The Store Key, a child of the MUK that MACs the local store's metadata so a rewritten SQLite file is detected (§2.5, I6f)."]
         StoreKey => "StoreKey", DerivedKind, false;
+        #[doc = "The Export Key, the Store Key's sibling, which MACs a native export's container so a tampered or foreign file is refused."]
+        ExportKey => "ExportKey", DerivedKind, false;
     }
 }
 

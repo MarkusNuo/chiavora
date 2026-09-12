@@ -511,6 +511,20 @@ impl Store {
             .map_err(StoreError::from)
     }
 
+    pub fn list_attachments(
+        &self,
+        vault_id: &[u8],
+        item_id: &[u8],
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT attachment_id FROM chunks
+             WHERE vault_id = ?1 AND item_id = ?2 ORDER BY attachment_id",
+        )?;
+        let rows = stmt.query_map(params![vault_id, item_id], |row| row.get::<_, Vec<u8>>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
+    }
+
     pub fn delete_attachment(
         &mut self,
         vault_id: &[u8],

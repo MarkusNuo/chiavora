@@ -151,16 +151,25 @@ fn the_invariant_list_matches_the_phrases_the_design_states_them_in() {
 }
 
 #[test]
-fn i5_and_i6_are_absent_on_purpose() {
+fn invariants_outside_the_core_are_absent_on_purpose() {
     let names: Vec<&str> = CORE_INVARIANTS.iter().map(|(n, _)| *n).collect();
-    for later in ["i5", "i5a", "i5b", "i6"] {
+    for later in ["i5", "i5a", "i5b", "i6", "i8"] {
         assert!(
             !names.contains(&later),
-            "{later} is not the core's. If its code has landed, add it here \
-             *and* give it a named test — a row without a test is worse than \
-             no row."
+            "{later} is not the core's. If its code has landed, add \
+             it here *and* give it a named test — a row without a test is worse \
+             than no row."
         );
     }
+
+    let plan = read("docs/security-design.md");
+    let flat = plan.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains("the Secret Key's keystore entry is not biometric-bound"),
+        "docs/security-design.md no longer states I8. Either it was restated — update this \
+         assertion — or it was dropped, in which case is free to bind \
+         the Secret Key to the biometric and nothing would object."
+    );
 }
 
 const PARSERS: [Parser; 15] = [

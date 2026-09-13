@@ -115,8 +115,9 @@ fn no_entry_error_variant_carries_key_material() {
     check!(
         EntryError::Empty,
         EntryError::TooLong { max: 4096 },
-        EntryError::NormalizationUndecided,
-        EntryError::SurroundingWhitespace,
+        EntryError::NotUtf8,
+        EntryError::ControlCharacter,
+        EntryError::UnassignedCodePoint,
         EntryError::SecretKeyFormat(SecretKeyError::ChecksumMismatch),
         // Raised by input that is key material, so it must not describe the input.
         EntryError::PastedKeyMaterial,
@@ -354,7 +355,7 @@ fn the_variant_lists_match_the_source() {
         ("core/src/derive.rs", "DeriveError", 3),
         ("core/src/emergency_kit.rs", "KitError", 6),
         ("core/src/emergency_kit.rs", "Field", 4),
-        ("core/src/entry.rs", "EntryError", 6),
+        ("core/src/entry.rs", "EntryError", 7),
         ("core/src/export.rs", "ExportError", 17),
         ("core/src/generate.rs", "GenerateError", 8),
         ("core/src/import.rs", "ImportError", 11),

@@ -22,6 +22,9 @@ chiavora-protocol = { workspace = true }
 # `bundled` builds SQLite from source, so the file format does not depend on the platform.
 rusqlite = { version = "0.32", features = ["bundled"] }
 hmac = "0.12"
+# NFC for the account password, which can arrive as NFC from one keyboard and NFD from another.
+unicode-normalization = "0.1"
+unicode-general-category = "1.0"
 # Inflate only; `zip.rs` parses the container so it can refuse a high compression ratio.
 miniz_oxide = "0.9"
 serde = { version = "1.0", features = ["derive"] }

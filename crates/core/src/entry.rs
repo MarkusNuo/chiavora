@@ -2,6 +2,9 @@
 
 use zeroize::Zeroizing;
 
+use unicode_general_category::{get_general_category, GeneralCategory};
+use unicode_normalization::UnicodeNormalization;
+
 use crate::secret::{kind, ExternalKind, Secret, SecretKind};
 
 /// Not a password policy: it stops a hostile host handing Argon2id a gigabyte.
@@ -17,8 +20,10 @@ pub enum EntryError {
     TooLong {
         max: usize,
     },
-    NormalizationUndecided,
-    SurroundingWhitespace,
+    NotUtf8,
+    ControlCharacter,
+    /// A later Unicode version could give it a decomposition and change the password's bytes.
+    UnassignedCodePoint,
     SecretKeyFormat(crate::secret_key::SecretKeyError),
     /// The key has already been on the clipboard by then; the refusal cannot undo that.
     PastedKeyMaterial,
@@ -31,11 +36,11 @@ impl core::fmt::Display for EntryError {
             Self::TooLong { max } => {
                 write!(f, "input exceeds this entry point's bound of {max} bytes")
             }
-            Self::NormalizationUndecided => f.write_str(
-                "non-ASCII input is refused until password normalization is decided",
-            ),
-            Self::SurroundingWhitespace => f.write_str(
-                "leading or trailing whitespace is refused until trimming is decided",
+            Self::NotUtf8 => f.write_str("the password field did not contain text"),
+            Self::ControlCharacter => f.write_str("a password cannot contain a control character"),
+            Self::UnassignedCodePoint => f.write_str(
+                "a password cannot contain a character this build's Unicode version does not \
+                 assign",
             ),
             Self::SecretKeyFormat(inner) => write!(f, "{inner}"),
             Self::PastedKeyMaterial => f.write_str(
@@ -87,15 +92,24 @@ impl EntryPoint for PasswordField {
                 max: MAX_PASSWORD_BYTES,
             });
         }
-        if !raw.is_ascii() {
-            return Err(EntryError::NormalizationUndecided);
+        let text = core::str::from_utf8(&raw).map_err(|_| EntryError::NotUtf8)?;
+        // Checked before normalizing, so the error is about what was typed.
+        for ch in text.chars() {
+            if ch.is_control() {
+                return Err(EntryError::ControlCharacter);
+            }
+            if get_general_category(ch) == GeneralCategory::Unassigned {
+                return Err(EntryError::UnassignedCodePoint);
+            }
         }
-        let surrounded = raw.first().is_some_and(u8::is_ascii_whitespace)
-            || raw.last().is_some_and(u8::is_ascii_whitespace);
-        if surrounded {
-            return Err(EntryError::SurroundingWhitespace);
+        let composed: Zeroizing<String> = Zeroizing::new(text.nfc().collect());
+        // NFC can lengthen the input, so the bound is checked again.
+        if composed.len() > MAX_PASSWORD_BYTES {
+            return Err(EntryError::TooLong {
+                max: MAX_PASSWORD_BYTES,
+            });
         }
-        Ok(raw)
+        Ok(Zeroizing::new(composed.as_bytes().to_vec()))
     }
 }
 
@@ -313,48 +327,80 @@ mod tests {
     }
 
     #[test]
-    fn non_ascii_input_is_refused_rather_than_normalized_by_guesswork() {
+    fn the_two_forms_of_one_typed_password_derive_one_byte_sequence() {
         // U+00F6 composed against o + U+0308 decomposed.
         let composed = "passw\u{f6}rd".as_bytes().to_vec();
         let decomposed = "passwo\u{308}rd".as_bytes().to_vec();
         assert_ne!(composed, decomposed, "the two forms really do differ");
-        for form in [composed, decomposed] {
+
+        let a = accept::<PasswordField>(composed.clone()).expect("composed is accepted");
+        let b = accept::<PasswordField>(decomposed).expect("decomposed is accepted");
+        assert_eq!(
+            a.expose(),
+            b.expose(),
+            "two spellings of one password still derive two keys"
+        );
+        assert_eq!(
+            a.expose(),
+            composed.as_slice(),
+            "NFC is the composed form, so that is what should be hashed"
+        );
+    }
+
+    #[test]
+    fn nfc_and_nothing_else() {
+        for input in [
+            &b" leading space is part of the password"[..],
+            &b"trailing space is part of the password "[..],
+            &b"  both  "[..],
+            "CaseIsPreserved".as_bytes(),
+            // Fullwidth A (U+FF21): NFKC would map it, NFC does not.
+            "\u{ff21}bc".as_bytes(),
+            "a\u{3000}b".as_bytes(),
+        ] {
+            let secret = accept::<PasswordField>(input.to_vec()).expect("accepted");
             assert_eq!(
-                accept::<PasswordField>(form).err(),
-                Some(EntryError::NormalizationUndecided)
+                secret.expose(),
+                input,
+                "input {input:?} was altered by something other than NFC"
             );
         }
     }
 
     #[test]
-    fn everything_accepted_today_is_normalization_invariant() {
-        let accepted = [
-            &b"plain"[..],
-            &b"with-symbols!@#$%^&*()"[..],
-            &b"digits1234567890"[..],
-            &b"inner space is fine"[..],
-        ];
-        for input in accepted {
-            let secret = accept::<PasswordField>(input.to_vec()).expect("accepted");
-            assert!(secret.expose().is_ascii(), "accepted a non-ASCII input");
-        }
-    }
-
-    #[test]
-    fn surrounding_whitespace_is_refused_because_trimming_is_undecided() {
-        for input in [
-            &b" leading"[..],
-            &b"trailing "[..],
-            &b"\ttab"[..],
-            &b"newline\n"[..],
-        ] {
+    fn control_characters_and_unassigned_code_points_are_refused_by_name() {
+        for input in [&b"\ttab"[..], &b"newline\n"[..], &b"nul\0"[..]] {
             assert_eq!(
                 accept::<PasswordField>(input.to_vec()).err(),
-                Some(EntryError::SurroundingWhitespace),
-                "input {input:?} must be refused"
+                Some(EntryError::ControlCharacter),
+                "input {input:?} must be refused as a control character"
             );
         }
-        assert!(accept::<PasswordField>(b"two words".to_vec()).is_ok());
+        // U+0378 is unassigned in every Unicode version to date.
+        assert_eq!(
+            accept::<PasswordField>("bad\u{378}".as_bytes().to_vec()).err(),
+            Some(EntryError::UnassignedCodePoint)
+        );
+        assert_eq!(
+            accept::<PasswordField>(vec![0xFF, 0xFE]).err(),
+            Some(EntryError::NotUtf8)
+        );
+    }
+
+    #[test]
+    fn normalization_is_idempotent_so_a_stored_password_re_derives() {
+        let once = accept::<PasswordField>("passwo\u{308}rd".as_bytes().to_vec())
+            .expect("accepted")
+            .expose()
+            .to_vec();
+        let twice = accept::<PasswordField>(once.clone())
+            .expect("accepted")
+            .expose()
+            .to_vec();
+        assert_eq!(
+            once, twice,
+            "NFC applied twice differs from NFC applied once"
+        );
     }
 
     #[test]
@@ -462,16 +508,27 @@ mod tests {
     fn the_framing_rule_is_not_a_trim() {
         use super::CliStdin;
 
-        for raw in [
-            &b"a-real-password \n"[..],
-            &b" a-real-password\n"[..],
-            &b"a-real-password\n\n"[..],
-            &b"a-real-password\t"[..],
+        for (raw, expected) in [
+            (&b"a-real-password \n"[..], &b"a-real-password "[..]),
+            (&b" a-real-password\n"[..], &b" a-real-password"[..]),
+            (&b"a-real-password\r\n"[..], &b"a-real-password"[..]),
+            (&b"a-real-password"[..], &b"a-real-password"[..]),
         ] {
+            let result = accept::<CliStdin>(raw.to_vec());
+            assert!(result.is_ok(), "{raw:?} was refused: {:?}", result.err());
+            let secret = result.expect("checked on the line above");
+            assert_eq!(
+                secret.expose(),
+                expected,
+                "{raw:?} did not strip exactly one terminator and leave the rest alone"
+            );
+        }
+
+        for raw in [&b"a-real-password\n\n"[..], &b"a-real-password\t"[..]] {
             assert_eq!(
                 accept::<CliStdin>(raw.to_vec()).err(),
-                Some(EntryError::SurroundingWhitespace),
-                "{raw:?} was accepted, so the framing rule has become a trim"
+                Some(EntryError::ControlCharacter),
+                "{raw:?} should have been refused as a control character"
             );
         }
     }

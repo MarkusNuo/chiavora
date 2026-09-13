@@ -313,6 +313,172 @@ fn create_lock_restart_unlock_read_round_trips_a_sealed_item() {
 }
 
 #[test]
+fn a_bulk_write_that_is_not_committed_leaves_the_store_exactly_as_it_was() {
+    let db = TempDb::new("bulk-rollback");
+    {
+        let mut store = Store::open(&db.0, &muk(), Box::new(Unanchored)).unwrap();
+        store
+            .put_raw(b"vault-1", b"before", 1, b"already here")
+            .unwrap();
+    }
+
+    {
+        let mut store = Store::open(&db.0, &muk(), Box::new(Unanchored)).unwrap();
+        let mut bulk = store.begin_bulk().unwrap();
+        for n in 0..500 {
+            bulk.store()
+                .put_raw(b"vault-1", format!("item-{n}").as_bytes(), 1, b"imported")
+                .unwrap();
+        }
+        bulk.store()
+            .put_chunk_raw(b"vault-1", b"item-0", b"att", 0, b"chunk")
+            .unwrap();
+        // No commit: dropped here, so the transaction rolls back.
+    }
+
+    let store = Store::open(&db.0, &muk(), Box::new(Unanchored)).unwrap();
+    let listed = store.list(b"vault-1").unwrap();
+    assert_eq!(
+        listed.len(),
+        1,
+        "the rolled-back import left records behind: {listed:?}"
+    );
+    assert_eq!(
+        store.get_raw(b"vault-1", b"before").unwrap().unwrap().bytes,
+        b"already here".to_vec(),
+        "the record that was there before the import was disturbed"
+    );
+    assert!(
+        store
+            .list_attachments(b"vault-1", b"item-0")
+            .unwrap()
+            .is_empty(),
+        "a rolled-back chunk survived"
+    );
+}
+
+#[test]
+fn a_committed_bulk_write_survives_a_restart() {
+    let db = TempDb::new("bulk-commit");
+    {
+        let mut store = Store::open(&db.0, &muk(), Box::new(Unanchored)).unwrap();
+        let mut bulk = store.begin_bulk().unwrap();
+        for n in 0..500 {
+            bulk.store()
+                .put_raw(b"vault-1", format!("item-{n}").as_bytes(), 7, b"imported")
+                .unwrap();
+        }
+        bulk.commit().unwrap();
+        // Set after the commit: the mark advances the anchor, which lives outside SQLite.
+        store.set_high_water_mark(b"vault-1", 42).unwrap();
+    }
+
+    let store = Store::open(&db.0, &muk(), Box::new(Unanchored)).unwrap();
+    assert_eq!(store.list(b"vault-1").unwrap().len(), 500);
+    assert_eq!(
+        store
+            .get_raw(b"vault-1", b"item-499")
+            .unwrap()
+            .unwrap()
+            .version,
+        7
+    );
+    assert_eq!(store.high_water_mark(b"vault-1"), Some(42));
+}
+
+#[test]
+fn a_rolled_back_bulk_write_leaves_the_rollback_anchor_where_it_was() {
+    // An anchor advanced inside a rolled-back write would claim a generation the
+    // file never reached, and the next open would refuse the store as rewound.
+    let db = TempDb::new("bulk-rollback-anchor");
+    let anchor = SharedAnchor::default();
+
+    {
+        let mut store = Store::open(&db.0, &muk(), Box::new(anchor.clone())).unwrap();
+        store.put_raw(b"vault-1", b"before", 1, b"already here").unwrap();
+        store.set_high_water_mark(b"vault-1", 10).unwrap();
+    }
+    let settled = anchor.latest().expect("the anchor has seen this store");
+
+    {
+        let mut store = Store::open(&db.0, &muk(), Box::new(anchor.clone())).unwrap();
+        let mut bulk = store.begin_bulk().unwrap();
+        for n in 0..200 {
+            bulk.store()
+                .put_raw(b"vault-1", format!("item-{n}").as_bytes(), 1, b"imported")
+                .unwrap();
+        }
+    }
+
+    assert_eq!(
+        anchor.latest(),
+        Some(settled),
+        "a rolled-back bulk write moved the rollback anchor: it now claims          generation {:?} while the file is still at {settled}",
+        anchor.latest()
+    );
+
+    let store = Store::open(&db.0, &muk(), Box::new(anchor.clone()))
+        .expect("the store must still open after a failed import");
+    assert_eq!(store.list(b"vault-1").unwrap().len(), 1);
+    assert_eq!(store.high_water_mark(b"vault-1"), Some(10));
+}
+
+#[test]
+fn advancing_the_anchor_inside_a_bulk_write_would_brick_the_store() {
+    // Advance the anchor inside the transaction on purpose: a rollback cannot undo it.
+    let db = TempDb::new("bulk-rollback-anchor-witness");
+    let anchor = SharedAnchor::default();
+
+    {
+        let mut store = Store::open(&db.0, &muk(), Box::new(anchor.clone())).unwrap();
+        store.put_raw(b"vault-1", b"before", 1, b"already here").unwrap();
+    }
+    let settled = anchor.latest().expect("the anchor has seen this store");
+
+    {
+        let mut store = Store::open(&db.0, &muk(), Box::new(anchor.clone())).unwrap();
+        let mut bulk = store.begin_bulk().unwrap();
+        bulk.store()
+            .put_raw(b"vault-1", b"imported", 1, b"imported")
+            .unwrap();
+        bulk.store().set_high_water_mark(b"vault-1", 10).unwrap();
+    }
+
+    assert!(
+        anchor.latest() > Some(settled),
+        "the anchor did not move, so this witness proves nothing"
+    );
+
+    let err = Store::open(&db.0, &muk(), Box::new(anchor.clone()))
+        .expect_err("the store must refuse to open");
+    assert!(
+        matches!(err, StoreError::MetadataRewound { .. }),
+        "expected the store to report a rewind, got {err:?}"
+    );
+}
+
+#[test]
+fn a_bulk_write_is_invisible_until_it_commits() {
+    let db = TempDb::new("bulk-isolation");
+    let mut store = Store::open(&db.0, &muk(), Box::new(Unanchored)).unwrap();
+    let mut bulk = store.begin_bulk().unwrap();
+    bulk.store()
+        .put_raw(b"vault-1", b"pending", 1, b"not yet")
+        .unwrap();
+
+    let onlooker = Store::open(&db.0, &muk(), Box::new(Unanchored)).unwrap();
+    assert!(
+        onlooker.get_raw(b"vault-1", b"pending").unwrap().is_none(),
+        "an uncommitted bulk write was visible to another reader"
+    );
+    drop(onlooker);
+    bulk.commit().unwrap();
+
+    let after = Store::open(&db.0, &muk(), Box::new(Unanchored)).unwrap();
+    assert!(after.get_raw(b"vault-1", b"pending").unwrap().is_some());
+}
+
+#[test]
 fn the_database_file_holds_no_plaintext() {
     let db = TempDb::new("canary");
     let vault = Secret::<VaultKey>::from_derived_bytes(key32(0x22));

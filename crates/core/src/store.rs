@@ -458,6 +458,15 @@ impl Store {
             .map_err(|_| StoreError::AnchorFailed)
     }
 
+    /// The write lock is taken now, before any sealing work.
+    pub fn begin_bulk(&mut self) -> Result<BulkWrite<'_>, StoreError> {
+        self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        Ok(BulkWrite {
+            store: self,
+            committed: false,
+        })
+    }
+
     pub fn put_chunk_raw(
         &mut self,
         vault_id: &[u8],
@@ -537,6 +546,41 @@ impl Store {
                 params![vault_id, item_id, attachment_id],
             )
             .map_err(StoreError::from)
+    }
+}
+
+/// A drop without [`BulkWrite::commit`] rolls back. Set the high-water mark only after
+/// the commit, because the anchor it advances lives outside SQLite.
+pub struct BulkWrite<'a> {
+    store: &'a mut Store,
+    committed: bool,
+}
+
+impl core::fmt::Debug for BulkWrite<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "BulkWrite(committed: {})", self.committed)
+    }
+}
+
+impl BulkWrite<'_> {
+    pub fn store(&mut self) -> &mut Store {
+        self.store
+    }
+
+    pub fn commit(mut self) -> Result<(), StoreError> {
+        self.store.conn.execute_batch("COMMIT")?;
+        self.committed = true;
+        Ok(())
+    }
+}
+
+impl Drop for BulkWrite<'_> {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        // R1: `Drop` cannot report a failed rollback, and SQLite rolls back on close anyway.
+        let _ = self.store.conn.execute_batch("ROLLBACK");
     }
 }
 

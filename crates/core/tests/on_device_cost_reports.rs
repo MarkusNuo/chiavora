@@ -203,5 +203,27 @@ fn report_store_write_costs_on_this_machine() {
         let _ = std::fs::remove_file(&path);
     }
 
+    let path = std::env::current_dir()
+        .expect("a working directory")
+        .join("write-cost-bulk.sqlite");
+    let _ = std::fs::remove_file(&path);
+    let payload = vec![0xA5_u8; RECORD_BYTES];
+    let mut store = Store::open(&path, &muk, Box::new(Unanchored)).expect("store opens");
+    let t = Instant::now();
+    let mut bulk = store.begin_bulk().expect("begin");
+    for n in 0..10_000 {
+        bulk.store()
+            .put_raw(b"vault-1", format!("item-{n:06}").as_bytes(), 1, &payload)
+            .expect("put_raw");
+    }
+    bulk.commit().expect("commit");
+    let total = t.elapsed();
+    drop(store);
+    println!(
+        " 10000 {total:>12?} {:>14?} (one transaction)",
+        total / 10_000
+    );
+    let _ = std::fs::remove_file(&path);
+
     print_meminfo("after");
 }

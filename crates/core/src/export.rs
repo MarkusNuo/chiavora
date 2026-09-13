@@ -546,7 +546,10 @@ pub fn restore<R: Read + Seek>(
         return Err(ExportError::StoreNotFresh);
     }
     reader.seek(SeekFrom::Start(0))?;
-    let (header, summary) = pass(&mut reader, muk, Some(store))?;
+
+    let mut bulk = store.begin_bulk()?;
+    let (header, summary) = pass(&mut reader, muk, Some(bulk.store()))?;
+    bulk.commit()?;
 
     // After the commit: the rollback anchor lives outside SQLite, so a rolled-back
     // write must not have advanced it.

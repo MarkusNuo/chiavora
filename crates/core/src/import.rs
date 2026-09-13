@@ -21,6 +21,13 @@ pub const MAX_DOCUMENT_BYTES: usize = 256 << 20;
 const UNNAMED: &str = "field";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Durability {
+    /// Every importer parses to completion first, and the caller writes through
+    /// [`crate::store::Store::begin_bulk`].
+    AllOrNothing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceFormat {
     OnePux,
     OnePif,
@@ -177,6 +184,11 @@ impl ImportReport {
     #[must_use]
     pub const fn format(&self) -> SourceFormat {
         self.format
+    }
+
+    #[must_use]
+    pub const fn durability(&self) -> Durability {
+        Durability::AllOrNothing
     }
 
     #[must_use]

@@ -10,6 +10,10 @@ release/
 target/
 *.tsbuildinfo
 
+# `release/` above also matches the Android `release` source set; keep it.
+!apps/mobile/modules/chiavora-core/android/src/release/
+!apps/mobile/modules/chiavora-core/android/src/release/**
+
 # test / coverage
 coverage/
 .turbo/
@@ -52,3 +56,8 @@ apps/android-harness/app/src/main/jniLibs/
 apps/android-harness/.gradle/
 apps/android-harness/build/
 apps/android-harness/app/build/
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/.expo/
+apps/mobile/modules/chiavora-core/android/src/*/generated/
+apps/mobile/modules/chiavora-core/android/src/*/jniLibs/

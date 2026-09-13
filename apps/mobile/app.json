@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Chiavora",
+    "slug": "chiavora",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "chiavora",
+    "newArchEnabled": true,
+    "android": {
+      "package": "ch.chiavora.app"
+    },
+    "experiments": {
+      "typedRoutes": false
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26,
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36
+          }
+        }
+      ],
+      [
+        "./plugins/with-chiavora-android",
+        {
+          "ext": {
+            "ndkVersion": "27.3.13750724",
+            "buildToolsVersion": "36.0.0"
+          }
+        }
+      ]
+    ]
+  }
+}

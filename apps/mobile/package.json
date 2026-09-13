@@ -4,9 +4,23 @@
   "private": true,
   "description": "React Native (Expo) app over the Rust core via uniffi. Android only for now.",
   "license": "UNLICENSED",
-  "type": "module",
+  "main": "index.js",
   "scripts": {
+    "prebuild": "expo prebuild --platform android --clean",
+    "android": "expo run:android",
+    "start": "expo start",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "expo": "57.0.22",
+    "expo-build-properties": "~57.0.17",
+    "expo-modules-core": "57.0.18",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "typescript": "6.0.3"
   }
 }

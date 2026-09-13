@@ -615,6 +615,65 @@ fn every_rule_in_the_index_is_either_mechanised_here_or_says_why_not() {
     );
 }
 
+/// The files that keep the measurement harness out of a release build, named
+/// rather than globbed, since a glob over an ignored directory finds nothing.
+const RELEASE_ABSENCE_FILES: [&str; 4] = [
+    "apps/mobile/modules/chiavora-core/android/src/release/java/ch/chiavora/core/HarnessDefinition.kt",
+    "apps/mobile/modules/chiavora-core/android/src/debug/java/ch/chiavora/core/HarnessDefinition.kt",
+    "apps/mobile/modules/chiavora-core/android/build.gradle",
+    "scripts/mobile-native.ps1",
+];
+
+#[test]
+fn every_file_the_release_absence_claim_rests_on_is_tracked() {
+    for file in RELEASE_ABSENCE_FILES {
+        let path = root().join(file);
+        assert!(
+            path.exists(),
+            "{file} is gone; the release-absence claim has lost a piece"
+        );
+
+        let output = std::process::Command::new("git")
+            .current_dir(root())
+            .args(["ls-files", "--error-unmatch", "--", file])
+            .output();
+
+        let Ok(output) = output else {
+            eprintln!("SKIPPED: git is not on PATH, so tracking cannot be verified");
+            return;
+        };
+
+        assert!(
+            output.status.success(),
+            "{file} exists on disk but is NOT TRACKED by git.\n\
+             It is one of the files that make the release build's absence of the \
+             measurement harness true, so leaving it untracked means the \
+             guarantee lives on one machine. Check `.gitignore` — a bare \
+             `release/` or `debug/` pattern matches Android build variants.\n\
+             git said: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+}
+
+#[test]
+fn the_tracking_check_names_the_file_that_was_missing() {
+    assert!(
+        RELEASE_ABSENCE_FILES
+            .iter()
+            .any(|f| f.contains("src/release/") && f.ends_with("HarnessDefinition.kt")),
+        "the release-side HarnessDefinition.kt is the file R7 case 9 is about; \
+         it must stay in this list"
+    );
+    assert!(
+        RELEASE_ABSENCE_FILES
+            .iter()
+            .any(|f| f.contains("src/debug/") && f.ends_with("HarnessDefinition.kt")),
+        "the debug-side registration must be listed too: without it the release \
+         file's absence of a registration means nothing"
+    );
+}
+
 /// Keeps `Path` in use on every platform without a `cfg`.
 #[allow(dead_code)]
 fn _unused(_: &Path) {}

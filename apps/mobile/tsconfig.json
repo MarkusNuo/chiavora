@@ -1,4 +1,8 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "include": ["src/**/*.ts"]
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true
+  },
+  "include": ["App.tsx", "modules/**/*.ts", "modules/**/*.tsx"]
 }

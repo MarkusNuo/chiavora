@@ -395,7 +395,9 @@ fn a_rolled_back_bulk_write_leaves_the_rollback_anchor_where_it_was() {
 
     {
         let mut store = Store::open(&db.0, &muk(), Box::new(anchor.clone())).unwrap();
-        store.put_raw(b"vault-1", b"before", 1, b"already here").unwrap();
+        store
+            .put_raw(b"vault-1", b"before", 1, b"already here")
+            .unwrap();
         store.set_high_water_mark(b"vault-1", 10).unwrap();
     }
     let settled = anchor.latest().expect("the anchor has seen this store");
@@ -431,7 +433,9 @@ fn advancing_the_anchor_inside_a_bulk_write_would_brick_the_store() {
 
     {
         let mut store = Store::open(&db.0, &muk(), Box::new(anchor.clone())).unwrap();
-        store.put_raw(b"vault-1", b"before", 1, b"already here").unwrap();
+        store
+            .put_raw(b"vault-1", b"before", 1, b"already here")
+            .unwrap();
     }
     let settled = anchor.latest().expect("the anchor has seen this store");
 

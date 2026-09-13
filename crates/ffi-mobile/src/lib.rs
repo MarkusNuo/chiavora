@@ -5,6 +5,9 @@
 
 uniffi::setup_scaffolding!();
 
+#[cfg(feature = "measurement-harness")]
+pub mod harness;
+
 #[uniffi::export]
 #[must_use]
 pub fn ffi_smoke() -> String {

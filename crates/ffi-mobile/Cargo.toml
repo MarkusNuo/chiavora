@@ -17,6 +17,10 @@ path = "src/bin/uniffi-bindgen.rs"
 [lints]
 workspace = true
 
+[features]
+# Off by default so it cannot ship; `scripts/gate.ps1` builds and tests it.
+measurement-harness = []
+
 [dependencies]
 chiavora-core = { workspace = true }
 uniffi = { version = "0.28", features = ["cli"] }

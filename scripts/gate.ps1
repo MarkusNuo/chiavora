@@ -35,6 +35,13 @@ try {
     if ($LASTEXITCODE -ne 0) { Write-Host 'TEST FAILED' -ForegroundColor Red; exit 1 }
     Write-Host 'TEST_OK' -ForegroundColor Green
 
+    # The harness feature is off by default, so nothing above compiles it.
+    cargo clippy -p chiavora-ffi-mobile --all-targets --features measurement-harness -- -D warnings
+    if ($LASTEXITCODE -ne 0) { Write-Host 'HARNESS CLIPPY FAILED' -ForegroundColor Red; exit 1 }
+    cargo test -p chiavora-ffi-mobile --features measurement-harness
+    if ($LASTEXITCODE -ne 0) { Write-Host 'HARNESS TEST FAILED' -ForegroundColor Red; exit 1 }
+    Write-Host 'HARNESS_OK' -ForegroundColor Green
+
     cargo deny check
     if ($LASTEXITCODE -ne 0) { Write-Host 'DENY FAILED' -ForegroundColor Red; exit 1 }
     Write-Host 'DENY_OK' -ForegroundColor Green

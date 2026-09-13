@@ -46,3 +46,9 @@ npm-debug.log*
 pnpm-debug.log*
 native/
 target/ffi-smoke*/
+apps/android-harness/local.properties
+apps/android-harness/app/src/main/generated/
+apps/android-harness/app/src/main/jniLibs/
+apps/android-harness/.gradle/
+apps/android-harness/build/
+apps/android-harness/app/build/

@@ -72,6 +72,14 @@ internal object DeviceKeys {
         }
     }
 
+    /** For the MUK's alias, authentication gates encryption too, so this needs the prompt. */
+    fun loadForEncrypt(alias: String): Cipher =
+        Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, loadKey(alias)) }
+
+    fun loadKeyForDecrypt(alias: String, spec: javax.crypto.spec.GCMParameterSpec): Cipher =
+        Cipher.getInstance("AES/GCM/NoPadding")
+            .apply { init(Cipher.DECRYPT_MODE, loadKey(alias), spec) }
+
     fun exists(alias: String): Boolean =
         KeyStore.getInstance(KEYSTORE).apply { load(null) }.containsAlias(alias)
 

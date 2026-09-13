@@ -306,7 +306,12 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 61] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 62] = [
+    (
+        "core/src/unlock.rs",
+        "UnlockedVault::from_stored_muk",
+        "COVERED ELSEWHERE: it is one call to `device::muk_from_keystore`, which          carries the length check and its own classification. Its input is a MUK          this installation derived earlier and the device's keystore has been          holding since -- not attacker-chosen input -- and a wrong one is          self-detecting when the store's metadata MAC fails on the next open",
+    ),
     (
         "core/src/device.rs",
         "muk_from_keystore",

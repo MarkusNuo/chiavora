@@ -873,13 +873,17 @@ fn bridge_kotlin() -> Vec<(String, String)> {
     files_under(&dir, "kt", &mut files);
     let mut out = Vec::new();
     for path in files {
+        // uniffi's generated bindings are not committed.
         let name = path.to_string_lossy().replace('\\', "/");
         if name.contains("/generated/") {
             continue;
         }
         let short = name.rsplit("/src/").next().unwrap_or(&name).to_owned();
-        let source = std::fs::read_to_string(&path).expect("a bridge file");
-        out.push((short, without_comments(&source)));
+        // Unstripped: the `UI-THREAD:` notes live in comments.
+        out.push((
+            short,
+            std::fs::read_to_string(&path).expect("a bridge file"),
+        ));
     }
     assert!(
         out.iter()
@@ -949,19 +953,20 @@ fn no_bridge_method_runs_core_on_the_js_thread() {
     let mut problems: Vec<String> = Vec::new();
 
     for (name, source) in bridge_kotlin() {
-        let core_symbols: Vec<String> = source
+        let stripped = without_comments(&source);
+        let core_symbols: Vec<String> = stripped
             .lines()
             .filter_map(|l| l.trim().strip_prefix("import uniffi.chiavora_ffi_mobile::"))
             .map(str::to_owned)
             .chain(
-                source
+                stripped
                     .lines()
                     .filter_map(|l| l.trim().strip_prefix("import uniffi.chiavora_ffi_mobile."))
                     .map(str::to_owned),
             )
             .collect();
 
-        for body in registration_blocks(&source, "Function") {
+        for body in registration_blocks(&stripped, "Function") {
             for symbol in &core_symbols {
                 if body.contains(symbol.as_str()) {
                     problems.push(format!(
@@ -972,12 +977,36 @@ fn no_bridge_method_runs_core_on_the_js_thread() {
             }
         }
 
-        for forbidden in ["Handler(", "Looper.", "postDelayed", "runOnUiThread"] {
-            if source.contains(forbidden) {
-                problems.push(format!(
-                    "{name}: contains `{forbidden}`. A bridge method dispatches to a native \
-                     thread and returns; it does not post to the UI thread."
-                ));
+        // A line is exempt with a `UI-THREAD:` note in the eight lines above.
+        let lines: Vec<&str> = source.lines().collect();
+        for (index, line) in lines.iter().enumerate() {
+            for forbidden in [
+                "Handler(",
+                "Looper.",
+                "postDelayed",
+                "runOnUiThread",
+                "Dispatchers.Main",
+            ] {
+                let code = line
+                    .find("//")
+                    .map_or(*line, |at| line.get(..at).unwrap_or(""));
+                if !code.contains(forbidden) {
+                    continue;
+                }
+                let window_start = index.saturating_sub(8);
+                let justified = lines
+                    .get(window_start..=index)
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|l| l.contains("UI-THREAD:"));
+                if !justified {
+                    problems.push(format!(
+                        "{name}:{}: `{forbidden}` with no `UI-THREAD:` note within eight \
+                         lines above. A bridge method dispatches to a native thread and \
+                         returns; if this really must touch the UI thread, say why.",
+                        index + 1
+                    ));
+                }
             }
         }
     }
@@ -1459,7 +1488,7 @@ fn the_i8_scan_fires_on_a_binding_planted_in_the_real_keystore_code() {
     );
 }
 
-const SCANS_AND_THEIR_WITNESSES: [(&str, bool); 6] = [
+const SCANS_AND_THEIR_WITNESSES: [(&str, bool); 8] = [
     ("r1_every_absorbing_pattern_carries_a_justification", true),
     ("r1_no_capacity_is_reserved_from_an_unbounded_claim", true),
     (
@@ -1469,6 +1498,11 @@ const SCANS_AND_THEIR_WITNESSES: [(&str, bool); 6] = [
     ("the_muk_has_one_door_back_into_core", true),
     ("no_bridge_method_runs_core_on_the_js_thread", true),
     ("i8_the_secret_key_entry_is_not_biometric_bound", true),
+    ("no_biometric_callback_hands_the_caller_a_flag", true),
+    (
+        "no_keystore_alias_check_stands_in_for_a_usability_check",
+        true,
+    ),
 ];
 
 const SCANS_STILL_IN_THEIR_MODULES: [(&str, &str); 2] = [
@@ -1627,6 +1661,255 @@ fn every_detector_taking_a_source_slice_has_a_differential_witness() {
              its argument."
         );
     }
+}
+
+fn biometric_callback_problems(source: &str) -> Vec<String> {
+    let code = without_comments(source);
+    if !code.contains("AuthenticationCallback") {
+        return Vec::new();
+    }
+    let mut problems = Vec::new();
+
+    let Some(body) = kotlin_fn_body(&code, "onAuthenticationSucceeded") else {
+        problems.push(
+            "a file with an `AuthenticationCallback` has no findable \
+             `onAuthenticationSucceeded` body -- the scan cannot see what it does"
+                .to_owned(),
+        );
+        return problems;
+    };
+
+    if !body.contains("cryptoObject") {
+        problems.push(
+            "`onAuthenticationSucceeded` never reads `result.cryptoObject`: the flow continues \
+             on the fact that authentication succeeded rather than on the key the OS released. \
+             That fact is a boolean a patched APK or a hooked callback can forge (§3.3 \
+             requirement 1)."
+                .to_owned(),
+        );
+    }
+
+    for forbidden in ["resume(true)", "resume(Unit)", "resume(false)"] {
+        if body.contains(forbidden) {
+            problems.push(format!(
+                "`onAuthenticationSucceeded` calls `{forbidden}`: the caller is being handed a \
+                 flag instead of the authenticated `Cipher`, so it can proceed to key material \
+                 without the object the OS unlocked. Resume with the cipher."
+            ));
+        }
+    }
+
+    problems
+}
+
+#[test]
+fn no_biometric_callback_hands_the_caller_a_flag() {
+    let mut problems: Vec<String> = Vec::new();
+    let mut files_with_callbacks = 0_usize;
+
+    let dir = root()
+        .join("apps")
+        .join("mobile")
+        .join("modules")
+        .join("chiavora-core")
+        .join("android")
+        .join("src");
+    let mut files = Vec::new();
+    files_under(&dir, "kt", &mut files);
+
+    for path in files {
+        let name = path.to_string_lossy().replace('\\', "/");
+        if name.contains("/generated/") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("a Kotlin file");
+        if !without_comments(&source).contains("AuthenticationCallback") {
+            continue;
+        }
+        files_with_callbacks += 1;
+        for problem in biometric_callback_problems(&source) {
+            let short = name.rsplit("/core/").next().unwrap_or(&name).to_owned();
+            problems.push(format!("{short}: {problem}"));
+        }
+    }
+
+    assert!(
+        files_with_callbacks >= 1,
+        "no `AuthenticationCallback` found in the bridge module. Either the biometric unlock \
+         is gone -- which is the thing §3.3 requirement 1 is about -- or this scan has stopped \
+         reading the files it names."
+    );
+    assert!(
+        problems.is_empty(),
+        "the biometric no longer binds the key:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+#[test]
+fn the_biometric_scan_would_notice_a_flag_and_a_missing_crypto_object() {
+    let good = r"
+        object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                val unlocked = result.cryptoObject?.cipher
+                continuation.resume(unlocked)
+            }
+        }
+    ";
+    assert!(
+        biometric_callback_problems(good).is_empty(),
+        "the real shape must be accepted: {:?}",
+        biometric_callback_problems(good)
+    );
+
+    let simplified = r"
+        object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                continuation.resume(true)
+            }
+        }
+    ";
+    let problems = biometric_callback_problems(simplified);
+    assert_ne!(
+        problems,
+        biometric_callback_problems(good),
+        "the detector gave the same answer for a bound and an unbound callback"
+    );
+    assert!(
+        problems.iter().any(|p| p.contains("resume(true)")),
+        "the flag was not reported: {problems:?}"
+    );
+    assert!(
+        problems.iter().any(|p| p.contains("cryptoObject")),
+        "the missing CryptoObject was not reported: {problems:?}"
+    );
+
+    assert!(biometric_callback_problems("class Unrelated { }").is_empty());
+}
+
+fn keystore_precondition_problems(source: &str) -> Vec<String> {
+    let stripped = without_comments(source);
+    if !stripped.contains("KEY_ALIAS") && !stripped.contains("KeyStore") {
+        return Vec::new();
+    }
+
+    let lines: Vec<&str> = stripped.lines().collect();
+    let mut problems = Vec::new();
+
+    for (index, line) in lines.iter().enumerate() {
+        let negated_existence = (line.contains('!') && line.contains("exists("))
+            || (line.contains('!') && line.contains("containsAlias("));
+        if !negated_existence {
+            continue;
+        }
+        let creates = lines
+            .get(index..=(index + 3).min(lines.len().saturating_sub(1)))
+            .unwrap_or_default()
+            .iter()
+            .any(|l| l.contains("create"));
+        if !creates {
+            continue;
+        }
+        let original: Vec<&str> = source.lines().collect();
+        let window_start = index.saturating_sub(8);
+        let justified = original
+            .get(window_start..=index.min(original.len().saturating_sub(1)))
+            .unwrap_or_default()
+            .iter()
+            .any(|l| l.contains("USABLE-NOT-EXISTS:"));
+        if !justified {
+            problems.push(format!(
+                "{}: `if (!exists(...))` decides whether to create a key. **An invalidated                  key keeps its alias**, so this skips a recreate that was needed and the next                  use throws `KeyPermanentlyInvalidatedException`. Delete and recreate                  unconditionally, or write a `USABLE-NOT-EXISTS:` note saying why the alias's                  presence is the right question here.",
+                index + 1
+            ));
+        }
+    }
+    problems
+}
+
+#[test]
+fn no_keystore_alias_check_stands_in_for_a_usability_check() {
+    let dir = root()
+        .join("apps")
+        .join("mobile")
+        .join("modules")
+        .join("chiavora-core")
+        .join("android")
+        .join("src");
+    let mut files = Vec::new();
+    files_under(&dir, "kt", &mut files);
+
+    let mut problems: Vec<String> = Vec::new();
+    let mut files_touching_the_keystore = 0_usize;
+    for path in files {
+        let name = path.to_string_lossy().replace('\\', "/");
+        if name.contains("/generated/") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("a Kotlin file");
+        let stripped = without_comments(&source);
+        if !stripped.contains("KEY_ALIAS") && !stripped.contains("KeyStore") {
+            continue;
+        }
+        files_touching_the_keystore += 1;
+        let short = name.rsplit("/core/").next().unwrap_or(&name).to_owned();
+        for problem in keystore_precondition_problems(&source) {
+            problems.push(format!("{short}:{problem}"));
+        }
+    }
+
+    assert!(
+        files_touching_the_keystore >= 1,
+        "no keystore code found in the bridge module -- this scan is reading nothing"
+    );
+    assert!(
+        problems.is_empty(),
+        "an alias check is standing in for a usability check:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+#[test]
+fn the_usability_scan_would_notice_the_incident_it_was_written_for() {
+    let guarded = "
+        object DeviceKeys { val MUK_KEY_ALIAS = \"a\"
+            fun go() {
+                if (!DeviceKeys.exists(MUK_KEY_ALIAS)) {
+                    DeviceKeys.createMukWrappingKey()
+                }
+            }
+        }
+    ";
+    let unconditional = "
+        object DeviceKeys { val MUK_KEY_ALIAS = \"a\"
+            fun go() {
+                if (DeviceKeys.exists(MUK_KEY_ALIAS)) {
+                    DeviceKeys.delete(MUK_KEY_ALIAS)
+                }
+                DeviceKeys.createMukWrappingKey()
+            }
+        }
+    ";
+
+    let guarded_problems = keystore_precondition_problems(guarded);
+    let fixed_problems = keystore_precondition_problems(unconditional);
+
+    assert!(
+        !guarded_problems.is_empty(),
+        "the scan did not notice an `exists` guard around a create -- the exact shape of \
+          incident"
+    );
+    assert_ne!(
+        guarded_problems, fixed_problems,
+        "the detector gave the same answer for the broken shape and the fixed one, so it is \
+         not reading its argument"
+    );
+    assert!(
+        fixed_problems.is_empty(),
+        "delete-then-create-unconditionally must be accepted: {fixed_problems:?}"
+    );
+
+    assert!(keystore_precondition_problems("class Unrelated {}").is_empty());
 }
 
 /// Keeps `Path` in use on every platform without a `cfg`.

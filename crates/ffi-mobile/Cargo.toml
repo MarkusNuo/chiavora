@@ -24,3 +24,5 @@ measurement-harness = []
 [dependencies]
 chiavora-core = { workspace = true }
 uniffi = { version = "0.28", features = ["cli"] }
+# The MUK arrives from the keystore as a Vec<u8> and is wrapped where Rust first touches it.
+zeroize = { version = "1", features = ["zeroize_derive"] }

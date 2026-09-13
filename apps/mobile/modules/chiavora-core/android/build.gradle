@@ -39,4 +39,7 @@ dependencies {
   // The `@aar` build carries JNA's native dispatcher for each ABI.
   implementation 'net.java.dev.jna:jna:5.19.1@aar'
 
+  implementation 'androidx.biometric:biometric:1.1.0'
+  implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
+
 }

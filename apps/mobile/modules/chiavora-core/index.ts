@@ -12,6 +12,21 @@ export interface DerivationOutcome {
   readonly iterations: number;
 }
 
+export interface VaultState {
+  readonly hasSecretKey: boolean;
+  readonly hasWrappedMuk: boolean;
+  readonly mukKeyInvalidated: boolean;
+}
+
+export interface KeystoreReport {
+  readonly mukBacking: string;
+  /** Must be true: a new fingerprint destroys the MUK's wrapping key. */
+  readonly mukInvalidatedByEnrollment: boolean;
+  readonly secretKeyBacking: string;
+  /** Must be false (I8). */
+  readonly secretKeyInvalidatedByEnrollment: boolean;
+}
+
 interface ChiavoraCoreNativeModule {
 
   ffiSmoke(): Promise<string>;
@@ -21,6 +36,26 @@ interface ChiavoraCoreNativeModule {
     iterations: number,
     delayMs: number,
   ): Promise<DerivationOutcome>;
+
+  enroll(
+    password: Uint8Array,
+    secretKey: Uint8Array,
+    accountId: Uint8Array,
+    accountSalt: Uint8Array,
+    memoryKib: number,
+    iterations: number,
+  ): Promise<boolean>;
+  unlockWithPassword(
+    password: Uint8Array,
+    accountId: Uint8Array,
+    accountSalt: Uint8Array,
+    memoryKib: number,
+    iterations: number,
+  ): Promise<number>;
+  unlockWithBiometric(): Promise<number>;
+  vaultState(): Promise<VaultState>;
+  keystoreReport(): Promise<KeystoreReport>;
+  forgetDevice(): Promise<boolean>;
 }
 
 const ChiavoraCore = requireNativeModule<ChiavoraCoreNativeModule>('ChiavoraCore');

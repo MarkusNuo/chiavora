@@ -1,4 +1,8 @@
-const { withAppBuildGradle, withProjectBuildGradle } = require('expo/config-plugins');
+const {
+  withAppBuildGradle,
+  withGradleProperties,
+  withProjectBuildGradle,
+} = require('expo/config-plugins');
 
 /** Pinned here, or Expo pins its own NDK and build tools and Gradle tries to download them. */
 module.exports = function withChiavoraAndroid(config, options) {
@@ -39,7 +43,7 @@ module.exports = function withChiavoraAndroid(config, options) {
     return modConfig;
   });
 
-  return withBundledDebugJs(withExt);
+  return withArm64Only(withBundledDebugJs(withExt));
 };
 
 /** The debug variant embeds its JS bundle, so a measurement run needs no Metro server. */
@@ -62,6 +66,22 @@ function withBundledDebugJs(config) {
         anchor,
       ].join('\n'),
     );
+    return modConfig;
+  });
+}
+
+/** Builds native code for arm64-v8a only, the one ABI `crates/ffi-mobile` is compiled for. */
+function withArm64Only(config) {
+  return withGradleProperties(config, (modConfig) => {
+    const without = modConfig.modResults.filter(
+      (item) => !(item.type === 'property' && item.key === 'reactNativeArchitectures'),
+    );
+    without.push({
+      type: 'property',
+      key: 'reactNativeArchitectures',
+      value: 'arm64-v8a',
+    });
+    modConfig.modResults = without;
     return modConfig;
   });
 }

@@ -183,7 +183,7 @@ fn report_index_costs_on_this_machine() {
         .expect("a thousand samples");
 
     println!();
-    println!("index costs on THIS machine -- not the gate; measures on handset");
+    println!("index costs on THIS machine -- gate applies to the handset run");
     println!("  rebuild at unlock, {ITEMS} items, median of 10:   {rebuild_median:?}");
     println!("  query latency, p95 over {QUERIES} queries: {p95:?}");
     println!("  these are two different numbers and neither licenses the other");

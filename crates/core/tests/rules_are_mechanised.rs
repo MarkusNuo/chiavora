@@ -674,6 +674,239 @@ fn the_tracking_check_names_the_file_that_was_missing() {
     );
 }
 
+/// Not string-aware, so a `//` inside a string literal is read as a comment.
+fn without_comments(source: &str) -> String {
+    let chars: Vec<char> = source.chars().collect();
+    let mut out = String::with_capacity(source.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let here = chars.get(i).copied().unwrap_or_default();
+        let next = chars.get(i + 1).copied().unwrap_or_default();
+        if here == '/' && next == '/' {
+            while i < chars.len() && chars.get(i).copied().unwrap_or_default() != '\n' {
+                i += 1;
+            }
+        } else if here == '/' && next == '*' {
+            i += 2;
+            while i < chars.len() {
+                if chars.get(i).copied().unwrap_or_default() == '*'
+                    && chars.get(i + 1).copied().unwrap_or_default() == '/'
+                {
+                    i += 2;
+                    break;
+                }
+                i += 1;
+            }
+        } else {
+            out.push(here);
+            i += 1;
+        }
+    }
+    out
+}
+
+fn bridge_kotlin() -> Vec<(String, String)> {
+    let dir = root()
+        .join("apps")
+        .join("mobile")
+        .join("modules")
+        .join("chiavora-core")
+        .join("android")
+        .join("src");
+    let mut files = Vec::new();
+    files_under(&dir, "kt", &mut files);
+    let mut out = Vec::new();
+    for path in files {
+        let name = path.to_string_lossy().replace('\\', "/");
+        if name.contains("/generated/") {
+            continue;
+        }
+        let short = name.rsplit("/src/").next().unwrap_or(&name).to_owned();
+        let source = std::fs::read_to_string(&path).expect("a bridge file");
+        out.push((short, without_comments(&source)));
+    }
+    assert!(
+        out.iter()
+            .any(|(n, _)| n.ends_with("ChiavoraCoreModule.kt")),
+        "the bridge walk did not find ChiavoraCoreModule.kt -- has the module moved?"
+    );
+    out
+}
+
+fn files_under(dir: &Path, extension: &str, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut paths: Vec<PathBuf> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
+    paths.sort();
+    for path in paths {
+        if path.is_dir() {
+            files_under(&path, extension, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some(extension) {
+            out.push(path);
+        }
+    }
+}
+
+/// Brace-matched, so a brace inside a string literal would confuse it.
+fn registration_blocks(source: &str, kind: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let needle = format!("{kind}(\"");
+    let mut rest = source;
+    while let Some(at) = rest.find(&needle) {
+        // `AsyncFunction(` contains `Function(`.
+        let preceded_by_async = rest
+            .get(..at)
+            .is_some_and(|before| before.ends_with("Async"));
+        let after = rest.get(at + needle.len()..).unwrap_or_default();
+        if preceded_by_async && kind == "Function" {
+            rest = after;
+            continue;
+        }
+        let Some(brace) = after.find('{') else {
+            rest = after;
+            continue;
+        };
+        let mut depth = 0_usize;
+        let mut end = None;
+        for (i, ch) in after.char_indices().skip(brace) {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(i);
+                    break;
+                }
+            }
+        }
+        if let Some(end) = end {
+            blocks.push(after.get(brace..=end).unwrap_or_default().to_owned());
+        }
+        rest = after;
+    }
+    blocks
+}
+
+#[test]
+fn no_bridge_method_runs_core_on_the_js_thread() {
+    let mut problems: Vec<String> = Vec::new();
+
+    for (name, source) in bridge_kotlin() {
+        let core_symbols: Vec<String> = source
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("import uniffi.chiavora_ffi_mobile::"))
+            .map(str::to_owned)
+            .chain(
+                source
+                    .lines()
+                    .filter_map(|l| l.trim().strip_prefix("import uniffi.chiavora_ffi_mobile."))
+                    .map(str::to_owned),
+            )
+            .collect();
+
+        for body in registration_blocks(&source, "Function") {
+            for symbol in &core_symbols {
+                if body.contains(symbol.as_str()) {
+                    problems.push(format!(
+                        "{name}: a synchronous `Function` calls `{symbol}`, which reaches \
+                         `core` on the JS thread. UI-THREAD: use `AsyncFunction`."
+                    ));
+                }
+            }
+        }
+
+        for forbidden in ["Handler(", "Looper.", "postDelayed", "runOnUiThread"] {
+            if source.contains(forbidden) {
+                problems.push(format!(
+                    "{name}: contains `{forbidden}`. A bridge method dispatches to a native \
+                     thread and returns; it does not post to the UI thread."
+                ));
+            }
+        }
+    }
+
+    let wrapper = without_comments(&read("apps/mobile/modules/chiavora-core/index.ts"));
+    for forbidden in ["setTimeout", "setInterval", "requestAnimationFrame"] {
+        if wrapper.contains(forbidden) {
+            problems.push(format!(
+                "modules/chiavora-core/index.ts: contains `{forbidden}`. JavaScript is the \
+                 caller; it schedules nothing that must complete while the app is not \
+                 foregrounded."
+            ));
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        " violations:\n {}",
+        problems.join("\n  ")
+    );
+}
+
+#[test]
+fn the_bridge_scan_would_notice_a_synchronous_core_call() {
+    let synchronous = r#"
+        import uniffi.chiavora_ffi_mobile.ffiSmoke
+        class M : Module() {
+            override fun definition() = ModuleDefinition {
+                Function("ffiSmoke") { ffiSmoke() }
+            }
+        }
+    "#;
+    let blocks = registration_blocks(synchronous, "Function");
+    assert_eq!(blocks.len(), 1, "the block finder missed a `Function`");
+    assert!(
+        blocks.first().is_some_and(|b| b.contains("ffiSmoke")),
+        "the block finder did not capture the body"
+    );
+
+    let asynchronous = r#"
+        import uniffi.chiavora_ffi_mobile.ffiSmoke
+        AsyncFunction("ffiSmoke") { ffiSmoke() }
+    "#;
+    assert!(
+        registration_blocks(asynchronous, "Function").is_empty(),
+        "`AsyncFunction` was counted as a synchronous `Function`"
+    );
+    assert_eq!(
+        registration_blocks(asynchronous, "AsyncFunction").len(),
+        1,
+        "the block finder missed an `AsyncFunction`"
+    );
+
+    let prose = "// a JS setTimeout does not fire when backgrounded
+const x = 1;
+";
+    assert!(
+        !without_comments(prose).contains("setTimeout"),
+        "comment stripping missed a line comment, so the scan reads prose"
+    );
+    let block = "/* Handler( and Looper. are named here on purpose */
+const y = 2;
+";
+    assert!(
+        !without_comments(block).contains("Handler("),
+        "comment stripping missed a block comment"
+    );
+    assert!(
+        without_comments("const z = 3; // tail").contains("const z = 3;"),
+        "comment stripping ate the code"
+    );
+
+    let total: usize = bridge_kotlin()
+        .iter()
+        .map(|(_, src)| {
+            registration_blocks(src, "AsyncFunction").len()
+                + registration_blocks(src, "Function").len()
+        })
+        .sum();
+    assert!(
+        total >= 3,
+        "the bridge scan found only {total} registrations; it is not reading the module"
+    );
+}
+
 /// Keeps `Path` in use on every platform without a `cfg`.
 #[allow(dead_code)]
 fn _unused(_: &Path) {}

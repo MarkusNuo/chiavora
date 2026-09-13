@@ -27,7 +27,7 @@ export default function App() {
     }
     started.current = true;
     void (async () => {
-      say(`smoke: ${ChiavoraCore.ffiSmoke()}`);
+      say(`smoke: ${await ChiavoraCore.ffiSmoke()}`);
       say(`harness present: ${ChiavoraCore.hasHarness()}`);
 
       const url = await Linking.getInitialURL();

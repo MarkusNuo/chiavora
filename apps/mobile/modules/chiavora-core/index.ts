@@ -13,7 +13,8 @@ export interface DerivationOutcome {
 }
 
 interface ChiavoraCoreNativeModule {
-  ffiSmoke(): string;
+
+  ffiSmoke(): Promise<string>;
   hasHarness(): boolean;
   harnessDeriveOnce?(
     memoryKib: number,

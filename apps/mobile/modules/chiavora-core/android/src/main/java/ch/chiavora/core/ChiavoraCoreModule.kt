@@ -9,7 +9,7 @@ class ChiavoraCoreModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("ChiavoraCore")
 
-        Function("ffiSmoke") {
+        AsyncFunction("ffiSmoke") {
             ffiSmoke()
         }
 

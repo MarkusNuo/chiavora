@@ -306,7 +306,12 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 60] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 61] = [
+    (
+        "core/src/device.rs",
+        "muk_from_keystore",
+        "NOT A BOUNDARY: its input is a MUK this installation derived earlier and \n         the device's own keystore has been holding since -- not attacker-chosen \n         input. An attacker who can choose these bytes has already replaced the \n         keystore entry, and a wrong MUK is self-detecting one layer down: the \n         Store Key is HKDF(ikm = MUK) and the metadata MAC fails on the next \n         Store::open. The one length check it does have is asserted by \n         a_keystore_buffer_of_the_wrong_length_is_refused_by_name",
+    ),
     (
         "core/src/base32.rs",
         "decode_with_checksum",

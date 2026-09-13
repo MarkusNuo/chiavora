@@ -78,18 +78,6 @@ fn production_mask(lines: &[&str]) -> Vec<bool> {
             i += 1;
             continue;
         }
-        let is_test_module = lines
-            .get(i..)
-            .unwrap_or_default()
-            .iter()
-            .take(4)
-            .any(|l| l.trim_start().starts_with("mod tests"));
-        if is_test_module {
-            for slot in mask.iter_mut().skip(i) {
-                *slot = false;
-            }
-            break;
-        }
         if let Some(slot) = mask.get_mut(i) {
             *slot = false;
         }
@@ -116,8 +104,8 @@ fn production_mask(lines: &[&str]) -> Vec<bool> {
 
 const TEST_ONLY_MODULES: [&str; 1] = ["scan.rs"];
 
-#[test]
-fn r1_every_absorbing_pattern_carries_a_justification() {
+/// R1's absorbing patterns with no `R1:` note in the eight lines above.
+fn r1_absorbing_problems(modules: &[(String, String)]) -> Vec<String> {
     const PATTERNS: [&str; 5] = [
         ".unwrap_or(",
         ".unwrap_or_else(",
@@ -127,7 +115,7 @@ fn r1_every_absorbing_pattern_carries_a_justification() {
     ];
 
     let mut unjustified: Vec<String> = Vec::new();
-    for (name, source) in core_modules() {
+    for (name, source) in modules {
         if TEST_ONLY_MODULES.contains(&name.as_str()) {
             continue;
         }
@@ -156,7 +144,12 @@ fn r1_every_absorbing_pattern_carries_a_justification() {
             }
         }
     }
+    unjustified
+}
 
+#[test]
+fn r1_every_absorbing_pattern_carries_a_justification() {
+    let unjustified = r1_absorbing_problems(&core_modules());
     assert!(
         unjustified.is_empty(),
         "R1: these absorb a failure with no `R1:` justification within eight \
@@ -183,6 +176,130 @@ fn r1_the_scan_would_notice_an_unjustified_absorber() {
     assert!(
         !justified,
         "an unannotated absorber must read as unjustified"
+    );
+}
+
+/// A `#[cfg(test)]` attribute, split so this file's own scans do not see one.
+fn marker() -> String {
+    format!("#[cfg({})]", "test")
+}
+
+fn fixture(lines: &[&str]) -> String {
+    lines
+        .iter()
+        .map(|l| l.replace("CFG", &marker()))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
+}
+
+#[test]
+fn production_mask_keeps_every_assumption_it_makes() {
+    let seen = production(&fixture(&["pub fn only_production() {}"]));
+    assert!(seen.contains("only_production"), "{seen}");
+
+    let seen = production(&fixture(&[
+        "CFG",
+        "mod tests {",
+        "    fn inside_leading() {}",
+        "}",
+        "pub fn after_a_leading_module() {}",
+    ]));
+    assert!(seen.contains("after_a_leading_module"), "{seen}");
+    assert!(!seen.contains("inside_leading"), "{seen}");
+
+    let seen = production(&fixture(&[
+        "pub fn above() {}",
+        "CFG",
+        "mod tests {",
+        "    fn inside_trailing() {}",
+        "}",
+        "pub fn below_a_trailing_module() {}",
+    ]));
+    assert!(seen.contains("above"), "{seen}");
+    assert!(seen.contains("below_a_trailing_module"), "{seen}");
+    assert!(!seen.contains("inside_trailing"), "{seen}");
+
+    let seen = production(&fixture(&[
+        "pub fn before() {}",
+        "CFG",
+        "fn only_for_tests() {}",
+        "pub fn after_a_mid_file_item() {}",
+    ]));
+    assert!(
+        seen.contains("before") && seen.contains("after_a_mid_file_item"),
+        "{seen}"
+    );
+    assert!(!seen.contains("only_for_tests"), "{seen}");
+
+    let seen = production(&fixture(&[
+        "CFG",
+        "mod tests {",
+        "    fn outer() {",
+        "        if true { let _nested = 1; }",
+        "        match 1 { _ => {} }",
+        "    }",
+        "}",
+        "pub fn after_nesting() {}",
+    ]));
+    assert!(
+        seen.contains("after_nesting"),
+        "nesting ended the mask early or late: {seen}"
+    );
+    assert!(!seen.contains("_nested"), "{seen}");
+
+    let seen = production(&fixture(&[
+        "CFG",
+        "fn first_test_item() {}",
+        "pub fn between() {}",
+        "CFG",
+        "fn second_test_item() {}",
+        "pub fn last() {}",
+    ]));
+    assert!(seen.contains("between") && seen.contains("last"), "{seen}");
+    assert!(!seen.contains("first_test_item"), "{seen}");
+    assert!(!seen.contains("second_test_item"), "{seen}");
+
+    // Line indices are preserved, which the `R1:` lookup depends on.
+    let source = fixture(&["pub fn a() {}", "CFG", "fn t() {}", "pub fn b() {}"]);
+    let lines: Vec<&str> = source.lines().collect();
+    let mask = production_mask(&lines);
+    assert_eq!(
+        mask.len(),
+        lines.len(),
+        "the mask must be one flag per line"
+    );
+    assert!(
+        mask.first().copied().unwrap_or(false),
+        "line 0 is production"
+    );
+    assert!(
+        mask.last().copied().unwrap_or(false),
+        "the last line is production"
+    );
+}
+
+#[test]
+fn production_mask_states_the_limitation_it_has_not_solved() {
+    let source = fixture(&[
+        "CFG",
+        "mod tests {",
+        "    fn t() { let _s = \"}\"; }",
+        "}",
+        "pub fn after_a_brace_in_a_string() {}",
+    ]);
+    let seen = production(&source);
+    assert!(
+        seen.contains("after_a_brace_in_a_string"),
+        "the production code below the item should still be seen: {seen}"
+    );
+    assert!(
+        !seen.contains("fn t()"),
+        "the test function itself must still be masked: {seen}"
+    );
+    assert!(
+        seen.lines().any(|l| l.trim() == "}"),
+        "the early end of the mask should leak the item's tail into production -- if this          no longer holds, the mask has been made string-aware and this test and the          limitation it records should go: {seen}"
     );
 }
 
@@ -214,9 +331,38 @@ fn the_rules_scan_reads_past_a_mid_file_cfg_test() {
 }
 
 #[test]
-fn r1_no_capacity_is_reserved_from_an_unbounded_claim() {
+fn the_rules_scan_reads_past_the_trailing_test_module() {
+    let fixture = concat!(
+        "pub fn above_the_module() {}
+",
+        "#[cfg(",
+        "test)]
+",
+        "mod tests {
+",
+        "    fn inside() { let _ = None::<u8>.unwrap_or(0); }
+",
+        "}
+",
+        "pub fn below_the_module() {}
+",
+    );
+    let seen = production(fixture);
+    assert!(seen.contains("above_the_module"), "{seen}");
+    assert!(
+        seen.contains("below_the_module"),
+        "**the regression this test exists for**: production code *after* the trailing          test module was dropped, so every scan using `production` was blind to the bottom          of any file with one: {seen}"
+    );
+    assert!(
+        !seen.contains("inside"),
+        "the test module itself must still be masked: {seen}"
+    );
+}
+
+/// Capacity reservations from an unbounded size with no `R1:` note above them.
+fn r1_capacity_problems(modules: &[(String, String)]) -> Vec<String> {
     let mut unjustified: Vec<String> = Vec::new();
-    for (name, source) in core_modules().into_iter().chain(protocol_modules()) {
+    for (name, source) in modules {
         if TEST_ONLY_MODULES.contains(&name.as_str()) {
             continue;
         }
@@ -249,6 +395,16 @@ fn r1_no_capacity_is_reserved_from_an_unbounded_claim() {
             }
         }
     }
+    unjustified
+}
+
+#[test]
+fn r1_no_capacity_is_reserved_from_an_unbounded_claim() {
+    let modules: Vec<(String, String)> = core_modules()
+        .into_iter()
+        .chain(protocol_modules())
+        .collect();
+    let unjustified = r1_capacity_problems(&modules);
     assert!(
         unjustified.is_empty(),
         "R1 corollary: these reserve capacity from a size that is not a literal, a \
@@ -905,6 +1061,572 @@ const y = 2;
         total >= 3,
         "the bridge scan found only {total} registrations; it is not reading the module"
     );
+}
+
+fn kotlin_fn_body(source: &str, name: &str) -> Option<String> {
+    let at = source.find(&format!("fun {name}"))?;
+    let after = source.get(at..)?;
+    let brace = after.find('{')?;
+    let mut depth = 0_usize;
+    for (i, ch) in after.char_indices().skip(brace) {
+        if ch == '{' {
+            depth += 1;
+        } else if ch == '}' {
+            depth -= 1;
+            if depth == 0 {
+                return after.get(brace..=i).map(str::to_owned);
+            }
+        }
+    }
+    None
+}
+
+#[test]
+fn i8_the_secret_key_entry_is_not_biometric_bound() {
+    let source = without_comments(&read(
+        "apps/mobile/modules/chiavora-core/android/src/main/java/ch/chiavora/core/DeviceKeys.kt",
+    ));
+
+    let muk = kotlin_fn_body(&source, "createMukWrappingKey")
+        .expect("createMukWrappingKey must exist -- I8's paired assertion rests on it");
+    let secret = kotlin_fn_body(&source, "createSecretKeyEntry")
+        .expect("createSecretKeyEntry must exist -- it is the entry I8 is about");
+
+    // The MUK's key must carry both calls, so the absence check below is not vacuous.
+    for required in [
+        "setUserAuthenticationRequired(true)",
+        "setInvalidatedByBiometricEnrollment(true)",
+    ] {
+        assert!(
+            muk.contains(required),
+            "the MUK's wrapping key no longer sets {required}. Either the key is no longer \
+             biometric-bound -- which §3.3 requirement 1 forbids -- or this scan has stopped \
+             reading the function, in which case I8's half below is passing vacuously."
+        );
+    }
+
+    for forbidden in [
+        "setUserAuthenticationRequired(true)",
+        "setInvalidatedByBiometricEnrollment(true)",
+    ] {
+        assert!(
+            !secret.contains(forbidden),
+            "I8 VIOLATED: the Secret Key's keystore entry calls {forbidden}.\n\
+             This looks like hardening and is a regression: a user enrolling a second \
+             fingerprint would lose the Secret Key and need their Emergency Kit for a routine \
+             change. docs/security-design.md §2.4 (v0.27) has the reasoning. The Secret Key defends against an \
+             attacker holding the encrypted data WITHOUT the device (A3); it is not a defence \
+             against the device's owner."
+        );
+    }
+
+    assert!(
+        source.contains("MUK_WRAPPING_KEY_ALIAS") && source.contains("SECRET_KEY_ALIAS"),
+        "both aliases must be named constants in this file"
+    );
+}
+
+#[test]
+fn the_i8_scan_would_notice_a_bound_secret_key_and_an_unbound_muk() {
+    let good = r"
+        fun createMukWrappingKey(): SecretKey {
+            return generate { b -> b.setUserAuthenticationRequired(true).setInvalidatedByBiometricEnrollment(true) }
+        }
+        fun createSecretKeyEntry(): SecretKey {
+            return generate { b -> b }
+        }
+    ";
+    let muk = kotlin_fn_body(good, "createMukWrappingKey").expect("finds the MUK body");
+    let secret = kotlin_fn_body(good, "createSecretKeyEntry").expect("finds the Secret Key body");
+    assert!(muk.contains("setInvalidatedByBiometricEnrollment(true)"));
+    assert!(!secret.contains("setInvalidatedByBiometricEnrollment(true)"));
+
+    let hardened = good.replace(
+        "fun createSecretKeyEntry(): SecretKey {\n            return generate { b -> b }",
+        "fun createSecretKeyEntry(): SecretKey {\n            return generate { b -> b.setInvalidatedByBiometricEnrollment(true) }",
+    );
+    let secret = kotlin_fn_body(&hardened, "createSecretKeyEntry").expect("finds it");
+    assert!(
+        secret.contains("setInvalidatedByBiometricEnrollment(true)"),
+        "the witness did not actually introduce the regression it is testing for"
+    );
+
+    assert!(
+        kotlin_fn_body(good, "createSomethingThatDoesNotExist").is_none(),
+        "the body finder must return None for a missing function, so the presence \
+         half fails loudly rather than the absence half passing quietly"
+    );
+}
+
+const CRATES_ABOVE_CORE: [&str; 4] = [
+    "crates/ffi-mobile/src",
+    "crates/ffi-node/src",
+    "crates/server/src",
+    "apps/cli/src",
+];
+
+#[test]
+fn the_muk_has_one_door_back_into_core() {
+    let mut problems: Vec<String> = Vec::new();
+
+    for dir in CRATES_ABOVE_CORE {
+        let mut files = Vec::new();
+        rs_files_under(&root().join(dir), &mut files);
+        for path in files {
+            let source = production(&std::fs::read_to_string(&path).expect("a source file"));
+            if source.contains("from_derived_bytes") {
+                let name = path.to_string_lossy().replace('\\', "/");
+                let short = name.rsplit("chiavora/").next().unwrap_or(&name).to_owned();
+                problems.push(format!(
+                    "{short} calls `Secret::from_derived_bytes`. The one door for key \
+                     material re-entering `core` from a platform keystore is \
+                     `device::muk_from_keystore`, which carries the justification and the \
+                     length check. See `docs/crypto.md`'s R4 deviation on §3.3 requirement 2."
+                ));
+            }
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "the MUK's door is no longer single:\n  {}",
+        problems.join("\n  ")
+    );
+
+    let device = production(&read("crates/core/src/device.rs"));
+    assert!(
+        device.contains("fn muk_from_keystore"),
+        "`device::muk_from_keystore` is gone. It is the door the check above assumes exists"
+    );
+    assert!(
+        device.contains("from_derived_bytes"),
+        "`muk_from_keystore` no longer calls `from_derived_bytes`, so the scan above is \
+         asserting that nobody uses a door that does nothing"
+    );
+
+    let manifest = read("Cargo.toml");
+    for member in [
+        "crates/ffi-mobile",
+        "crates/ffi-node",
+        "crates/server",
+        "apps/cli",
+    ] {
+        assert!(
+            manifest.contains(member),
+            "{member} is no longer a workspace member; CRATES_ABOVE_CORE is stale"
+        );
+    }
+    let declared =
+        manifest.matches("    \"crates/").count() + manifest.matches("    \"apps/").count();
+    assert_eq!(
+        declared,
+        CRATES_ABOVE_CORE.len() + 2,
+        "the workspace has {declared} members and this scan covers {} plus core and protocol. \
+         A new crate above `core` must be added to CRATES_ABOVE_CORE, or it is not scanned.",
+        CRATES_ABOVE_CORE.len()
+    );
+}
+
+#[test]
+fn the_store_key_is_still_derived_from_the_muk() {
+    // A substituted MUK blob is caught only because the Store Key derives from the MUK.
+    let derive = production(&read("crates/core/src/derive.rs"));
+    let body = derive
+        .split("pub fn derive_store_key")
+        .nth(1)
+        .and_then(|rest| rest.split("\n}").next())
+        .expect("derive_store_key must exist");
+
+    assert!(
+        body.contains("hkdf_sha256(muk.expose()"),
+        "the Store Key is no longer derived with the MUK as its HKDF ikm.\n\
+         `docs/crypto.md` declines AAD record type 0x06 for the device-wrapped MUK because a \
+         substituted blob is self-detecting: a different MUK derives a different Store Key and \
+         the metadata MAC fails on open. That argument rests on this line. If the derivation \
+         has genuinely changed, 0x06 has to come back -- and I3's \"five record types\" wording, \
+         the injectivity suite and ADR-0002 come with it."
+    );
+    assert!(
+        body.contains("INFO_STORE"),
+        "the Store Key's domain separator changed; check the argument above still holds"
+    );
+
+    let crypto = read("docs/crypto.md");
+    assert!(
+        crypto.contains("No sixth AAD record type"),
+        "`docs/crypto.md` no longer records why 0x06 was declined, so this test is guarding \
+         an argument the document does not make"
+    );
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Placement {
+    NearTheTop,
+    AboveTheTestCode,
+    BelowTheTestModule,
+}
+
+/// In memory, so tests running in parallel never see a modified file on disk.
+fn with_violation(real_source: &str, violation: &str, at: Placement) -> String {
+    let lines: Vec<&str> = real_source.lines().collect();
+    let marker = concat!("#[cfg(", "test)]");
+    let insert_at = match at {
+        // `import` and `internal` cover Kotlin.
+        Placement::NearTheTop => lines
+            .iter()
+            .position(|l| {
+                l.starts_with("use ")
+                    || l.starts_with("pub ")
+                    || l.starts_with("import ")
+                    || l.starts_with("internal ")
+            })
+            .unwrap_or(0),
+        Placement::AboveTheTestCode => lines
+            .iter()
+            .position(|l| l.trim() == marker)
+            .unwrap_or(lines.len()),
+        Placement::BelowTheTestModule => lines.len(),
+    };
+    let mut out: Vec<String> = lines.iter().map(|l| (*l).to_owned()).collect();
+    out.insert(insert_at.min(out.len()), violation.to_owned());
+    out.join("\n") + "\n"
+}
+
+const EVERY_PLACEMENT: [Placement; 3] = [
+    Placement::NearTheTop,
+    Placement::AboveTheTestCode,
+    Placement::BelowTheTestModule,
+];
+
+#[test]
+fn the_r1_absorbing_scan_fires_on_a_violation_planted_in_a_real_module() {
+    let modules = core_modules();
+    assert!(!modules.is_empty(), "the scan reads no modules at all");
+
+    for at in EVERY_PLACEMENT {
+        let poisoned: Vec<(String, String)> = modules
+            .iter()
+            .map(|(name, source)| {
+                if name == "derive.rs" {
+                    (
+                        name.clone(),
+                        with_violation(
+                            source,
+                            "pub fn planted() { let _ = None::<u8>.unwrap_or(0); }",
+                            at,
+                        ),
+                    )
+                } else {
+                    (name.clone(), source.clone())
+                }
+            })
+            .collect();
+
+        let problems = r1_absorbing_problems(&poisoned);
+        assert!(
+            problems.iter().any(|p| p.contains("derive.rs")),
+            "R1's absorbing scan did not see an unjustified `unwrap_or` planted in the real \
+             `derive.rs` at {at:?}. The scan passes its own suite and is blind to this \
+             position -- which is what R7 cases 7 and 10 were. Check `production_mask`."
+        );
+    }
+
+    assert!(
+        r1_absorbing_problems(&modules).is_empty(),
+        "the scan reports problems on the real tree, so a planted one proves nothing"
+    );
+}
+
+#[test]
+fn the_muk_door_scan_fires_on_a_violation_planted_in_a_real_crate() {
+    let path = root().join("crates/ffi-mobile/src/lib.rs");
+    let real = std::fs::read_to_string(&path).expect("ffi-mobile's lib.rs");
+
+    for at in EVERY_PLACEMENT {
+        let poisoned = production(&with_violation(
+            &real,
+            "pub fn planted(b: Vec<u8>) { let _ = Secret::<Muk>::from_derived_bytes(b); }",
+            at,
+        ));
+        assert!(
+            poisoned.contains("from_derived_bytes"),
+            "the door scan's reading of a real crate file is blind at {at:?}: a planted call \
+             to `from_derived_bytes` is not in what it would scan. This is exactly how case 10 \
+             was found -- a violation planted below the test module that nothing saw."
+        );
+    }
+
+    assert!(
+        !production(&real).contains("from_derived_bytes"),
+        "ffi-mobile already calls `from_derived_bytes`; the witness proves nothing"
+    );
+}
+
+#[test]
+fn the_r1_capacity_scan_fires_on_a_reservation_planted_in_a_real_module() {
+    let modules: Vec<(String, String)> = core_modules()
+        .into_iter()
+        .chain(protocol_modules())
+        .collect();
+    for at in EVERY_PLACEMENT {
+        let poisoned: Vec<(String, String)> = modules
+            .iter()
+            .map(|(name, source)| {
+                if name == "zip.rs" {
+                    (
+                        name.clone(),
+                        with_violation(
+                            source,
+                            "pub fn planted(declared: usize) { let _v: Vec<u8> = Vec::with_capacity(declared); }",
+                            at,
+                        ),
+                    )
+                } else {
+                    (name.clone(), source.clone())
+                }
+            })
+            .collect();
+        let problems = r1_capacity_problems(&poisoned);
+        assert!(
+            problems.iter().any(|p| p.contains("zip.rs")),
+            "R1's capacity scan did not see an unjustified `Vec::with_capacity(declared)` \
+             planted in the real `zip.rs` at {at:?} -- the file the corollary's own incident \
+             came from."
+        );
+    }
+    assert!(
+        r1_capacity_problems(&modules).is_empty(),
+        "the scan reports problems on the real tree, so a planted one proves nothing"
+    );
+}
+
+#[test]
+fn the_bridge_scan_fires_on_a_synchronous_core_call_planted_in_the_real_module() {
+    // Kotlin has no `#[cfg(test)]`, so `AboveTheTestCode` lands at the end of the file.
+    let path = root()
+        .join("apps/mobile/modules/chiavora-core/android/src/main/java/ch/chiavora/core/ChiavoraCoreModule.kt");
+    let real = std::fs::read_to_string(&path).expect("the bridge module");
+
+    for at in EVERY_PLACEMENT {
+        let poisoned = without_comments(&with_violation(
+            &real,
+            "        Function(\"planted\") { ffiSmoke() }",
+            at,
+        ));
+        let blocks = registration_blocks(&poisoned, "Function");
+        assert!(
+            blocks.iter().any(|b| b.contains("ffiSmoke")),
+            "the bridge scan did not see a synchronous `Function` calling into `core` planted \
+             in the real module at {at:?}. A scan that cannot see a planted violation cannot \
+             see a real one."
+        );
+    }
+
+    let clean = without_comments(&real);
+    assert!(
+        registration_blocks(&clean, "Function")
+            .iter()
+            .all(|b| !b.contains("ffiSmoke")),
+        "the real bridge module already has a synchronous `core` call; the witness proves nothing"
+    );
+}
+
+#[test]
+fn the_i8_scan_fires_on_a_binding_planted_in_the_real_keystore_code() {
+    let path = root().join(
+        "apps/mobile/modules/chiavora-core/android/src/main/java/ch/chiavora/core/DeviceKeys.kt",
+    );
+    let real = std::fs::read_to_string(&path).expect("the keystore code");
+
+    let poisoned = without_comments(&real.replace(
+        ") { builder -> builder }",
+        ") { builder -> builder.setInvalidatedByBiometricEnrollment(true) }",
+    ));
+    let secret = kotlin_fn_body(&poisoned, "createSecretKeyEntry")
+        .expect("createSecretKeyEntry must still be findable in the poisoned source");
+    assert!(
+        secret.contains("setInvalidatedByBiometricEnrollment(true)"),
+        "I8's scan cannot see the Secret Key's entry being bound to the biometric in the real \
+         file. That is the one regression it exists to catch, and it would read as hardening \
+         in review."
+    );
+
+    let clean = without_comments(&real);
+    let muk = kotlin_fn_body(&clean, "createMukWrappingKey").expect("the MUK's builder");
+    assert!(
+        muk.contains("setInvalidatedByBiometricEnrollment(true)"),
+        "the MUK's entry is not biometric-bound in the real file"
+    );
+}
+
+const SCANS_AND_THEIR_WITNESSES: [(&str, bool); 6] = [
+    ("r1_every_absorbing_pattern_carries_a_justification", true),
+    ("r1_no_capacity_is_reserved_from_an_unbounded_claim", true),
+    (
+        "r3_getrandom_is_called_in_exactly_one_place_in_the_crate",
+        true,
+    ),
+    ("the_muk_has_one_door_back_into_core", true),
+    ("no_bridge_method_runs_core_on_the_js_thread", true),
+    ("i8_the_secret_key_entry_is_not_biometric_bound", true),
+];
+
+const SCANS_STILL_IN_THEIR_MODULES: [(&str, &str); 2] = [
+    (
+        "crates/core/src/nonce.rs",
+        "i2_generate_is_the_only_fresh_nonce_source",
+    ),
+    (
+        "crates/core/src/secret.rs",
+        "only_the_brand_macro_grants_a_provenance",
+    ),
+];
+
+#[test]
+fn every_scan_without_a_real_file_witness_is_listed_as_such() {
+    let suite = read("crates/core/tests/rules_are_mechanised.rs");
+    for (scan, _) in SCANS_AND_THEIR_WITNESSES {
+        assert!(
+            suite.contains(&format!("fn {scan}(")),
+            "{scan} is listed here but does not exist in this file"
+        );
+    }
+
+    for (file, scan) in SCANS_STILL_IN_THEIR_MODULES {
+        let source = read(file);
+        assert!(
+            source.contains(&format!("fn {scan}(")),
+            "{scan} is no longer in {file}. A scan outside this registry that has moved is \
+             a scan nothing here is tracking"
+        );
+    }
+
+    let covered = SCANS_AND_THEIR_WITNESSES
+        .iter()
+        .filter(|(_, has)| *has)
+        .count();
+    assert_eq!(
+        covered,
+        SCANS_AND_THEIR_WITNESSES.len(),
+        "the count changed without this assertion being updated: real-file witnesses are \
+         owed for the rows marked false, and moving a row to `true` should be a deliberate \
+         edit here as well as a new test"
+    );
+}
+
+fn r3_draw_sites(modules: &[(String, String)]) -> Vec<String> {
+    modules
+        .iter()
+        .filter(|(_, source)| {
+            let code = production(source);
+            code.contains("getrandom::fill") || code.contains("use getrandom")
+        })
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
+#[test]
+fn r3_getrandom_is_called_in_exactly_one_place_in_the_crate() {
+    let modules = core_modules();
+    assert!(
+        modules.len() >= 8,
+        "expected every module in crates/core/src, found {} — a scan that reads \
+         nothing reports success",
+        modules.len()
+    );
+    for required in ["generate.rs", "csprng.rs"] {
+        assert!(
+            modules.iter().any(|(name, _)| name == required),
+            "the module list must include {required}"
+        );
+    }
+
+    let sites = r3_draw_sites(&modules);
+    assert_eq!(
+        sites,
+        vec!["csprng.rs".to_owned()],
+        "R3: randomness must be drawn in exactly one module, and it must be `csprng.rs`"
+    );
+}
+
+#[test]
+fn the_r3_scan_fires_on_a_draw_planted_in_a_real_module() {
+    let modules = core_modules();
+    for at in EVERY_PLACEMENT {
+        let poisoned: Vec<(String, String)> = modules
+            .iter()
+            .map(|(name, source)| {
+                if name == "generate.rs" {
+                    (
+                        name.clone(),
+                        with_violation(
+                            source,
+                            "pub fn planted() { getrandom::fill(&mut []); }",
+                            at,
+                        ),
+                    )
+                } else {
+                    (name.clone(), source.clone())
+                }
+            })
+            .collect();
+        let sites = r3_draw_sites(&poisoned);
+        let clean = r3_draw_sites(&modules);
+        assert!(
+            !clean.iter().any(|n| n == "generate.rs"),
+            "`generate.rs` already draws randomness; the witness proves nothing"
+        );
+        assert_ne!(
+            sites, clean,
+            "R3's scan gave the same answer for a poisoned and a clean tree at {at:?} -- it is              not reading the slice it was handed"
+        );
+        assert!(
+            sites.iter().any(|n| n == "generate.rs"),
+            "R3's scan did not see a `getrandom::fill` planted in the real `generate.rs` at \
+             {at:?}. This is the scan whose second-copy masking helper was blind to 57% of \
+             `ffi_guard.rs`."
+        );
+    }
+}
+
+#[test]
+fn r3_generate_rs_does_not_draw_directly() {
+    let code = production(&read("crates/core/src/generate.rs"));
+    assert!(
+        !code.contains("getrandom"),
+        "R3: `generate.rs` must go through `csprng`, not `getrandom`"
+    );
+}
+
+#[test]
+fn every_detector_taking_a_source_slice_has_a_differential_witness() {
+    let suite = read("crates/core/tests/rules_are_mechanised.rs");
+    let detectors: Vec<String> = suite
+        .lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix("fn ")?;
+            let name = rest.split('(').next()?;
+            rest.contains("&[(String, String)]")
+                .then(|| name.to_owned())
+        })
+        .collect();
+
+    assert!(
+        !detectors.is_empty(),
+        "no detectors found -- this check is reading nothing and reporting success"
+    );
+
+    for detector in &detectors {
+        // Its scan, plus a witness calling it on a poisoned and a clean input.
+        let calls = suite.matches(&format!("{detector}(&")).count();
+        assert!(
+            calls >= 3,
+            "`{detector}` is called {calls} time(s) -- its scan, and a witness that runs it \
+             on both a poisoned and a clean input. Fewer than three means there is no \
+             differential witness, and an absolute one passes for a detector that ignores \
+             its argument."
+        );
+    }
 }
 
 /// Keeps `Path` in use on every platform without a `cfg`.

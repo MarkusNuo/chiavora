@@ -44,67 +44,6 @@ mod tests {
     use super::{fill_bytes, uniform_below};
 
     #[test]
-    fn r3_getrandom_is_called_in_exactly_one_place_in_the_crate() {
-        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut modules: Vec<(String, String)> = Vec::new();
-        for entry in std::fs::read_dir(&src).expect("crates/core/src is readable") {
-            let path = entry.expect("a readable directory entry").path();
-            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                continue;
-            }
-            let name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or_default()
-                .to_owned();
-            let source = std::fs::read_to_string(&path).expect("a readable module");
-            modules.push((name, crate::scan::production(&source)));
-        }
-
-        assert!(
-            modules.len() >= 8,
-            "expected to scan every module in crates/core/src, found {} — a scan              that reads nothing reports success",
-            modules.len()
-        );
-        assert!(
-            modules.iter().any(|(name, _)| name == "generate.rs"),
-            "the module list must include generate.rs; omitting it is the bug              this test was rewritten to prevent"
-        );
-        assert!(
-            modules.iter().any(|(name, _)| name == "csprng.rs"),
-            "the module list must include csprng.rs"
-        );
-
-        let sites: Vec<&String> = modules
-            .iter()
-            .filter(|(_, code)| {
-                code.contains("getrandom::fill") || code.contains("use getrandom")
-            })
-            .map(|(name, _)| name)
-            .collect();
-
-        assert_eq!(
-            sites.len(),
-            1,
-            "R3: randomness must be drawn in exactly one module; found {sites:?}"
-        );
-        assert_eq!(
-            sites.first().map(|name| name.as_str()),
-            Some("csprng.rs"),
-            "R3: the one draw site must be `csprng.rs`"
-        );
-    }
-
-    #[test]
-    fn r3_generate_rs_does_not_draw_directly() {
-        let code = crate::scan::production(include_str!("generate.rs"));
-        assert!(
-            !code.contains("getrandom"),
-            "R3: `generate.rs` must go through `csprng`, not `getrandom`"
-        );
-    }
-
-    #[test]
     fn fill_bytes_writes_something() {
         let mut buf = [0_u8; 32];
         fill_bytes(&mut buf).expect("the platform CSPRNG is available in tests");

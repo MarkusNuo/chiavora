@@ -8,6 +8,7 @@ pub mod chrome;
 pub(crate) mod csprng;
 pub mod csv;
 pub mod derive;
+pub mod device;
 pub mod emergency_kit;
 pub mod entry;
 pub mod export;

@@ -2045,6 +2045,139 @@ fn the_usability_scan_would_notice_the_incident_it_was_written_for() {
     assert!(keystore_precondition_problems("class Unrelated {}").is_empty());
 }
 
+/// The nine domains Android's `data-extraction-rules` defines, listed here
+/// independently of the plugin so a domain dropped from it is noticed.
+const EXTRACTION_DOMAINS: [&str; 9] = [
+    "root",
+    "file",
+    "database",
+    "sharedpref",
+    "external",
+    "device_root",
+    "device_file",
+    "device_database",
+    "device_sharedpref",
+];
+
+fn backup_exclusion_problems(app_json: &str, plugin: &str) -> Vec<String> {
+    let mut problems = Vec::new();
+
+    let compact: String = app_json.split_whitespace().collect();
+
+    if !compact.contains("\"allowBackup\":false") {
+        problems.push(
+            "app.json: expo.android.allowBackup is not false. Cloud backup is governed by \
+             this attribute and nothing else; the XML rules cover device-to-device transfer \
+             only."
+                .to_owned(),
+        );
+    }
+    if compact.contains("\"allowBackup\":true") {
+        problems.push("app.json: expo.android.allowBackup is explicitly true".to_owned());
+    }
+    if !compact.contains("\"./plugins/with-chiavora-backup\"") {
+        problems.push(
+            "app.json: with-chiavora-backup is not in expo.plugins, so the generated \
+             manifest points at no dataExtractionRules and device-to-device transfer is \
+             unrestricted — which `allowBackup` does not cover on API 31+."
+                .to_owned(),
+        );
+    }
+
+    // `<device-transfer>` is the one that looks redundant and is not.
+    for required in ["<cloud-backup>", "<device-transfer>"] {
+        if !plugin.contains(required) {
+            problems.push(format!(
+                "with-chiavora-backup.js: no `{required}` section. On API 31+ these are \
+                 two different transports and excluding one excludes one."
+            ));
+        }
+    }
+    for domain in EXTRACTION_DOMAINS {
+        if !plugin.contains(&format!("'{domain}'")) {
+            problems.push(format!(
+                "with-chiavora-backup.js: the domain `{domain}` is not in DOMAINS. An \
+                 unexcluded domain is a backed-up domain — the rules file includes \
+                 everything it does not name."
+            ));
+        }
+    }
+    if !plugin.contains("allowBackup !== false") {
+        problems.push(
+            "with-chiavora-backup.js: the plugin no longer refuses an app.json whose \
+             allowBackup is not false. Half is not a partial mitigation."
+                .to_owned(),
+        );
+    }
+
+    problems
+}
+
+#[test]
+fn the_vault_database_is_excluded_from_backup_and_device_transfer() {
+    let problems = backup_exclusion_problems(
+        &read("apps/mobile/app.json"),
+        &read("apps/mobile/plugins/with-chiavora-backup.js"),
+    );
+    assert!(
+        problems.is_empty(),
+        " violations:\n {}",
+        problems.join("\n  ")
+    );
+}
+
+#[test]
+fn the_backup_scan_would_notice_each_half_going_missing() {
+    let good_json = read("apps/mobile/app.json");
+    let good_plugin = read("apps/mobile/plugins/with-chiavora-backup.js");
+    assert!(
+        backup_exclusion_problems(&good_json, &good_plugin).is_empty(),
+        "the real files must be the passing case, or the mutations below prove nothing"
+    );
+
+    let mutations: [(&str, String, String); 5] = [
+        (
+            "allowBackup flipped to true",
+            good_json.replace("\"allowBackup\": false", "\"allowBackup\": true"),
+            good_plugin.clone(),
+        ),
+        (
+            "allowBackup removed entirely",
+            good_json.replace("\"allowBackup\": false", ""),
+            good_plugin.clone(),
+        ),
+        (
+            "the plugin unregistered",
+            good_json.replace("\"./plugins/with-chiavora-backup\"", "\"expo-font\""),
+            good_plugin.clone(),
+        ),
+        (
+            "<device-transfer> deleted as redundant",
+            good_json.clone(),
+            good_plugin.replace("<device-transfer>", "<!-- gone -->"),
+        ),
+        (
+            // No `\n` in the needle, so it still matches a CRLF checkout.
+            "a domain dropped from DOMAINS",
+            good_json.clone(),
+            good_plugin.replace("'device_sharedpref',", ""),
+        ),
+    ];
+
+    for (what, json, plugin) in mutations {
+        // Not `assert_ne!`, so a failure names the mutation instead of printing two files.
+        assert!(
+            json != good_json || plugin != good_plugin,
+            "the mutation '{what}' changed nothing, so it tests nothing — the string it \
+             replaces is no longer in the file it replaces it in"
+        );
+        assert!(
+            !backup_exclusion_problems(&json, &plugin).is_empty(),
+            "the scan accepted '{what}'"
+        );
+    }
+}
+
 /// Keeps `Path` in use on every platform without a `cfg`.
 #[allow(dead_code)]
 fn _unused(_: &Path) {}

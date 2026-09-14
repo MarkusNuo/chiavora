@@ -113,7 +113,8 @@ const fn check_wrap_purpose(wrap_purpose: u8) -> Result<(), AadError> {
     }
 }
 
-const fn check_prefix(prefix_len: u8, prefix_bits: u64) -> Result<(), AadError> {
+/// Public so the manifest checks its segment prefixes with the same implementation (§2.2).
+pub const fn check_prefix(prefix_len: u8, prefix_bits: u64) -> Result<(), AadError> {
     if prefix_len > MAX_PREFIX_LEN {
         return Err(AadError::PrefixLenTooLarge);
     }

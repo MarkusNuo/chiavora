@@ -18,6 +18,17 @@ export interface VaultState {
   readonly mukKeyInvalidated: boolean;
 }
 
+/** Read {@link KeystoreProviderReport.controlWorked} first. */
+export interface KeystoreProviderReport {
+  readonly spiClass?: string;
+  readonly chain?: string;
+  readonly byteBufferDoFinalDeclaredBy?: string | null;
+  readonly byteArrayDoFinalDeclaredBy?: string | null;
+  readonly controlWorked?: boolean;
+  readonly verdict?: string;
+  readonly error?: string;
+}
+
 export interface KeystoreReport {
   readonly mukBacking: string;
   /** Must be true: a new fingerprint destroys the MUK's wrapping key. */
@@ -41,6 +52,7 @@ interface ChiavoraCoreNativeModule {
     iterations: number,
     delayMs: number,
   ): Promise<DerivationOutcome>;
+  keystoreProviderReport?(): Promise<KeystoreProviderReport>;
 
   enroll(
     password: Uint8Array,
@@ -85,4 +97,11 @@ export async function harnessDeriveOnce(
     return null;
   }
   return ChiavoraCore.harnessDeriveOnce(memoryKib, iterations, delayMs);
+}
+
+export async function keystoreProviderReport(): Promise<KeystoreProviderReport | null> {
+  if (!ChiavoraCore.hasHarness() || !ChiavoraCore.keystoreProviderReport) {
+    return null;
+  }
+  return ChiavoraCore.keystoreProviderReport();
 }

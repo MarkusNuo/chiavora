@@ -13,6 +13,7 @@ import {
 
 import ChiavoraCore, {
   harnessDeriveOnce,
+  keystoreProviderReport,
   type KeystoreReport,
   type VaultState,
 } from './modules/chiavora-core';
@@ -178,6 +179,23 @@ export default function App() {
     await refresh();
   }, [refresh, say]);
 
+  const probeKeystoreProvider = useCallback(async () => {
+    const out = await keystoreProviderReport();
+    if (!out) {
+      say(': NO PROBE IN THIS BUILD');
+      return;
+    }
+    if (out.error !== undefined) {
+      say(could not run: ${out.error}`);
+      return;
+    }
+    say(spi: ${out.spiClass}`);
+    say(chain: ${out.chain}`);
+    say(byte[] doFinal declared by: ${out.byteArrayDoFinalDeclaredBy} (control)`);
+    say(ByteBuffer doFinal declared by: ${out.byteBufferDoFinalDeclaredBy}`);
+    say(VERDICT: ${out.verdict}`);
+  }, [say]);
+
   const invalidated = state?.mukKeyInvalidated ?? false;
 
   return (
@@ -211,6 +229,22 @@ export default function App() {
         />
         <Button label="Unlock with password" onPress={unlockPassword} disabled={!state?.hasSecretKey} />
         <Button label="Forget this device" onPress={forget} />
+        {ChiavoraCore.hasHarness() ? (
+          <Button label="Probe the Keystore provider" onPress={probeKeystoreProvider} />
+        ) : null}
+
+        {/*
+        */}
+
+        <View style={styles.blunt}>
+          <Text style={styles.bluntTitle}>If you lose both, the vault is gone</Text>
+          <Text style={styles.bluntBody}>
+            Your vault is unlocked by your account password together with your Secret Key.
+            Chiavora never sees either one, and there is no reset, no recovery link and no
+            support route back in. If you forget your password and lose your Emergency Kit,
+            every password in here is unreadable — by us, and by anyone else.
+          </Text>
+        </View>
 
         {report ? (
           <View style={styles.report}>
@@ -342,5 +376,15 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   reportTitle: { fontWeight: '600', marginBottom: 6 },
+  blunt: {
+    marginTop: 16,
+    padding: 12,
+    borderColor: '#c0392b',
+    borderWidth: 1,
+    borderRadius: 6,
+    backgroundColor: '#fdf2f0',
+  },
+  bluntTitle: { fontWeight: '700', marginBottom: 6, color: '#8e2a1f' },
+  bluntBody: { fontSize: 13, lineHeight: 19, color: '#4a1a13' },
   line: { fontFamily: 'monospace', fontSize: 12, marginBottom: 4 },
 });

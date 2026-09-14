@@ -74,6 +74,15 @@ impl KeystoreEntry {
 /// Length of a MUK, in bytes (§2.1).
 const MUK_LEN: usize = 32;
 
+/// Called on the enrolment path, before the MUK is handed out for wrapping.
+pub const fn check_enrolment_backing(backing: KeystoreBacking) -> Result<(), DeviceKeyError> {
+    if backing.is_hardware_backed() {
+        Ok(())
+    } else {
+        Err(DeviceKeyError::SoftwareOnlyKeystore)
+    }
+}
+
 /// On Android the bytes pass through a Java `byte[]` (a deviation recorded in
 /// `docs/crypto.md`), which the Kotlin side overwrites; this side zeroizes.
 pub fn muk_from_keystore(
@@ -112,6 +121,7 @@ pub const fn check_i8(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceKeyError {
+    SoftwareOnlyKeystore,
 
     SecretKeyIsBiometricBound,
     MukIsNotBiometricBound,
@@ -125,6 +135,9 @@ pub enum DeviceKeyError {
 impl core::fmt::Display for DeviceKeyError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::SoftwareOnlyKeystore => f.write_str(
+                "this device's keystore is software-only, so the vault key cannot be protected by hardware",
+            ),
             Self::SecretKeyIsBiometricBound => f.write_str(
                 "the Secret Key's keystore entry is bound to the biometric set (I8): a new \
                  fingerprint would destroy it and require the Emergency Kit",

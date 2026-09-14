@@ -1488,7 +1488,128 @@ fn the_i8_scan_fires_on_a_binding_planted_in_the_real_keystore_code() {
     );
 }
 
-const SCANS_AND_THEIR_WITNESSES: [(&str, bool); 8] = [
+fn call_sites(source: &str, name: &str) -> Vec<(usize, bool)> {
+    let lines: Vec<&str> = source.lines().collect();
+    let mask = production_mask(&lines);
+    let needle = format!("{name}(");
+    lines
+        .iter()
+        .enumerate()
+        .filter(|(index, line)| {
+            let code = line
+                .find("//")
+                .map_or(**line, |at| line.get(..at).unwrap_or(""));
+            // The definition is not a call site.
+            !code.contains("fn ") && code.contains(&needle) && *index < mask.len()
+        })
+        .map(|(index, _)| (index + 1, mask.get(index).copied().unwrap_or(false)))
+        .collect()
+}
+
+#[test]
+fn no_hardware_backing_predicate_is_called_only_by_its_own_tests() {
+    let device = root()
+        .join("crates")
+        .join("core")
+        .join("src")
+        .join("device.rs");
+    let source = std::fs::read_to_string(&device).expect("device.rs");
+
+    assert!(
+        source.contains("pub const fn is_hardware_backed"),
+        "device.rs no longer defines `is_hardware_backed` -- this scan is \
+         asserting something about a function that is not there"
+    );
+    assert!(
+        source.contains("pub const fn check_enrolment_backing"),
+        "device.rs no longer defines `check_enrolment_backing`, which is the \
+         enrolment path's refusal (D2)"
+    );
+
+    let sites = call_sites(&source, "is_hardware_backed");
+    let production: Vec<usize> = sites
+        .iter()
+        .filter(|(_, in_production)| *in_production)
+        .map(|(line, _)| *line)
+        .collect();
+    assert!(
+        !production.is_empty(),
+        "`is_hardware_backed` has {} call site(s) and every one of them is in a \
+         test module. A predicate nothing production calls is a check that does \
+         not run -- which is exactly what D2 was raised about.",
+        sites.len()
+    );
+
+    let stripped = without_comments(&source);
+    let enrolment = stripped
+        .split("pub const fn check_enrolment_backing")
+        .nth(1)
+        .unwrap_or_default();
+    let body = enrolment.split("\n}").next().unwrap_or_default();
+    assert!(
+        body.contains("is_hardware_backed"),
+        "`check_enrolment_backing` no longer consults `is_hardware_backed`, so \
+         the enrolment path's refusal is decided by something else"
+    );
+}
+
+#[test]
+fn the_call_site_scan_tells_a_production_caller_from_a_test_one() {
+    let only_in_tests = "
+pub const fn is_hardware_backed(self) -> bool { true }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn t() {
+        assert!(is_hardware_backed(x));
+    }
+}
+";
+    let also_in_production = "
+pub const fn is_hardware_backed(self) -> bool { true }
+
+pub const fn check_enrolment_backing(b: B) -> Result<(), E> {
+    if is_hardware_backed(b) { Ok(()) } else { Err(E) }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn t() {
+        assert!(is_hardware_backed(x));
+    }
+}
+";
+
+    let tests_only: Vec<usize> = call_sites(only_in_tests, "is_hardware_backed")
+        .into_iter()
+        .filter(|(_, p)| *p)
+        .map(|(line, _)| line)
+        .collect();
+    let with_caller: Vec<usize> = call_sites(also_in_production, "is_hardware_backed")
+        .into_iter()
+        .filter(|(_, p)| *p)
+        .map(|(line, _)| line)
+        .collect();
+
+    assert!(
+        tests_only.is_empty(),
+        "a predicate called only inside `#[cfg(test)]` reported a production \
+         caller at {tests_only:?} -- the mask is not masking"
+    );
+    assert!(
+        !with_caller.is_empty(),
+        "a predicate called from a production function reported no production \
+         caller -- the detector is not reading its argument"
+    );
+    assert_ne!(
+        tests_only, with_caller,
+        "the detector gave the same answer for both inputs"
+    );
+}
+
+const SCANS_AND_THEIR_WITNESSES: [(&str, bool); 9] = [
     ("r1_every_absorbing_pattern_carries_a_justification", true),
     ("r1_no_capacity_is_reserved_from_an_unbounded_claim", true),
     (
@@ -1501,6 +1622,10 @@ const SCANS_AND_THEIR_WITNESSES: [(&str, bool); 8] = [
     ("no_biometric_callback_hands_the_caller_a_flag", true),
     (
         "no_keystore_alias_check_stands_in_for_a_usability_check",
+        true,
+    ),
+    (
+        "no_hardware_backing_predicate_is_called_only_by_its_own_tests",
         true,
     ),
 ];
@@ -1793,12 +1918,17 @@ fn keystore_precondition_problems(source: &str) -> Vec<String> {
         return Vec::new();
     }
 
-    let lines: Vec<&str> = stripped.lines().collect();
+    // The original lines, so line numbers match where the note is looked up.
+    let lines: Vec<&str> = source.lines().collect();
     let mut problems = Vec::new();
 
     for (index, line) in lines.iter().enumerate() {
-        let negated_existence = (line.contains('!') && line.contains("exists("))
-            || (line.contains('!') && line.contains("containsAlias("));
+        let code = line
+            .find("//")
+            .map_or(*line, |at| line.get(..at).unwrap_or(""));
+        // `if (!exists(alias)) create()`; `if (exists) delete; create` is fine.
+        let negated_existence =
+            code.contains('!') && (code.contains("exists(") || code.contains("containsAlias("));
         if !negated_existence {
             continue;
         }
@@ -1806,20 +1936,23 @@ fn keystore_precondition_problems(source: &str) -> Vec<String> {
             .get(index..=(index + 3).min(lines.len().saturating_sub(1)))
             .unwrap_or_default()
             .iter()
-            .any(|l| l.contains("create"));
+            .any(|l| {
+                l.find("//")
+                    .map_or(*l, |at| l.get(..at).unwrap_or(""))
+                    .contains("create")
+            });
         if !creates {
             continue;
         }
-        let original: Vec<&str> = source.lines().collect();
         let window_start = index.saturating_sub(8);
-        let justified = original
-            .get(window_start..=index.min(original.len().saturating_sub(1)))
+        let justified = lines
+            .get(window_start..=index)
             .unwrap_or_default()
             .iter()
             .any(|l| l.contains("USABLE-NOT-EXISTS:"));
         if !justified {
             problems.push(format!(
-                "{}: `if (!exists(...))` decides whether to create a key. **An invalidated                  key keeps its alias**, so this skips a recreate that was needed and the next                  use throws `KeyPermanentlyInvalidatedException`. Delete and recreate                  unconditionally, or write a `USABLE-NOT-EXISTS:` note saying why the alias's                  presence is the right question here.",
+                "{}: `if (!exists(...))` decides whether to create a key. **An                  invalidated key keeps its alias**, so this skips a recreate that                  was needed and the next use throws                  `KeyPermanentlyInvalidatedException`. Delete and recreate                  unconditionally, or write a `USABLE-NOT-EXISTS:` note saying why                  the alias's presence is the right question here.",
                 index + 1
             ));
         }

@@ -35,6 +35,12 @@ try {
     if ($LASTEXITCODE -ne 0) { Write-Host 'TEST FAILED' -ForegroundColor Red; exit 1 }
     Write-Host 'TEST_OK' -ForegroundColor Green
 
+    # Without test targets: the tests turn on core's `harness` feature for every
+    # crate, so only this step catches `store::Unanchored` in production code.
+    cargo check --workspace
+    if ($LASTEXITCODE -ne 0) { Write-Host 'RELEASE_SHAPE FAILED' -ForegroundColor Red; exit 1 }
+    Write-Host 'RELEASE_SHAPE_OK' -ForegroundColor Green
+
     # The harness feature is off by default, so nothing above compiles it.
     cargo clippy -p chiavora-ffi-mobile --all-targets --features measurement-harness -- -D warnings
     if ($LASTEXITCODE -ne 0) { Write-Host 'HARNESS CLIPPY FAILED' -ForegroundColor Red; exit 1 }

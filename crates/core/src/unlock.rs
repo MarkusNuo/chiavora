@@ -50,6 +50,21 @@ impl UnlockedVault {
         crate::store::Store::open(path, &self.muk, anchor)
     }
 
+    /// Crate-private so that only [`crate::anchor::restore_from_older_backup`], which requires
+    /// the password, can rewind a vault.
+    pub(crate) fn open_store_reanchoring(
+        &self,
+        path: &std::path::Path,
+        anchor: Box<dyn crate::store::RollbackAnchor>,
+    ) -> Result<crate::store::Store, crate::store::StoreError> {
+        crate::store::Store::open_with_policy(
+            path,
+            &self.muk,
+            anchor,
+            crate::store::RewindPolicy::AcceptAndReanchor,
+        )
+    }
+
     /// The MUK's length, the only thing observable about the key.
     #[must_use]
     pub fn muk_len(&self) -> usize {

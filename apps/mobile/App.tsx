@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   AppState,
   Linking,
   Pressable,
@@ -85,29 +86,88 @@ export default function App() {
     }
   }, [password, refresh, say]);
 
+  /** The only way the rollback anchor moves backwards. */
+  const offerRestoreIfRewound = useCallback(
+    async (error: unknown) => {
+      const text = String(error);
+      const at = /generation (\d+) but this device last committed (\d+)/.exec(text);
+      if (!at) {
+        return;
+      }
+      const [, fileGeneration, deviceGeneration] = at;
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          'This vault is older than this device remembers',
+          [
+            `The database on this device is at version ${fileGeneration}, but ` +
+              `this device last saved version ${deviceGeneration}.`,
+            'This happens when a backup is restored — and it is also what an ' +
+              'attacker replacing your vault with an older copy looks like. ' +
+              'Chiavora cannot tell the two apart, so it is asking you.',
+            `If you restore, everything saved after version ${deviceGeneration} ` +
+              'is gone and cannot be recovered.',
+          ].join('\n\n'),
+          [
+            { text: 'Keep it locked', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Restore anyway', style: 'destructive', onPress: () => resolve(true) },
+          ],
+          { cancelable: false },
+        );
+      });
+      if (!confirmed) {
+        say('restore declined: the vault stays locked');
+        return;
+      }
+      try {
+        const len = await ChiavoraCore.restoreFromOlderBackup(
+          bytes(password || DEMO_PASSWORD),
+          bytes(DEMO_ACCOUNT_ID),
+          bytes(DEMO_ACCOUNT_SALT),
+          MEMORY_KIB,
+          ITERATIONS,
+          Number(deviceGeneration),
+        );
+        say(`RESTORED to version ${fileGeneration}, muk_len=${len}`);
+      } catch (e) {
+        say(`restore refused: ${e}`);
+      }
+      await refresh();
+    },
+    [password, refresh, say],
+  );
+
   const unlockBiometric = useCallback(async () => {
     try {
-      const len = await ChiavoraCore.unlockWithBiometric();
-      say(`UNLOCKED by biometric, muk_len=${len}`);
+      const out = await ChiavoraCore.unlockWithBiometric();
+      say(
+        `UNLOCKED by biometric, muk_len=${out.mukLen}; ` +
+          `rollback protection: ${out.rollbackProtection}`,
+      );
     } catch (e) {
       say(`biometric unlock refused: ${e}`);
+      await offerRestoreIfRewound(e);
       await refresh();
     }
   }, [refresh, say]);
 
   const unlockPassword = useCallback(async () => {
     try {
-      const len = await ChiavoraCore.unlockWithPassword(
+      const out = await ChiavoraCore.unlockWithPassword(
         bytes(password || DEMO_PASSWORD),
         bytes(DEMO_ACCOUNT_ID),
         bytes(DEMO_ACCOUNT_SALT),
         MEMORY_KIB,
         ITERATIONS,
       );
-      say(`UNLOCKED by password, muk_len=${len}; MUK re-wrapped under a fresh biometric key`);
+      say(
+        `UNLOCKED by password, muk_len=${out.mukLen}; ` +
+          `rollback protection: ${out.rollbackProtection}; ` +
+          'MUK re-wrapped under a fresh biometric key',
+      );
       await refresh();
     } catch (e) {
       say(`password unlock refused: ${e}`);
+      await offerRestoreIfRewound(e);
     }
   }, [password, refresh, say]);
 

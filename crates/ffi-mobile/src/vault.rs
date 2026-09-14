@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use chiavora_core::derive::{AccountIdentifiers, KdfParams};
+use chiavora_core::device::check_enrolment_backing;
 use chiavora_core::device::{
     check_i8, DeviceKeyError, EntryProtection, KeystoreBacking, KeystoreEntry,
 };
@@ -19,6 +20,9 @@ pub struct MobileVault {
 /// password opens a vault that decrypts nothing, and the store then refuses.
 #[derive(Debug, uniffi::Error)]
 pub enum UnlockError {
+    Store {
+        reason: String,
+    },
 
     Rejected {
         entry_point: String,
@@ -39,6 +43,7 @@ pub enum UnlockError {
 impl core::fmt::Display for UnlockError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::Store { reason } => write!(f, "{reason}"),
             Self::Rejected { entry_point } => write!(f, "input refused at {entry_point}"),
             Self::Derivation { reason }
             | Self::Keystore { reason }
@@ -59,7 +64,7 @@ pub struct KeystoreReport {
     pub secret_key_invalidated_by_enrollment: bool,
 }
 
-fn backing_from(name: &str) -> KeystoreBacking {
+pub(crate) fn backing_from(name: &str) -> KeystoreBacking {
     match name {
         "SecureElement" => KeystoreBacking::SecureElement,
         "TrustedExecutionEnvironment" => KeystoreBacking::TrustedExecutionEnvironment,
@@ -151,6 +156,20 @@ impl MobileVault {
     }
 }
 
+impl MobileVault {
+    pub(crate) fn open_store_at(
+        &self,
+        path: &std::path::Path,
+        anchor: Box<dyn chiavora_core::store::RollbackAnchor>,
+    ) -> Result<chiavora_core::store::Store, chiavora_core::store::StoreError> {
+        self.inner.open_store(path, anchor)
+    }
+
+    pub(crate) fn wrapping(inner: UnlockedVault) -> Arc<Self> {
+        Arc::new(Self { inner })
+    }
+}
+
 /// The MUK for the platform to wrap: on Android a Java API, so the plaintext must reach Kotlin.
 /// It derives its own MUK, so a [`MobileVault`] is never a handle the key can be read out of.
 #[allow(clippy::needless_pass_by_value)]
@@ -162,7 +181,15 @@ pub fn muk_for_device_wrapping(
     account_salt: Vec<u8>,
     memory_kib: u32,
     iterations: u32,
+    keystore_backing: String,
 ) -> Result<Vec<u8>, UnlockError> {
+    // A software-only Keystore is refused before any MUK exists; password unlock is unaffected.
+    check_enrolment_backing(backing_from(&keystore_backing)).map_err(|e| {
+        UnlockError::DeviceKeys {
+            reason: e.to_string(),
+        }
+    })?;
+
     let password = accept::<PasswordField>(password).map_err(|_| UnlockError::Rejected {
         entry_point: "password field".to_owned(),
     })?;

@@ -32,6 +32,13 @@ pub enum RollbackProtection {
     IntegrityOnly,
 }
 
+/// Only [`crate::anchor::restore_from_older_backup`] can choose to accept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RewindPolicy {
+    Refuse,
+    AcceptAndReanchor,
+}
+
 /// Something outside the database file that remembers the latest generation
 /// this device committed, so a file replaced by an older copy of itself is caught.
 pub trait RollbackAnchor {
@@ -40,8 +47,14 @@ pub trait RollbackAnchor {
     fn advance(&mut self, generation: u64) -> Result<(), StoreError>;
     fn protection(&self) -> RollbackProtection;
 }
+
+/// No anchor: integrity is still checked, but a whole-file rewind is not
+/// detected. Test and harness builds only, so a release cannot ship without one.
+#[cfg(any(test, feature = "harness"))]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Unanchored;
+
+#[cfg(any(test, feature = "harness"))]
 impl RollbackAnchor for Unanchored {
     fn latest(&self) -> Option<u64> {
         None
@@ -287,21 +300,36 @@ impl Store {
         muk: &Secret<Muk>,
         anchor: Box<dyn RollbackAnchor>,
     ) -> Result<Self, StoreError> {
+        Self::open_with_policy(path, muk, anchor, RewindPolicy::Refuse)
+    }
+
+    pub(crate) fn open_with_policy(
+        path: &Path,
+        muk: &Secret<Muk>,
+        anchor: Box<dyn RollbackAnchor>,
+        policy: RewindPolicy,
+    ) -> Result<Self, StoreError> {
         let conn = Connection::open(path)?;
-        Self::open_connection(conn, muk, anchor)
+        Self::open_connection(conn, muk, anchor, policy)
     }
 
     pub fn open_in_memory(
         muk: &Secret<Muk>,
         anchor: Box<dyn RollbackAnchor>,
     ) -> Result<Self, StoreError> {
-        Self::open_connection(Connection::open_in_memory()?, muk, anchor)
+        Self::open_connection(
+            Connection::open_in_memory()?,
+            muk,
+            anchor,
+            RewindPolicy::Refuse,
+        )
     }
 
     fn open_connection(
         conn: Connection,
         muk: &Secret<Muk>,
         mut anchor: Box<dyn RollbackAnchor>,
+        policy: RewindPolicy,
     ) -> Result<Self, StoreError> {
         conn.execute_batch(SCHEMA)?;
         let key = derive_store_key(muk)?;
@@ -331,12 +359,18 @@ impl Store {
         };
 
         match anchor.latest() {
-            Some(latest) if meta.generation < latest => {
-                return Err(StoreError::MetadataRewound {
-                    stored: meta.generation,
-                    anchor: latest,
-                });
-            }
+            // The MAC was verified above, so a wrong password never reaches the accepting arm.
+            Some(latest) if meta.generation < latest => match policy {
+                RewindPolicy::Refuse => {
+                    return Err(StoreError::MetadataRewound {
+                        stored: meta.generation,
+                        anchor: latest,
+                    });
+                }
+                RewindPolicy::AcceptAndReanchor => anchor
+                    .advance(meta.generation)
+                    .map_err(|_| StoreError::AnchorFailed)?,
+            },
             Some(latest) if meta.generation == latest => {}
             // Ahead of the anchor, or the anchor has never seen this store.
             _ => anchor

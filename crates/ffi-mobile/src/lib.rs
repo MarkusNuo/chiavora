@@ -4,6 +4,8 @@
 #![allow(unsafe_code)]
 
 uniffi::setup_scaffolding!();
+
+pub mod anchor;
 pub mod vault;
 
 #[cfg(feature = "measurement-harness")]

@@ -13,7 +13,9 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-chiavora-core = { path = "../crates/core" }
+# `harness` for `store::Unanchored`, which `export_verify` needs; nothing here
+# ships.
+chiavora-core = { path = "../crates/core", features = ["harness"] }
 chiavora-protocol = { path = "../crates/protocol" }
 
 [[bin]]

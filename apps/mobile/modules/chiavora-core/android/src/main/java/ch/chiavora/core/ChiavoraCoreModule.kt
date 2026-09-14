@@ -9,6 +9,7 @@ import uniffi.chiavora_ffi_mobile.MobileVault
 import uniffi.chiavora_ffi_mobile.checkKeystoreArrangement
 import uniffi.chiavora_ffi_mobile.ffiSmoke
 import uniffi.chiavora_ffi_mobile.mukForDeviceWrapping
+import uniffi.chiavora_ffi_mobile.restoreFromOlderBackup
 
 /** Every function returns what the UI needs to render, never key material. */
 class ChiavoraCoreModule : Module() {
@@ -29,6 +30,7 @@ class ChiavoraCoreModule : Module() {
             val muk = mukForDeviceWrapping(
                 password, secretKey, accountId, accountSalt,
                 memoryKib.toUInt(), iterations.toUInt(),
+                DeviceKeys.describe(DeviceKeys.MUK_WRAPPING_KEY_ALIAS).first,
             )
             try {
                 VaultKeys.storeWrappedMukAuthenticated(
@@ -62,6 +64,7 @@ class ChiavoraCoreModule : Module() {
                 val muk = mukForDeviceWrapping(
                     password, secretKey, accountId, accountSalt,
                     memoryKib.toUInt(), iterations.toUInt(),
+                    DeviceKeys.describe(DeviceKeys.MUK_WRAPPING_KEY_ALIAS).first,
                 )
                 try {
                     VaultKeys.storeWrappedMukAuthenticated(
@@ -74,7 +77,13 @@ class ChiavoraCoreModule : Module() {
                 } finally {
                     muk.fill(0)
                 }
-                vault.mukLen().toInt()
+                mapOf(
+                    "mukLen" to vault.mukLen().toInt(),
+                    "rollbackProtection" to vault.rollbackProtection(
+                        storePath(files),
+                        AnchorStore.Backed(files),
+                    ),
+                )
             } finally {
                 secretKey?.fill(0)
             }
@@ -90,7 +99,13 @@ class ChiavoraCoreModule : Module() {
                 files,
                 java.util.concurrent.Executors.newSingleThreadExecutor(),
             )
-            vault.mukLen().toInt()
+            mapOf(
+                "mukLen" to vault.mukLen().toInt(),
+                "rollbackProtection" to vault.rollbackProtection(
+                    storePath(files),
+                    AnchorStore.Backed(files),
+                ),
+            )
         }
 
         AsyncFunction("vaultState") {
@@ -124,6 +139,28 @@ class ChiavoraCoreModule : Module() {
         // One copy per build variant; only the debug one registers the measurement harness.
         harnessDefinition()
     }
+
+        AsyncFunction("restoreFromOlderBackup") Coroutine { password: ByteArray, accountId: ByteArray, accountSalt: ByteArray, memoryKib: Int, iterations: Int, discardingAfter: Double ->
+            val files = androidContext().filesDir
+            var secretKey: ByteArray? = null
+            try {
+                secretKey = VaultKeys.readSecretKey(files)
+                val vault = restoreFromOlderBackup(
+                    storePath(files),
+                    AnchorStore.Backed(files),
+                    password, secretKey, accountId, accountSalt,
+                    memoryKib.toUInt(), iterations.toUInt(),
+                    discardingAfter.toULong(),
+                )
+                vault.mukLen().toInt()
+            } finally {
+                secretKey?.fill(0)
+            }
+        }
+
+    /** Kept out of backups by `with-chiavora-backup.js`. */
+    private fun storePath(files: java.io.File): String =
+        java.io.File(files, "vault.db").absolutePath
 
     private fun androidContext(): android.content.Context =
         appContext.reactContext

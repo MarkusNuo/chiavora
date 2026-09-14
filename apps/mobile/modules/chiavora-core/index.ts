@@ -27,6 +27,11 @@ export interface KeystoreReport {
   readonly secretKeyInvalidatedByEnrollment: boolean;
 }
 
+export type UnlockOutcome = {
+  mukLen: number;
+  rollbackProtection: 'Anchored' | 'IntegrityOnly';
+};
+
 interface ChiavoraCoreNativeModule {
 
   ffiSmoke(): Promise<string>;
@@ -51,8 +56,17 @@ interface ChiavoraCoreNativeModule {
     accountSalt: Uint8Array,
     memoryKib: number,
     iterations: number,
+  ): Promise<UnlockOutcome>;
+  unlockWithBiometric(): Promise<UnlockOutcome>;
+  /** Refused if the device has moved past `discardingAfter`, the generation the user saw. */
+  restoreFromOlderBackup(
+    password: Uint8Array,
+    accountId: Uint8Array,
+    accountSalt: Uint8Array,
+    memoryKib: number,
+    iterations: number,
+    discardingAfter: number,
   ): Promise<number>;
-  unlockWithBiometric(): Promise<number>;
   vaultState(): Promise<VaultState>;
   keystoreReport(): Promise<KeystoreReport>;
   forgetDevice(): Promise<boolean>;

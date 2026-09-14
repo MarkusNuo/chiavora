@@ -131,15 +131,6 @@ class ChiavoraCoreModule : Module() {
             )
         }
 
-        AsyncFunction("forgetDevice") {
-            VaultKeys.forget(androidContext().filesDir)
-            true
-        }
-
-        // One copy per build variant; only the debug one registers the measurement harness.
-        harnessDefinition()
-    }
-
         AsyncFunction("restoreFromOlderBackup") Coroutine { password: ByteArray, accountId: ByteArray, accountSalt: ByteArray, memoryKib: Int, iterations: Int, discardingAfter: Double ->
             val files = androidContext().filesDir
             var secretKey: ByteArray? = null
@@ -157,6 +148,15 @@ class ChiavoraCoreModule : Module() {
                 secretKey?.fill(0)
             }
         }
+
+        AsyncFunction("forgetDevice") {
+            VaultKeys.forget(androidContext().filesDir)
+            true
+        }
+
+        // One copy per build variant; only the debug one registers the measurement harness.
+        harnessDefinition()
+    }
 
     /** Kept out of backups by `with-chiavora-backup.js`. */
     private fun storePath(files: java.io.File): String =

@@ -52,6 +52,9 @@ try {
     if ($LASTEXITCODE -ne 0) { Write-Host 'DENY FAILED' -ForegroundColor Red; exit 1 }
     Write-Host 'DENY_OK' -ForegroundColor Green
 
+    & (Join-Path $PSScriptRoot 'mobile-compile.ps1')
+    if ($LASTEXITCODE -ne 0) { exit 1 }
+
     if (-not $SkipFuzz) {
         Write-Host ''
         Write-Host 'R7: a change that touched a parser also needs a local fuzz run, reported' -ForegroundColor Yellow

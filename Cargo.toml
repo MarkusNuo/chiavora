@@ -35,7 +35,8 @@ chiavora-protocol = { path = "crates/protocol", version = "0.1.0" }
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.77"
+# Raised only as far as a dependency needs: crypto-bigint 0.7 needs 1.85.
+rust-version = "1.85"
 publish = false
 
 # Only silences the failed-symbol prints napi-sys makes when a test binary loads it outside Node.

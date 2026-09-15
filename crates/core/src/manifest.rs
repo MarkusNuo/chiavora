@@ -1,0 +1,668 @@
+//! The §2.5 vault manifest. Every byte comes from the server, so this is a parser first.
+
+use core::fmt;
+
+use chiavora_protocol::{Field, Record, Tag, WireError};
+
+use crate::aad::{self, AadError, AadFields};
+
+pub const TARGET_ENTRIES_PER_SEGMENT: usize = 256;
+
+pub const SPLIT_AT_ENTRIES: usize = 512;
+
+const KEYSPACE: u128 = 1 << 64;
+
+pub mod root_tag {
+    use chiavora_protocol::Tag;
+
+    pub const SEGMENT: Tag = 1;
+}
+
+pub mod segment_tag {
+    use chiavora_protocol::Tag;
+
+    pub const ENTRY: Tag = 1;
+}
+
+pub mod root_entry_tag {
+    use chiavora_protocol::Tag;
+
+    pub const PREFIX_LEN: Tag = 1;
+    pub const PREFIX_BITS: Tag = 2;
+    pub const DIGEST: Tag = 3;
+    pub const SEGMENT_SEQ: Tag = 4;
+}
+
+pub mod entry_tag {
+    use chiavora_protocol::Tag;
+
+    pub const ITEM_ID: Tag = 1;
+    pub const CURRENT_VERSION: Tag = 2;
+    pub const CIPHERTEXT_DIGEST: Tag = 3;
+    pub const TOMBSTONE: Tag = 4;
+    pub const ATTACHMENT: Tag = 5;
+}
+
+pub mod attachment_tag {
+    use chiavora_protocol::Tag;
+
+    pub const ATTACHMENT_ID: Tag = 1;
+    pub const CHUNK_COUNT: Tag = 2;
+    pub const CHUNK_DIGEST_ROOT: Tag = 3;
+    pub const TOTAL_SIZE: Tag = 4;
+}
+
+/// No variant carries any of the input: a count or a tag, never bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManifestError {
+    Aad(AadError),
+    Wire(WireError),
+    NonCanonicalPrefix(AadError),
+    NotAManifestRoot,
+    NotAManifestSegment,
+    SegmentCountDisagrees {
+        declared: u32,
+        present: usize,
+    },
+    PrefixSetHasGap {
+        from: u64,
+        through: u64,
+    },
+    PrefixSetOverlaps {
+        at: u64,
+    },
+    UnexpectedField {
+        expected: Tag,
+    },
+    BadFieldLength {
+        tag: Tag,
+    },
+    NotABoolean,
+    TrailingFields,
+}
+
+impl fmt::Display for ManifestError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::Aad(e) => write!(f, "manifest AAD: {e}"),
+            Self::Wire(e) => write!(f, "manifest framing: {e}"),
+            Self::NonCanonicalPrefix(e) => {
+                write!(f, "non-canonical segment prefix, so I6b fails: {e}")
+            }
+            Self::NotAManifestRoot => f.write_str("not a 0x03 manifest root"),
+            Self::NotAManifestSegment => f.write_str("not a 0x04 manifest segment"),
+            Self::SegmentCountDisagrees { declared, present } => write!(
+                f,
+                "the manifest root's AAD declares {declared} segments and its body carries {present}"
+            ),
+            Self::PrefixSetHasGap { from, through } => write!(
+                f,
+                "the segment prefixes do not tile the keyspace: {from:#018x}..={through:#018x} \
+                 is in no segment"
+            ),
+            Self::PrefixSetOverlaps { at } => write!(
+                f,
+                "the segment prefixes overlap: {at:#018x} is in more than one segment"
+            ),
+            Self::UnexpectedField { expected } => {
+                write!(f, "a manifest record is missing field {expected}")
+            }
+            Self::BadFieldLength { tag } => {
+                write!(f, "manifest field {tag} is the wrong length")
+            }
+            Self::NotABoolean => f.write_str("a tombstone byte is neither 0 nor 1"),
+            Self::TrailingFields => f.write_str("trailing fields after a complete manifest record"),
+        }
+    }
+}
+
+impl core::error::Error for ManifestError {}
+
+impl From<AadError> for ManifestError {
+    fn from(e: AadError) -> Self {
+        Self::Aad(e)
+    }
+}
+
+impl From<WireError> for ManifestError {
+    fn from(e: WireError) -> Self {
+        Self::Wire(e)
+    }
+}
+
+/// A segment prefix that has passed §2.2's canonicalisation rules. It has no
+/// infallible constructor, and [`tiles_exactly`] takes nothing else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CanonicalPrefix {
+    bits: u64,
+    len: u8,
+}
+
+impl CanonicalPrefix {
+    pub const fn new(len: u8, bits: u64) -> Result<Self, ManifestError> {
+        match aad::check_prefix(len, bits) {
+            Ok(()) => Ok(Self { bits, len }),
+            Err(e) => Err(ManifestError::NonCanonicalPrefix(e)),
+        }
+    }
+
+    #[must_use]
+    pub const fn bit_len(&self) -> u8 {
+        self.len
+    }
+
+    #[must_use]
+    pub const fn bits(&self) -> u64 {
+        self.bits
+    }
+
+    const fn span(&self) -> u128 {
+        1_u128 << (64 - self.len as u32)
+    }
+
+    #[must_use]
+    pub const fn contains(&self, hash: u64) -> bool {
+        // A shift by 64 is undefined, and every hash is under the empty prefix.
+        if self.len == 0 {
+            return true;
+        }
+        (hash >> (64 - self.len as u32)) == (self.bits >> (64 - self.len as u32))
+    }
+}
+
+/// I6b. Takes only [`CanonicalPrefix`], since non-canonical prefixes could hide a range.
+pub fn tiles_exactly(prefixes: &[CanonicalPrefix]) -> Result<(), ManifestError> {
+    // Sorted by `bits` (the field order), so coverage is one walk over aligned ranges.
+    let mut sorted: Vec<CanonicalPrefix> = prefixes.to_vec();
+    sorted.sort_unstable();
+
+    let mut next: u128 = 0;
+    for prefix in &sorted {
+        let start = u128::from(prefix.bits());
+        if start < next {
+            return Err(ManifestError::PrefixSetOverlaps { at: prefix.bits() });
+        }
+        if start > next {
+            return Err(ManifestError::PrefixSetHasGap {
+                from: truncate(next),
+                through: truncate(start - 1),
+            });
+        }
+        next = next.saturating_add(prefix.span());
+    }
+    if next < KEYSPACE {
+        return Err(ManifestError::PrefixSetHasGap {
+            from: truncate(next),
+            through: u64::MAX,
+        });
+    }
+    Ok(())
+}
+
+fn truncate(position: u128) -> u64 {
+    // R1: a gap is only reported below `KEYSPACE`, so the fallback is unreachable.
+    u64::try_from(position).unwrap_or(u64::MAX)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RootEntry {
+    prefix: CanonicalPrefix,
+    digest: [u8; 32],
+    segment_seq: u64,
+}
+
+impl RootEntry {
+    #[must_use]
+    pub const fn new(prefix: CanonicalPrefix, digest: [u8; 32], segment_seq: u64) -> Self {
+        Self {
+            prefix,
+            digest,
+            segment_seq,
+        }
+    }
+
+    #[must_use]
+    pub const fn prefix(&self) -> CanonicalPrefix {
+        self.prefix
+    }
+
+    /// SHA-256 over the whole stored segment record, `AAD ‖ nonce ‖ ciphertext ‖ tag`.
+    #[must_use]
+    pub const fn digest(&self) -> &[u8; 32] {
+        &self.digest
+    }
+
+    #[must_use]
+    pub const fn segment_seq(&self) -> u64 {
+        self.segment_seq
+    }
+
+    fn encode(&self) -> Result<Vec<u8>, ManifestError> {
+        let fields = vec![
+            Field::new(root_entry_tag::PREFIX_LEN, vec![self.prefix.bit_len()])?,
+            Field::new(
+                root_entry_tag::PREFIX_BITS,
+                self.prefix.bits().to_le_bytes().to_vec(),
+            )?,
+            Field::new(root_entry_tag::DIGEST, self.digest.to_vec())?,
+            Field::new(
+                root_entry_tag::SEGMENT_SEQ,
+                self.segment_seq.to_le_bytes().to_vec(),
+            )?,
+        ];
+        Ok(Record::new(fields).encode()?)
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self, ManifestError> {
+        let record = Record::decode(bytes)?;
+        let mut r = Fields::new(record.fields());
+        let len = r.u8(root_entry_tag::PREFIX_LEN)?;
+        let bits = r.u64(root_entry_tag::PREFIX_BITS)?;
+        let digest = r.digest(root_entry_tag::DIGEST)?;
+        let segment_seq = r.u64(root_entry_tag::SEGMENT_SEQ)?;
+        r.finish()?;
+        Ok(Self {
+            prefix: CanonicalPrefix::new(len, bits)?,
+            digest,
+            segment_seq,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachmentEntry {
+    attachment_id: Vec<u8>,
+    chunk_count: u32,
+    chunk_digest_root: [u8; 32],
+    total_size: u64,
+}
+
+impl AttachmentEntry {
+    #[must_use]
+    pub const fn new(
+        attachment_id: Vec<u8>,
+        chunk_count: u32,
+        chunk_digest_root: [u8; 32],
+        total_size: u64,
+    ) -> Self {
+        Self {
+            attachment_id,
+            chunk_count,
+            chunk_digest_root,
+            total_size,
+        }
+    }
+
+    #[must_use]
+    pub fn attachment_id(&self) -> &[u8] {
+        &self.attachment_id
+    }
+
+    #[must_use]
+    pub const fn chunk_count(&self) -> u32 {
+        self.chunk_count
+    }
+
+    /// SHA-256 over the ordered concatenation of the per-chunk digests; not a
+    /// Merkle tree, despite the name.
+    #[must_use]
+    pub const fn chunk_digest_root(&self) -> &[u8; 32] {
+        &self.chunk_digest_root
+    }
+
+    #[must_use]
+    pub const fn total_size(&self) -> u64 {
+        self.total_size
+    }
+
+    fn encode(&self) -> Result<Vec<u8>, ManifestError> {
+        let fields = vec![
+            Field::new(attachment_tag::ATTACHMENT_ID, self.attachment_id.clone())?,
+            Field::new(
+                attachment_tag::CHUNK_COUNT,
+                self.chunk_count.to_le_bytes().to_vec(),
+            )?,
+            Field::new(
+                attachment_tag::CHUNK_DIGEST_ROOT,
+                self.chunk_digest_root.to_vec(),
+            )?,
+            Field::new(
+                attachment_tag::TOTAL_SIZE,
+                self.total_size.to_le_bytes().to_vec(),
+            )?,
+        ];
+        Ok(Record::new(fields).encode()?)
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self, ManifestError> {
+        let record = Record::decode(bytes)?;
+        let mut r = Fields::new(record.fields());
+        let attachment_id = r.bytes(attachment_tag::ATTACHMENT_ID)?.to_vec();
+        let chunk_count = r.u32(attachment_tag::CHUNK_COUNT)?;
+        let chunk_digest_root = r.digest(attachment_tag::CHUNK_DIGEST_ROOT)?;
+        let total_size = r.u64(attachment_tag::TOTAL_SIZE)?;
+        r.finish()?;
+        Ok(Self {
+            attachment_id,
+            chunk_count,
+            chunk_digest_root,
+            total_size,
+        })
+    }
+}
+
+/// A tombstone is a presence: an item that vanishes without one is an attack,
+/// not a delete (I6e).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entry {
+    item_id: Vec<u8>,
+    current_version: u64,
+    ciphertext_digest: [u8; 32],
+    tombstone: bool,
+    attachments: Vec<AttachmentEntry>,
+}
+
+impl Entry {
+    #[must_use]
+    pub const fn new(
+        item_id: Vec<u8>,
+        current_version: u64,
+        ciphertext_digest: [u8; 32],
+        tombstone: bool,
+        attachments: Vec<AttachmentEntry>,
+    ) -> Self {
+        Self {
+            item_id,
+            current_version,
+            ciphertext_digest,
+            tombstone,
+            attachments,
+        }
+    }
+
+    #[must_use]
+    pub fn item_id(&self) -> &[u8] {
+        &self.item_id
+    }
+
+    #[must_use]
+    pub const fn current_version(&self) -> u64 {
+        self.current_version
+    }
+
+    #[must_use]
+    pub const fn ciphertext_digest(&self) -> &[u8; 32] {
+        &self.ciphertext_digest
+    }
+
+    #[must_use]
+    pub const fn tombstone(&self) -> bool {
+        self.tombstone
+    }
+
+    #[must_use]
+    pub fn attachments(&self) -> &[AttachmentEntry] {
+        &self.attachments
+    }
+
+    fn encode(&self) -> Result<Vec<u8>, ManifestError> {
+        let mut fields = vec![
+            Field::new(entry_tag::ITEM_ID, self.item_id.clone())?,
+            Field::new(
+                entry_tag::CURRENT_VERSION,
+                self.current_version.to_le_bytes().to_vec(),
+            )?,
+            Field::new(
+                entry_tag::CIPHERTEXT_DIGEST,
+                self.ciphertext_digest.to_vec(),
+            )?,
+            Field::new(entry_tag::TOMBSTONE, vec![u8::from(self.tombstone)])?,
+        ];
+        for attachment in &self.attachments {
+            fields.push(Field::new(entry_tag::ATTACHMENT, attachment.encode()?)?);
+        }
+        Ok(Record::new(fields).encode()?)
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self, ManifestError> {
+        let record = Record::decode(bytes)?;
+        let mut r = Fields::new(record.fields());
+        let item_id = r.bytes(entry_tag::ITEM_ID)?.to_vec();
+        let current_version = r.u64(entry_tag::CURRENT_VERSION)?;
+        let ciphertext_digest = r.digest(entry_tag::CIPHERTEXT_DIGEST)?;
+        let tombstone = match r.u8(entry_tag::TOMBSTONE)? {
+            0 => false,
+            1 => true,
+            _ => return Err(ManifestError::NotABoolean),
+        };
+        let mut attachments = Vec::new();
+        while let Some(value) = r.next_if(entry_tag::ATTACHMENT) {
+            attachments.push(AttachmentEntry::decode(value)?);
+        }
+        r.finish()?;
+        Ok(Self {
+            item_id,
+            current_version,
+            ciphertext_digest,
+            tombstone,
+            attachments,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManifestRoot {
+    fields: AadFields,
+    segments: Vec<RootEntry>,
+}
+
+impl ManifestRoot {
+    pub fn new(fields: AadFields, segments: Vec<RootEntry>) -> Result<Self, ManifestError> {
+        let AadFields::ManifestRoot { segment_count, .. } = fields else {
+            return Err(ManifestError::NotAManifestRoot);
+        };
+        // Compared, never used to size anything: it arrives before the tag is checked.
+        if usize::try_from(segment_count) != Ok(segments.len()) {
+            return Err(ManifestError::SegmentCountDisagrees {
+                declared: segment_count,
+                present: segments.len(),
+            });
+        }
+        Ok(Self { fields, segments })
+    }
+
+    #[must_use]
+    pub const fn fields(&self) -> &AadFields {
+        &self.fields
+    }
+
+    #[must_use]
+    pub const fn manifest_seq(&self) -> u64 {
+        match self.fields {
+            AadFields::ManifestRoot { manifest_seq, .. } => manifest_seq,
+            // Unreachable: `new` refuses anything else.
+            _ => 0,
+        }
+    }
+
+    #[must_use]
+    pub const fn vault_key_epoch(&self) -> u32 {
+        match self.fields {
+            AadFields::ManifestRoot {
+                vault_key_epoch, ..
+            } => vault_key_epoch,
+            _ => 0,
+        }
+    }
+
+    #[must_use]
+    pub fn segments(&self) -> &[RootEntry] {
+        &self.segments
+    }
+
+    pub fn check_tiles(&self) -> Result<(), ManifestError> {
+        let prefixes: Vec<CanonicalPrefix> = self.segments.iter().map(RootEntry::prefix).collect();
+        tiles_exactly(&prefixes)
+    }
+
+    #[must_use]
+    pub fn segment_for(&self, hash: u64) -> Option<&RootEntry> {
+        self.segments
+            .iter()
+            .filter(|entry| entry.prefix().contains(hash))
+            .max_by_key(|entry| entry.prefix().bit_len())
+    }
+
+    pub fn encode_body(&self) -> Result<Vec<u8>, ManifestError> {
+        let mut fields = Vec::new();
+        for segment in &self.segments {
+            fields.push(Field::new(root_tag::SEGMENT, segment.encode()?)?);
+        }
+        Ok(Record::new(fields).encode()?)
+    }
+
+    pub fn decode(fields: AadFields, bytes: &[u8]) -> Result<Self, ManifestError> {
+        let record = Record::decode(bytes)?;
+        let mut segments = Vec::new();
+        let mut r = Fields::new(record.fields());
+        while let Some(value) = r.next_if(root_tag::SEGMENT) {
+            segments.push(RootEntry::decode(value)?);
+        }
+        r.finish()?;
+        Self::new(fields, segments)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManifestSegment {
+    fields: AadFields,
+    entries: Vec<Entry>,
+}
+
+impl ManifestSegment {
+    pub fn new(fields: AadFields, entries: Vec<Entry>) -> Result<Self, ManifestError> {
+        if !matches!(fields, AadFields::ManifestSegment { .. }) {
+            return Err(ManifestError::NotAManifestSegment);
+        }
+        Ok(Self { fields, entries })
+    }
+
+    #[must_use]
+    pub const fn fields(&self) -> &AadFields {
+        &self.fields
+    }
+
+    #[must_use]
+    pub const fn segment_seq(&self) -> u64 {
+        match self.fields {
+            AadFields::ManifestSegment { segment_seq, .. } => segment_seq,
+            _ => 0,
+        }
+    }
+
+    #[must_use]
+    pub const fn vault_key_epoch(&self) -> u32 {
+        match self.fields {
+            AadFields::ManifestSegment {
+                vault_key_epoch, ..
+            } => vault_key_epoch,
+            _ => 0,
+        }
+    }
+
+    pub const fn prefix(&self) -> Result<CanonicalPrefix, ManifestError> {
+        match self.fields {
+            AadFields::ManifestSegment {
+                prefix_len,
+                prefix_bits,
+                ..
+            } => CanonicalPrefix::new(prefix_len, prefix_bits),
+            _ => Err(ManifestError::NotAManifestSegment),
+        }
+    }
+
+    #[must_use]
+    pub fn entries(&self) -> &[Entry] {
+        &self.entries
+    }
+
+    #[must_use]
+    pub fn is_over_split_bound(&self) -> bool {
+        self.entries.len() >= SPLIT_AT_ENTRIES
+    }
+
+    pub fn encode_body(&self) -> Result<Vec<u8>, ManifestError> {
+        let mut fields = Vec::new();
+        for entry in &self.entries {
+            fields.push(Field::new(segment_tag::ENTRY, entry.encode()?)?);
+        }
+        Ok(Record::new(fields).encode()?)
+    }
+
+    pub fn decode(fields: AadFields, bytes: &[u8]) -> Result<Self, ManifestError> {
+        let record = Record::decode(bytes)?;
+        let mut entries = Vec::new();
+        let mut r = Fields::new(record.fields());
+        while let Some(value) = r.next_if(segment_tag::ENTRY) {
+            entries.push(Entry::decode(value)?);
+        }
+        r.finish()?;
+        Self::new(fields, entries)
+    }
+}
+
+/// A reordering is refused, since digests are taken over bytes.
+struct Fields<'a> {
+    fields: &'a [Field],
+    at: usize,
+}
+
+impl<'a> Fields<'a> {
+    const fn new(fields: &'a [Field]) -> Self {
+        Self { fields, at: 0 }
+    }
+
+    fn next_if(&mut self, tag: Tag) -> Option<&'a [u8]> {
+        let field = self.fields.get(self.at)?;
+        if field.tag() == tag {
+            self.at += 1;
+            return Some(field.value());
+        }
+        None
+    }
+
+    fn bytes(&mut self, tag: Tag) -> Result<&'a [u8], ManifestError> {
+        self.next_if(tag)
+            .ok_or(ManifestError::UnexpectedField { expected: tag })
+    }
+
+    fn fixed<const N: usize>(&mut self, tag: Tag) -> Result<[u8; N], ManifestError> {
+        let value = self.bytes(tag)?;
+        <[u8; N]>::try_from(value).map_err(|_| ManifestError::BadFieldLength { tag })
+    }
+
+    fn u8(&mut self, tag: Tag) -> Result<u8, ManifestError> {
+        let [byte] = self.fixed::<1>(tag)?;
+        Ok(byte)
+    }
+
+    fn u32(&mut self, tag: Tag) -> Result<u32, ManifestError> {
+        Ok(u32::from_le_bytes(self.fixed::<4>(tag)?))
+    }
+
+    fn u64(&mut self, tag: Tag) -> Result<u64, ManifestError> {
+        Ok(u64::from_le_bytes(self.fixed::<8>(tag)?))
+    }
+
+    fn digest(&mut self, tag: Tag) -> Result<[u8; 32], ManifestError> {
+        self.fixed::<32>(tag)
+    }
+
+    const fn finish(&self) -> Result<(), ManifestError> {
+        if self.at == self.fields.len() {
+            Ok(())
+        } else {
+            Err(ManifestError::TrailingFields)
+        }
+    }
+}

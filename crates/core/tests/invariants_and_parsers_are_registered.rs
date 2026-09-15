@@ -172,7 +172,19 @@ fn invariants_outside_the_core_are_absent_on_purpose() {
     );
 }
 
-const PARSERS: [Parser; 15] = [
+const PARSERS: [Parser; 17] = [
+    Parser {
+        file: "core/src/manifest.rs",
+        function: "ManifestRoot::decode",
+        target: "manifest_decode",
+        why: "the manifest root a hostile server serves (A1): nested, length-prefixed, digest-referenced and entirely server-controlled. it comes ahead of the import formats, and `docs/crypto.md` records it as the first fuzz target sync needs",
+    },
+    Parser {
+        file: "core/src/manifest.rs",
+        function: "ManifestSegment::decode",
+        target: "manifest_decode",
+        why: "the other half of the same server-supplied structure; one target feeds both, dispatching on the record type in the AAD it is given",
+    },
     Parser {
         file: "core/src/aad.rs",
         function: "decode",
@@ -306,7 +318,17 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 62] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 64] = [
+    (
+        "core/src/manifest.rs",
+        "Entry::new",
+        "SAFE BY CONSTRUCTION: an item entry is assembled from an itemId used          as an opaque key, two fixed-size digests, a bool and an already-built          attachment list. It parses nothing. On the server path its bytes come          from ManifestSegment::decode, which is in PARSERS and fuzzed; on the          local path they are this build's own identifiers",
+    ),
+    (
+        "core/src/manifest.rs",
+        "AttachmentEntry::new",
+        "SAFE BY CONSTRUCTION: the same shape one layer in -- an attachmentId          used as an opaque key, a count, a fixed-size digest root and a size.          No parsing, and the counts are compared rather than used to size          anything (R1's corollary)",
+    ),
     (
         "core/src/unlock.rs",
         "UnlockedVault::from_stored_muk",

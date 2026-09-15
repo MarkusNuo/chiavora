@@ -172,7 +172,14 @@ fn invariants_outside_the_core_are_absent_on_purpose() {
     );
 }
 
-const PARSERS: [Parser; 17] = [
+/// Attacker-supplied means bytes this process did not produce in the same operation.
+const PARSERS: [Parser; 18] = [
+    Parser {
+        file: "core/src/manifest.rs",
+        function: "StoredManifest::decode",
+        target: "manifest_decode",
+        why: "the stored manifest record as the server serves it -- AAD, nonce and ciphertext in the wire framing, every byte the server's choice, and the AAD is parsed before the tag can check it",
+    },
     Parser {
         file: "core/src/manifest.rs",
         function: "ManifestRoot::decode",
@@ -318,7 +325,12 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 64] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 65] = [
+    (
+        "core/src/item.rs",
+        "seal_record",
+        "NOT A BOUNDARY: the encrypt direction, over a plaintext this crate just          encoded. Its callers are manifest::seal_root and seal_segment, each          with the record type pinned; the decrypt direction is open_record,          reached from open_root and open_segment, and the bytes it returns are          parsed by ManifestRoot::decode and ManifestSegment::decode, which are          both in PARSERS",
+    ),
     (
         "core/src/manifest.rs",
         "Entry::new",

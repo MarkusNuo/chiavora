@@ -3,8 +3,12 @@
 use core::fmt;
 
 use chiavora_protocol::{Field, Record, Tag, WireError};
+use sha2::{Digest, Sha256};
 
 use crate::aad::{self, AadError, AadFields};
+use crate::item::{self, ItemError, SealedPayload};
+use crate::nonce::FreshNonce;
+use crate::secret::{kind::VaultKey, Secret};
 
 pub const TARGET_ENTRIES_PER_SEGMENT: usize = 256;
 
@@ -57,6 +61,7 @@ pub mod attachment_tag {
 pub enum ManifestError {
     Aad(AadError),
     Wire(WireError),
+    Sealed(ItemError),
     NonCanonicalPrefix(AadError),
     NotAManifestRoot,
     NotAManifestSegment,
@@ -86,6 +91,7 @@ impl fmt::Display for ManifestError {
         match *self {
             Self::Aad(e) => write!(f, "manifest AAD: {e}"),
             Self::Wire(e) => write!(f, "manifest framing: {e}"),
+            Self::Sealed(e) => write!(f, "manifest record: {e}"),
             Self::NonCanonicalPrefix(e) => {
                 write!(f, "non-canonical segment prefix, so I6b fails: {e}")
             }
@@ -127,6 +133,12 @@ impl From<AadError> for ManifestError {
 impl From<WireError> for ManifestError {
     fn from(e: WireError) -> Self {
         Self::Wire(e)
+    }
+}
+
+impl From<ItemError> for ManifestError {
+    fn from(e: ItemError) -> Self {
+        Self::Sealed(e)
     }
 }
 
@@ -665,4 +677,135 @@ impl<'a> Fields<'a> {
             Err(ManifestError::TrailingFields)
         }
     }
+}
+
+pub mod stored_tag {
+    use chiavora_protocol::Tag;
+
+    pub const AAD: Tag = 1;
+    pub const NONCE: Tag = 2;
+    pub const CIPHERTEXT: Tag = 3;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredManifest {
+    fields: AadFields,
+    payload: SealedPayload,
+}
+
+impl StoredManifest {
+    pub fn new(fields: AadFields, payload: SealedPayload) -> Result<Self, ManifestError> {
+        if !matches!(
+            fields,
+            AadFields::ManifestRoot { .. } | AadFields::ManifestSegment { .. }
+        ) {
+            return Err(ManifestError::NotAManifestRoot);
+        }
+        Ok(Self { fields, payload })
+    }
+
+    #[must_use]
+    pub const fn fields(&self) -> &AadFields {
+        &self.fields
+    }
+
+    #[must_use]
+    pub const fn payload(&self) -> &SealedPayload {
+        &self.payload
+    }
+
+    pub fn digest(&self) -> Result<[u8; 32], ManifestError> {
+        let mut hasher = Sha256::new();
+        hasher.update(aad::encode(&self.fields)?);
+        hasher.update(self.payload.nonce());
+        // The AEAD tag is already appended to the ciphertext.
+        hasher.update(self.payload.ciphertext());
+        Ok(hasher.finalize().into())
+    }
+
+    pub fn encode(&self) -> Result<Vec<u8>, ManifestError> {
+        let fields = vec![
+            Field::new(stored_tag::AAD, aad::encode(&self.fields)?)?,
+            Field::new(stored_tag::NONCE, self.payload.nonce().to_vec())?,
+            Field::new(stored_tag::CIPHERTEXT, self.payload.ciphertext().to_vec())?,
+        ];
+        Ok(Record::new(fields).encode()?)
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, ManifestError> {
+        let record = Record::decode(bytes)?;
+        let mut r = Fields::new(record.fields());
+        let aad_bytes = r.bytes(stored_tag::AAD)?;
+        let nonce = r.fixed::<24>(stored_tag::NONCE)?;
+        let ciphertext = r.bytes(stored_tag::CIPHERTEXT)?.to_vec();
+        r.finish()?;
+        Self::new(
+            aad::decode(aad_bytes)?,
+            SealedPayload::from_stored_parts(nonce, ciphertext),
+        )
+    }
+}
+
+pub fn seal_root(
+    vault_key: &Secret<VaultKey>,
+    nonce: FreshNonce,
+    root: &ManifestRoot,
+) -> Result<StoredManifest, ManifestError> {
+    let body = root.encode_body()?;
+    let payload = item::seal_record(
+        vault_key,
+        nonce,
+        root.fields(),
+        &body,
+        aad::RECORD_MANIFEST_ROOT,
+    )?;
+    StoredManifest::new(root.fields().clone(), payload)
+}
+
+pub fn seal_segment(
+    vault_key: &Secret<VaultKey>,
+    nonce: FreshNonce,
+    segment: &ManifestSegment,
+) -> Result<StoredManifest, ManifestError> {
+    let body = segment.encode_body()?;
+    let payload = item::seal_record(
+        vault_key,
+        nonce,
+        segment.fields(),
+        &body,
+        aad::RECORD_MANIFEST_SEGMENT,
+    )?;
+    StoredManifest::new(segment.fields().clone(), payload)
+}
+
+pub fn open_root(
+    vault_key: &Secret<VaultKey>,
+    stored: &StoredManifest,
+) -> Result<ManifestRoot, ManifestError> {
+    if !matches!(stored.fields(), AadFields::ManifestRoot { .. }) {
+        return Err(ManifestError::NotAManifestRoot);
+    }
+    let body = item::open_record(
+        vault_key,
+        stored.payload(),
+        stored.fields(),
+        aad::RECORD_MANIFEST_ROOT,
+    )?;
+    ManifestRoot::decode(stored.fields().clone(), &body)
+}
+
+pub fn open_segment(
+    vault_key: &Secret<VaultKey>,
+    stored: &StoredManifest,
+) -> Result<ManifestSegment, ManifestError> {
+    if !matches!(stored.fields(), AadFields::ManifestSegment { .. }) {
+        return Err(ManifestError::NotAManifestSegment);
+    }
+    let body = item::open_record(
+        vault_key,
+        stored.payload(),
+        stored.fields(),
+        aad::RECORD_MANIFEST_SEGMENT,
+    )?;
+    ManifestSegment::decode(stored.fields().clone(), &body)
 }

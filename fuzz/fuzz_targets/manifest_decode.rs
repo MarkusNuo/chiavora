@@ -4,7 +4,7 @@
 use libfuzzer_sys::fuzz_target;
 
 use chiavora_core::aad::{self, AadFields};
-use chiavora_core::manifest::{ManifestRoot, ManifestSegment};
+use chiavora_core::manifest::{ManifestRoot, ManifestSegment, StoredManifest};
 
 const PROBES: [u64; 8] = [
     0,
@@ -18,6 +18,18 @@ const PROBES: [u64; 8] = [
 ];
 
 fuzz_target!(|data: &[u8]| {
+    // The same bytes also go to the stored-record framing the server actually sends.
+    if let Ok(stored) = StoredManifest::decode(data) {
+        let digest = stored.digest().expect("an accepted record digests");
+        let encoded = stored.encode().expect("an accepted record re-encodes");
+        let again = StoredManifest::decode(&encoded).expect("a re-encoded record decodes");
+        assert_eq!(again, stored, "a round trip changed the stored record");
+        assert_eq!(
+            again.digest().expect("digest"),
+            digest,
+            "a round trip changed the digest a root entry vouches for"
+        );
+    }
 
     if data.len() < 2 {
         return;

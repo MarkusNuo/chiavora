@@ -5,7 +5,7 @@ use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 
 use crate::aad::{self, AadError, AadFields};
 use crate::nonce::{FreshNonce, StoredNonce, NONCE_LEN};
-use crate::secret::{kind::ItemKey, Secret};
+use crate::secret::{kind::ItemKey, DerivedKind, Secret};
 
 /// Length of an Item Key, in bytes (§2.1: every derived key is 32 bytes).
 const ITEM_KEY_LEN: usize = 32;
@@ -58,8 +58,9 @@ impl core::fmt::Display for ItemError {
 
 impl core::error::Error for ItemError {}
 
-fn prepare(
-    item_key: &Secret<ItemKey>,
+/// Bound by `DerivedKind`, so a password cannot reach it.
+fn prepare<K: DerivedKind>(
+    item_key: &Secret<K>,
     fields: &AadFields,
     expected: u8,
 ) -> Result<(XChaCha20Poly1305, Vec<u8>), ItemError> {
@@ -102,8 +103,8 @@ pub fn seal_chunk(
 
 // By value so the nonce is consumed; a reference would let a caller reuse it.
 #[allow(clippy::needless_pass_by_value)]
-fn seal_as(
-    item_key: &Secret<ItemKey>,
+fn seal_as<K: DerivedKind>(
+    item_key: &Secret<K>,
     nonce: FreshNonce,
     fields: &AadFields,
     plaintext: &[u8],
@@ -142,8 +143,28 @@ pub fn open_chunk(
     open_as(item_key, sealed, fields, aad::RECORD_ATTACHMENT_CHUNK)
 }
 
-fn open_as(
-    item_key: &Secret<ItemKey>,
+/// Crate-only, so no outside caller chooses a record type.
+pub(crate) fn seal_record<K: DerivedKind>(
+    key: &Secret<K>,
+    nonce: FreshNonce,
+    fields: &AadFields,
+    plaintext: &[u8],
+    expected: u8,
+) -> Result<SealedPayload, ItemError> {
+    seal_as(key, nonce, fields, plaintext, expected)
+}
+
+pub(crate) fn open_record<K: DerivedKind>(
+    key: &Secret<K>,
+    sealed: &SealedPayload,
+    fields: &AadFields,
+    expected: u8,
+) -> Result<Vec<u8>, ItemError> {
+    open_as(key, sealed, fields, expected)
+}
+
+fn open_as<K: DerivedKind>(
+    item_key: &Secret<K>,
     sealed: &SealedPayload,
     fields: &AadFields,
     expected: u8,

@@ -646,3 +646,122 @@ fn the_canonicalisation_rule_is_not_reimplemented_in_the_manifest() {
         );
     }
 }
+
+use chiavora_core::manifest::{open_root, open_segment, seal_root, seal_segment, StoredManifest};
+use chiavora_core::nonce::FreshNonce;
+use chiavora_core::secret::{kind::VaultKey, Secret};
+use sha2::Digest;
+
+fn vault_key(fill: u8) -> Secret<VaultKey> {
+    Secret::<VaultKey>::from_derived_bytes(vec![fill; 32])
+}
+
+fn a_root() -> ManifestRoot {
+    ManifestRoot::new(
+        root_fields(2, 41),
+        vec![
+            RootEntry::new(prefix(1, 0), digest(0xA1), 40),
+            RootEntry::new(prefix(1, TOP_HALF), digest(0xB2), 41),
+        ],
+    )
+    .expect("a root")
+}
+
+fn a_segment() -> ManifestSegment {
+    ManifestSegment::new(
+        segment_fields(1, 0, 41),
+        vec![Entry::new(
+            b"item".to_vec(),
+            3,
+            digest(0x11),
+            false,
+            Vec::new(),
+        )],
+    )
+    .expect("a segment")
+}
+
+#[test]
+fn a_root_seals_and_opens_under_the_vault_key() {
+    let key = vault_key(0x22);
+    let root = a_root();
+    let stored = seal_root(&key, FreshNonce::generate().expect("nonce"), &root).expect("seals");
+    assert_eq!(open_root(&key, &stored).expect("opens"), root);
+}
+
+#[test]
+fn a_segment_seals_and_opens_under_the_vault_key() {
+    let key = vault_key(0x22);
+    let segment = a_segment();
+    let stored =
+        seal_segment(&key, FreshNonce::generate().expect("nonce"), &segment).expect("seals");
+    assert_eq!(open_segment(&key, &stored).expect("opens"), segment);
+}
+
+#[test]
+fn a_root_cannot_be_opened_as_a_segment_or_the_reverse() {
+    let key = vault_key(0x22);
+    let root = seal_root(&key, FreshNonce::generate().expect("nonce"), &a_root()).expect("seals");
+    let segment =
+        seal_segment(&key, FreshNonce::generate().expect("nonce"), &a_segment()).expect("seals");
+
+    assert!(matches!(
+        open_segment(&key, &root),
+        Err(ManifestError::NotAManifestSegment)
+    ));
+    assert!(matches!(
+        open_root(&key, &segment),
+        Err(ManifestError::NotAManifestRoot)
+    ));
+}
+
+#[test]
+fn a_wrong_vault_key_does_not_open_a_manifest_record() {
+    let stored = seal_root(
+        &vault_key(0x22),
+        FreshNonce::generate().expect("nonce"),
+        &a_root(),
+    )
+    .expect("seals");
+    assert!(matches!(
+        open_root(&vault_key(0x23), &stored),
+        Err(ManifestError::Sealed(_))
+    ));
+}
+
+#[test]
+fn altering_the_aad_a_record_was_sealed_under_fails_to_open() {
+    let key = vault_key(0x22);
+    let stored = seal_root(&key, FreshNonce::generate().expect("nonce"), &a_root()).expect("seals");
+
+    // Same nonce and ciphertext, a `manifestSeq` one higher; it lives only in the AAD.
+    let rewound = StoredManifest::new(root_fields(2, 42), stored.payload().clone()).expect("built");
+    assert!(
+        matches!(open_root(&key, &rewound), Err(ManifestError::Sealed(_))),
+        "a manifestSeq the record was not sealed under must fail the AEAD"
+    );
+}
+
+#[test]
+fn a_stored_manifest_round_trips_and_its_digest_is_over_the_stored_bytes() {
+    let key = vault_key(0x22);
+    let stored =
+        seal_segment(&key, FreshNonce::generate().expect("nonce"), &a_segment()).expect("seals");
+
+    let encoded = stored.encode().expect("encodes");
+    let again = StoredManifest::decode(&encoded).expect("decodes");
+    assert_eq!(again, stored);
+    assert_eq!(
+        again.digest().expect("digest"),
+        stored.digest().expect("digest"),
+        "a round trip changed the digest a root entry vouches for"
+    );
+
+    // §2.5: the digest is SHA-256 over AAD ‖ nonce ‖ ct ‖ tag.
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(aad::encode(stored.fields()).expect("aad"));
+    hasher.update(stored.payload().nonce());
+    hasher.update(stored.payload().ciphertext());
+    let expected: [u8; 32] = hasher.finalize().into();
+    assert_eq!(stored.digest().expect("digest"), expected);
+}

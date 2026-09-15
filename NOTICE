@@ -1,0 +1,29 @@
+# Third-party notices
+
+Third-party material shipped inside Chiavora. Rust crate dependencies are
+covered by `deny.toml` and not listed here.
+
+## EFF Long Wordlist
+
+`crates/core/src/eff_large_wordlist.txt`
+
+> Passphrases use the EFF Long Wordlist by the Electronic Frontier Foundation,
+> licensed CC BY 3.0 US.
+
+- **Source:** <https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt>
+- **Licence:** Creative Commons Attribution 3.0 United States (CC BY 3.0 US) —
+  <https://creativecommons.org/licenses/by/3.0/us/>
+- Modifications: none. The file is shipped byte for byte, dice column
+  included, and its SHA-256 is checked in `crates/core/src/passphrase.rs`.
+- Used for: the word pool for generated passphrases.
+
+### Why this file exists rather than a line in a licence scanner's report
+
+`cargo deny` reads crate manifests. A `.txt` file compiled in with
+`include_str!` has no manifest, no licence field and no entry in any dependency
+graph — so the one obligation attached to it is invisible to every automated
+check this repository runs. **The attribution is discharged by being shown**:
+here, and in the app's about screen, which reads the same constant
+(`passphrase::WORDLIST_ATTRIBUTION`) so the two cannot drift apart.
+
+A licence obligation discharged only in a file nobody reads is not discharged.

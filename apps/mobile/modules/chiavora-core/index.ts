@@ -29,6 +29,21 @@ export interface KeystoreProviderReport {
   readonly error?: string;
 }
 
+export interface GeneratedValue {
+  readonly value: string;
+  readonly entropyBits: number;
+}
+
+export interface GeneratorLimits {
+  readonly maxLength: number;
+  readonly maxWords: number;
+  readonly wordCount: number;
+  readonly symbols: string;
+  /** The CC BY 3.0 US attribution the about screen must show. */
+  readonly wordlistAttribution: string;
+  readonly wordlistSource: string;
+}
+
 export interface KeystoreReport {
   readonly mukBacking: string;
   /** Must be true: a new fingerprint destroys the MUK's wrapping key. */
@@ -82,6 +97,22 @@ interface ChiavoraCoreNativeModule {
   vaultState(): Promise<VaultState>;
   keystoreReport(): Promise<KeystoreReport>;
   forgetDevice(): Promise<boolean>;
+
+  generatorLimits(): Promise<GeneratorLimits>;
+  generatePassword(
+    length: number,
+    lowercase: boolean,
+    uppercase: boolean,
+    digits: boolean,
+    symbols: boolean,
+    excludeAmbiguous: boolean,
+    requireOneOfEach: boolean,
+  ): Promise<GeneratedValue>;
+  generatePassphrase(
+    words: number,
+    separator: string,
+    capitalise: boolean,
+  ): Promise<GeneratedValue>;
 }
 
 const ChiavoraCore = requireNativeModule<ChiavoraCoreNativeModule>('ChiavoraCore');

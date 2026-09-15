@@ -8,6 +8,9 @@ import uniffi.chiavora_ffi_mobile.KeystoreReport
 import uniffi.chiavora_ffi_mobile.MobileVault
 import uniffi.chiavora_ffi_mobile.checkKeystoreArrangement
 import uniffi.chiavora_ffi_mobile.ffiSmoke
+import uniffi.chiavora_ffi_mobile.generatePassphrase
+import uniffi.chiavora_ffi_mobile.generatePassword
+import uniffi.chiavora_ffi_mobile.generatorLimits
 import uniffi.chiavora_ffi_mobile.mukForDeviceWrapping
 import uniffi.chiavora_ffi_mobile.restoreFromOlderBackup
 
@@ -152,6 +155,31 @@ class ChiavoraCoreModule : Module() {
         AsyncFunction("forgetDevice") {
             VaultKeys.forget(androidContext().filesDir)
             true
+        }
+
+        AsyncFunction("generatorLimits") {
+            val limits = generatorLimits()
+            mapOf(
+                "maxLength" to limits.maxLength.toInt(),
+                "maxWords" to limits.maxWords.toInt(),
+                "wordCount" to limits.wordCount.toInt(),
+                "symbols" to limits.symbols,
+                "wordlistAttribution" to limits.wordlistAttribution,
+                "wordlistSource" to limits.wordlistSource,
+            )
+        }
+
+        AsyncFunction("generatePassword") { length: Int, lowercase: Boolean, uppercase: Boolean, digits: Boolean, symbols: Boolean, excludeAmbiguous: Boolean, requireOneOfEach: Boolean ->
+            val out = generatePassword(
+                length.toUInt(), lowercase, uppercase, digits, symbols,
+                excludeAmbiguous, requireOneOfEach,
+            )
+            mapOf("value" to out.value, "entropyBits" to out.entropyBits)
+        }
+
+        AsyncFunction("generatePassphrase") { words: Int, separator: String, capitalise: Boolean ->
+            val out = generatePassphrase(words.toUInt(), separator, capitalise)
+            mapOf("value" to out.value, "entropyBits" to out.entropyBits)
         }
 
         // One copy per build variant; only the debug one registers the measurement harness.

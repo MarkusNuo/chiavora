@@ -14,6 +14,8 @@ import {
 import ChiavoraCore, {
   harnessDeriveOnce,
   keystoreProviderReport,
+  type GeneratedValue,
+  type GeneratorLimits,
   type KeystoreReport,
   type VaultState,
 } from './modules/chiavora-core';
@@ -25,6 +27,9 @@ export default function App() {
   const [report, setReport] = useState<KeystoreReport | null>(null);
   const appState = useRef(AppState.currentState);
   const harnessStarted = useRef(false);
+  const [limits, setLimits] = useState<GeneratorLimits | null>(null);
+  const [generated, setGenerated] = useState<GeneratedValue | null>(null);
+  const [passphraseMode, setPassphraseMode] = useState(false);
 
   const say = useCallback((line: string) => {
     console.log(`CHIAVORA-APP ${line}`);
@@ -61,6 +66,12 @@ export default function App() {
           ? 'a vault is enrolled on this device'
           : 'no vault enrolled — press Enrol',
       );
+
+      try {
+        setLimits(await ChiavoraCore.generatorLimits());
+      } catch (e) {
+        say(`generator limits: ${e}`);
+      }
 
       const url = await Linking.getInitialURL();
       if (url?.includes('harness') && !harnessStarted.current) {
@@ -196,6 +207,19 @@ export default function App() {
     say(VERDICT: ${out.verdict}`);
   }, [say]);
 
+  const generate = useCallback(async () => {
+    try {
+      setGenerated(
+        passphraseMode
+          ? await ChiavoraCore.generatePassphrase(5, '-', false)
+          : await ChiavoraCore.generatePassword(20, true, true, true, true, false, true),
+      );
+    } catch (e) {
+      setGenerated(null);
+      say(`generate refused: ${e}`);
+    }
+  }, [passphraseMode, say]);
+
   const invalidated = state?.mukKeyInvalidated ?? false;
 
   return (
@@ -231,6 +255,44 @@ export default function App() {
         <Button label="Forget this device" onPress={forget} />
         {ChiavoraCore.hasHarness() ? (
           <Button label="Probe the Keystore provider" onPress={probeKeystoreProvider} />
+        ) : null}
+
+        {/*
+        */}
+
+        <View style={styles.report}>
+          <Text style={styles.reportTitle}>Generate</Text>
+          <Button
+            label={passphraseMode ? 'Mode: passphrase' : 'Mode: password'}
+            onPress={() => {
+              setPassphraseMode((previous) => !previous);
+              setGenerated(null);
+            }}
+          />
+          <Button label="Generate" onPress={generate} />
+          {generated ? (
+            <>
+              <Text selectable style={styles.generated}>
+                {generated.value}
+              </Text>
+              <Text style={styles.line}>
+                {generated.entropyBits.toFixed(1)} bits — exact for this policy
+              </Text>
+            </>
+          ) : null}
+          {limits ? (
+            <Text style={styles.line}>
+              {passphraseMode
+                ? `${limits.wordCount} words, up to ${limits.maxWords}`
+                : `symbols ${limits.symbols}, up to ${limits.maxLength} characters`}
+            </Text>
+          ) : null}
+        </View>
+
+        {/*
+        */}
+        {limits && passphraseMode ? (
+          <Text style={styles.attribution}>{limits.wordlistAttribution}</Text>
         ) : null}
 
         {/*
@@ -376,6 +438,16 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   reportTitle: { fontWeight: '600', marginBottom: 6 },
+  generated: {
+    fontFamily: 'monospace',
+    fontSize: 16,
+    marginTop: 10,
+    marginBottom: 4,
+    padding: 10,
+    backgroundColor: '#ffffff',
+    borderRadius: 4,
+  },
+  attribution: { fontSize: 11, color: '#5a6672', marginTop: 6, marginBottom: 4 },
   blunt: {
     marginTop: 16,
     padding: 12,

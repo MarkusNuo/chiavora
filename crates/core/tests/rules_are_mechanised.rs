@@ -2178,6 +2178,167 @@ fn the_backup_scan_would_notice_each_half_going_missing() {
     }
 }
 
+/// One row per generator-policy knob: its struct, whether it may move the
+/// reported entropy, and the test that asserts so.
+const GENERATOR_KNOBS: [(&str, &str, bool, &str); 7] = [
+    (
+        "Policy",
+        "length",
+        true,
+        "entropy_is_arithmetic_over_the_alphabet",
+    ),
+    (
+        "Policy",
+        "classes",
+        true,
+        "entropy_is_arithmetic_over_the_alphabet",
+    ),
+    (
+        "Policy",
+        "exclude_ambiguous",
+        true,
+        "excluding_ambiguous_characters_lowers_the_reported_entropy",
+    ),
+    (
+        "Policy",
+        "require_one_of_each",
+        false,
+        "requiring_one_of_each_changes_the_output_and_not_the_reported_entropy",
+    ),
+    (
+        "PassphrasePolicy",
+        "words",
+        true,
+        "entropy_is_words_times_log2_of_the_list",
+    ),
+    (
+        "PassphrasePolicy",
+        "separator",
+        false,
+        "the_separator_changes_the_output_and_not_the_entropy",
+    ),
+    (
+        "PassphrasePolicy",
+        "capitalise",
+        false,
+        "capitalising_changes_the_output_and_not_the_entropy",
+    ),
+];
+
+fn struct_fields(source: &str, name: &str) -> Vec<String> {
+    let Some(start) = source.find(&format!("pub struct {name} {{")) else {
+        return Vec::new();
+    };
+    let body = source.get(start..).unwrap_or_default();
+    body.lines()
+        .skip(1)
+        .take_while(|line| line.trim() != "}")
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.starts_with("//") || line.starts_with('#') {
+                return None;
+            }
+            let (field, _) = line.split_once(':')?;
+            let field = field.trim();
+            field
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c == '_')
+                .then(|| field.to_owned())
+        })
+        .collect()
+}
+
+#[test]
+fn r1_every_generator_knob_is_registered_with_its_entropy_assertion() {
+    let generate = read("crates/core/src/generate.rs");
+    let passphrase = read("crates/core/src/passphrase.rs");
+
+    let mut problems = Vec::new();
+    for (struct_name, source, label) in [
+        ("Policy", &generate, "generate.rs"),
+        ("PassphrasePolicy", &passphrase, "passphrase.rs"),
+    ] {
+        let fields = struct_fields(source, struct_name);
+        assert!(
+            !fields.is_empty(),
+            "no fields found on {struct_name} in {label}; the field reader has stopped reading"
+        );
+        for field in &fields {
+            if !GENERATOR_KNOBS
+                .iter()
+                .any(|(s, f, _, _)| *s == struct_name && f == field)
+            {
+                problems.push(format!(
+                    "{struct_name}.{field} ({label}) is a generator knob with no row in \
+                     GENERATOR_KNOBS. Add one saying whether it moves the reported entropy, \
+                     and the test that asserts it --- R1's third corollary."
+                ));
+            }
+        }
+        let registered = GENERATOR_KNOBS
+            .iter()
+            .filter(|(s, _, _, _)| *s == struct_name)
+            .count();
+        if registered != fields.len() {
+            problems.push(format!(
+                "{struct_name} has {} fields and {registered} rows; a row names a field that \
+                 is gone",
+                fields.len()
+            ));
+        }
+    }
+
+    for (struct_name, field, _, test) in GENERATOR_KNOBS {
+        let source = if struct_name == "Policy" {
+            &generate
+        } else {
+            &passphrase
+        };
+        if !source.contains(&format!("fn {test}(")) {
+            problems.push(format!(
+                "{struct_name}.{field} names the test `{test}`, which is not in that module"
+            ));
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "R1 third-corollary violations:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+#[test]
+fn the_generator_knob_registry_would_notice_an_unregistered_knob() {
+    let synthetic = r"
+        pub struct Policy {
+            length: usize,
+            classes: Vec<CharClass>,
+            exclude_ambiguous: bool,
+            require_one_of_each: bool,
+            leetspeak: bool,
+        }
+    ";
+    let fields = struct_fields(synthetic, "Policy");
+    assert_eq!(
+        fields.len(),
+        5,
+        "the field reader missed a field: {fields:?}"
+    );
+    assert!(
+        fields.iter().any(|f| f == "leetspeak"),
+        "the new knob was not seen"
+    );
+    assert!(
+        !GENERATOR_KNOBS
+            .iter()
+            .any(|(s, f, _, _)| *s == "Policy" && *f == "leetspeak"),
+        "the synthetic knob must not be registered, or this proves nothing"
+    );
+
+    assert!(struct_fields(synthetic, "NoSuchStruct").is_empty());
+}
+
 /// Keeps `Path` in use on every platform without a `cfg`.
 #[allow(dead_code)]
 fn _unused(_: &Path) {}

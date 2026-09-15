@@ -23,6 +23,7 @@ pub mod model;
 pub mod nonce;
 pub mod onepif;
 pub mod onepux;
+pub mod passphrase;
 #[cfg(test)]
 pub(crate) mod scan;
 pub mod search;

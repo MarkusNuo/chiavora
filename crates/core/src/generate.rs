@@ -23,11 +23,16 @@ impl CharClass {
             Self::Lowercase => b"abcdefghijklmnopqrstuvwxyz",
             Self::Uppercase => b"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             Self::Digit => b"0123456789",
-            Self::Symbol => b"!#$%&()*+,-./:;<=>?@[]^_{|}~",
+            Self::Symbol => b"!@#$%^&*-_=+?",
         }
     }
 
     pub const ALL: [Self; 4] = [Self::Lowercase, Self::Uppercase, Self::Digit, Self::Symbol];
+
+    #[must_use]
+    pub const fn characters(self) -> &'static [u8] {
+        self.chars()
+    }
 }
 
 const AMBIGUOUS: &[u8] = b"0O1lI5S8B";
@@ -367,15 +372,43 @@ mod tests {
     fn entropy_is_arithmetic_over_the_alphabet() {
         // 26 + 26 + 10 + 13 = 75 characters; log2(75) = 6.2288...
         let policy = Policy::new(20, &all_classes(), false, false).unwrap();
-        assert_eq!(policy.alphabet().len(), 90);
+        assert_eq!(policy.alphabet().len(), 75);
         let bits = entropy_bits(&policy);
         assert!(
-            (bits - 20.0 * 90.0_f64.log2()).abs() < 1e-9,
+            (bits - 20.0 * 75.0_f64.log2()).abs() < 1e-9,
             "expected exactly length * log2(alphabet), got {bits}"
+        );
+        assert!(
+            (bits - 124.576).abs() < 0.01,
+            " default is {bits} bits"
         );
 
         let digits = Policy::new(6, &[CharClass::Digit], false, false).unwrap();
         assert!((entropy_bits(&digits) - 6.0 * 10.0_f64.log2()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn requiring_one_of_each_changes_the_output_and_not_the_reported_entropy() {
+        let off = Policy::new(20, &all_classes(), false, false).unwrap();
+        let on = Policy::new(20, &all_classes(), false, true).unwrap();
+        assert!(
+            (entropy_bits(&off) - entropy_bits(&on)).abs() < f64::EPSILON,
+            "require_one_of_each moved the reported entropy"
+        );
+
+        let classes: std::collections::BTreeSet<bool> = (0..40)
+            .map(|_| {
+                let out = password(&on).expect("generates");
+                all_classes()
+                    .into_iter()
+                    .all(|c| out.bytes().any(|b| c.chars().contains(&b)))
+            })
+            .collect();
+        assert_eq!(
+            classes,
+            [true].into_iter().collect(),
+            "require_one_of_each was on and a password missed a class"
+        );
     }
 
     #[test]

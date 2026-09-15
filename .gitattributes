@@ -11,3 +11,7 @@ fuzz/artifacts/** binary
 # Test vectors and trybuild output are compared as text, kept LF everywhere.
 crates/core/tests/vectors/*.json text eol=lf
 *.stderr text eol=lf
+
+# The EFF word list is checked against its published SHA-256, so it must stay
+# byte for byte as EFF ships it.
+crates/core/src/eff_large_wordlist.txt text eol=lf

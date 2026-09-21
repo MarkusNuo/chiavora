@@ -103,6 +103,9 @@ pub enum ManifestError {
     ItemListedNotDelivered,
     ItemDeliveredNotListed,
     HighWaterMarkRewound,
+    ConflictNeedsResolution,
+    NonceUnavailable,
+    TransportFailed,
 }
 
 impl fmt::Display for ManifestError {
@@ -165,6 +168,13 @@ impl fmt::Display for ManifestError {
             Self::ItemDeliveredNotListed => {
                 f.write_str("the server delivered an item no segment lists")
             }
+            Self::ConflictNeedsResolution => f.write_str(
+                "two devices advanced the same item to the same version with different                  contents: both are kept and the conflict is resolved, never discarded",
+            ),
+            Self::NonceUnavailable => {
+                f.write_str("the platform CSPRNG refused a nonce, so nothing was sealed")
+            }
+            Self::TransportFailed => f.write_str("the manifest transport failed"),
             Self::HighWaterMarkRewound => f.write_str(
                 "the on-disk high-water mark went backwards, which no honest client does",
             ),
@@ -189,6 +199,12 @@ impl From<WireError> for ManifestError {
 impl From<ItemError> for ManifestError {
     fn from(e: ItemError) -> Self {
         Self::Sealed(e)
+    }
+}
+
+impl From<crate::nonce::NonceError> for ManifestError {
+    fn from(_: crate::nonce::NonceError) -> Self {
+        Self::NonceUnavailable
     }
 }
 

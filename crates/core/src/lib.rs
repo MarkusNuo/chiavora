@@ -31,6 +31,7 @@ pub mod secret;
 pub mod secret_key;
 pub mod store;
 pub mod stored_record;
+pub mod sync;
 pub mod unlock;
 pub mod wrap;
 pub mod zip;

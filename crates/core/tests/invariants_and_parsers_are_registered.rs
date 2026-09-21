@@ -368,7 +368,17 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 69] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 71] = [
+    (
+        "core/src/sync.rs",
+        "StagedEdit::new",
+        "NOT A BOUNDARY: an edit this client staged locally. The itemId is          this installation's own identifier and the digest was computed here          from bytes this process just sealed. Nothing crosses a boundary until          upload sends it, and what comes back is parsed by StoredManifest and          ManifestRoot, both in PARSERS",
+    ),
+    (
+        "core/src/sync.rs",
+        "upload",
+        "COVERED ELSEWHERE: the vaultId is an opaque key, and every byte the          server returns reaches it through StoredManifest::decode,          ManifestRoot::decode and ManifestSegment::decode -- all three in          PARSERS and all three fed by manifest_decode. What upload itself does          with those bytes is apply the read path, which is I6a-I6f and has          eighteen named tests",
+    ),
     (
         "core/src/manifest.rs",
         "Entry::accept_item",

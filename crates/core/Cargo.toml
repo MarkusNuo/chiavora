@@ -41,3 +41,5 @@ chiavora-core = { path = ".", features = ["harness"] }
 x25519-dalek = { version = "2.0", default-features = false, features = ["static_secrets"] }
 trybuild = "1.0"
 proptest = "1.5"
+# The RFC 5054 SRP test vectors use SHA-1.
+sha1 = "0.11.0"

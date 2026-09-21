@@ -29,6 +29,7 @@ pub(crate) mod scan;
 pub mod search;
 pub mod secret;
 pub mod secret_key;
+pub mod srp;
 pub mod store;
 pub mod stored_record;
 pub mod sync;

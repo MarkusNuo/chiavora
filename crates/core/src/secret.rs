@@ -73,6 +73,12 @@ pub mod kind {
         StoreKey => "StoreKey", DerivedKind, false;
         #[doc = "The Export Key, the Store Key's sibling, which MACs a native export's container so a tampered or foreign file is refused."]
         ExportKey => "ExportKey", DerivedKind, false;
+        #[doc = "The SRP-6a private exponent `x` = SHA-256(`srpSalt` ‖ `srpX`), never to be substituted for its HKDF input `SrpX` (§2.3)."]
+        SrpExponent => "SrpExponent", DerivedKind, false;
+        #[doc = "An SRP-6a ephemeral private value, the client's `a` or the server's `b` (RFC 5054 §2.6)."]
+        SrpEphemeralSecret => "SrpEphemeralSecret", DerivedKind, false;
+        #[doc = "The SRP-6a premaster secret `S`, never used as a key directly (§2.3)."]
+        SrpPremasterSecret => "SrpPremasterSecret", DerivedKind, false;
     }
 }
 

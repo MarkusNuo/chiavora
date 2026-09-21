@@ -94,6 +94,9 @@ interface ChiavoraCoreNativeModule {
     iterations: number,
     discardingAfter: number,
   ): Promise<number>;
+  /** Every lock is reported through {@link onLock}. */
+  lock(): Promise<boolean>;
+  isUnlocked(): Promise<boolean>;
   vaultState(): Promise<VaultState>;
   keystoreReport(): Promise<KeystoreReport>;
   forgetDevice(): Promise<boolean>;

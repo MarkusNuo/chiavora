@@ -30,6 +30,7 @@ export default function App() {
   const [limits, setLimits] = useState<GeneratorLimits | null>(null);
   const [generated, setGenerated] = useState<GeneratedValue | null>(null);
   const [passphraseMode, setPassphraseMode] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
 
   const say = useCallback((line: string) => {
     console.log(`CHIAVORA-APP ${line}`);
@@ -155,6 +156,7 @@ export default function App() {
         `UNLOCKED by biometric, muk_len=${out.mukLen}; ` +
           `rollback protection: ${out.rollbackProtection}`,
       );
+      setUnlocked(true);
     } catch (e) {
       say(`biometric unlock refused: ${e}`);
       await offerRestoreIfRewound(e);
@@ -176,6 +178,7 @@ export default function App() {
           `rollback protection: ${out.rollbackProtection}; ` +
           'MUK re-wrapped under a fresh biometric key',
       );
+      setUnlocked(true);
       await refresh();
     } catch (e) {
       say(`password unlock refused: ${e}`);
@@ -183,8 +186,15 @@ export default function App() {
     }
   }, [password, refresh, say]);
 
+  const lock = useCallback(async () => {
+    await ChiavoraCore.lock();
+    setUnlocked(false);
+    say('locked: the vault handle is dropped and core has wiped the MUK');
+  }, [say]);
+
   const forget = useCallback(async () => {
     await ChiavoraCore.forgetDevice();
+    setUnlocked(false);
     setReport(null);
     say('device forgotten: both keystore entries and both blobs removed');
     await refresh();
@@ -252,7 +262,11 @@ export default function App() {
           disabled={!state?.hasWrappedMuk || invalidated}
         />
         <Button label="Unlock with password" onPress={unlockPassword} disabled={!state?.hasSecretKey} />
+        <Button label="Lock" onPress={lock} disabled={!unlocked} />
         <Button label="Forget this device" onPress={forget} />
+        <Text style={styles.line}>
+          session: {unlocked ? 'unlocked' : 'locked'} — no auto-lock
+        </Text>
         {ChiavoraCore.hasHarness() ? (
           <Button label="Probe the Keystore provider" onPress={probeKeystoreProvider} />
         ) : null}

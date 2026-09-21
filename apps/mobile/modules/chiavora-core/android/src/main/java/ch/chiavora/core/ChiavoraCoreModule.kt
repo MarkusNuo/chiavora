@@ -16,6 +16,9 @@ import uniffi.chiavora_ffi_mobile.restoreFromOlderBackup
 
 /** Every function returns what the UI needs to render, never key material. */
 class ChiavoraCoreModule : Module() {
+    /** A Rust-owned handle, never a key; volatile so a lock is seen at once on every thread. */
+    @Volatile
+    private var session: MobileVault? = null
 
     override fun definition() = ModuleDefinition {
         Name("ChiavoraCore")
@@ -80,12 +83,14 @@ class ChiavoraCoreModule : Module() {
                 } finally {
                     muk.fill(0)
                 }
+                val protection = vault.rollbackProtection(
+                    storePath(files),
+                    AnchorStore.Backed(files),
+                )
+                session = vault
                 mapOf(
                     "mukLen" to vault.mukLen().toInt(),
-                    "rollbackProtection" to vault.rollbackProtection(
-                        storePath(files),
-                        AnchorStore.Backed(files),
-                    ),
+                    "rollbackProtection" to protection,
                 )
             } finally {
                 secretKey?.fill(0)
@@ -102,13 +107,24 @@ class ChiavoraCoreModule : Module() {
                 files,
                 java.util.concurrent.Executors.newSingleThreadExecutor(),
             )
+            val protection = vault.rollbackProtection(
+                storePath(files),
+                AnchorStore.Backed(files),
+            )
+            session = vault
             mapOf(
                 "mukLen" to vault.mukLen().toInt(),
-                "rollbackProtection" to vault.rollbackProtection(
-                    storePath(files),
-                    AnchorStore.Backed(files),
-                ),
+                "rollbackProtection" to protection,
             )
+        }
+
+        AsyncFunction("lock") {
+            session = null
+            true
+        }
+
+        AsyncFunction("isUnlocked") {
+            session != null
         }
 
         AsyncFunction("vaultState") {
@@ -153,6 +169,7 @@ class ChiavoraCoreModule : Module() {
         }
 
         AsyncFunction("forgetDevice") {
+            session = null
             VaultKeys.forget(androidContext().filesDir)
             true
         }

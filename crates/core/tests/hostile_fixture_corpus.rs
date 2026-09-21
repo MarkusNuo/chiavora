@@ -226,17 +226,120 @@ fn apply_kdf_params(f: &Fixture) -> Outcome {
     }
 }
 
+fn apply_manifest_read(f: &Fixture) -> Outcome {
+    use chiavora_core::manifest::{
+        advance_high_water_mark, CanonicalPrefix, Entry, ManifestError, ManifestRoot,
+        ManifestSegment, RootEntry,
+    };
+    use chiavora_core::secret::kind::{Muk, VaultKey};
+    use chiavora_core::store::{Store, Unanchored};
+
+    const VAULT: &[u8] = b"vault-1";
+    const ITEM: &[u8] = b"login-bank";
+
+    let vault_key = Secret::<VaultKey>::from_derived_bytes(vec![0x22; 32]);
+    let root_fields = |count: u32, seq: u64| AadFields::ManifestRoot {
+        vault_id: VAULT.to_vec(),
+        manifest_seq: seq,
+        vault_key_epoch: 1,
+        segment_count: count,
+    };
+    let segment_fields = |seq: u64| AadFields::ManifestSegment {
+        vault_id: VAULT.to_vec(),
+        segment_seq: seq,
+        vault_key_epoch: 1,
+        prefix_len: 0,
+        prefix_bits: 0,
+    };
+    let whole = match CanonicalPrefix::new(0, 0) {
+        Ok(p) => p,
+        Err(e) => return Outcome::Refused(e.to_string()),
+    };
+    let current = Entry::new(ITEM.to_vec(), 2, [0x2A; 32], false, Vec::new());
+    let segment = match ManifestSegment::new(segment_fields(2), vec![current.clone()]) {
+        Ok(s) => s,
+        Err(e) => return Outcome::Refused(e.to_string()),
+    };
+    let sealed = match chiavora_core::manifest::seal_segment(
+        &vault_key,
+        FreshNonce::generate().expect("nonce"),
+        &segment,
+    ) {
+        Ok(s) => s,
+        Err(e) => return Outcome::Refused(e.to_string()),
+    };
+    let digest = match sealed.digest() {
+        Ok(d) => d,
+        Err(e) => return Outcome::Refused(e.to_string()),
+    };
+    let root = match ManifestRoot::new(root_fields(1, 2), vec![RootEntry::new(whole, digest, 2)]) {
+        Ok(r) => r,
+        Err(e) => return Outcome::Refused(e.to_string()),
+    };
+
+    let outcome: Result<(), ManifestError> = match f.mutation.as_deref().unwrap_or_default() {
+        "rewound-root" => {
+            ManifestRoot::new(root_fields(1, 1), vec![RootEntry::new(whole, digest, 1)])
+                .and_then(|old| old.accept(Some(2)))
+        }
+
+        "stale-segment" => {
+            let old = ManifestSegment::new(
+                segment_fields(1),
+                vec![Entry::new(ITEM.to_vec(), 1, [0xB1; 32], false, Vec::new())],
+            );
+            old.and_then(|old| {
+                chiavora_core::manifest::seal_segment(
+                    &vault_key,
+                    FreshNonce::generate().expect("nonce"),
+                    &old,
+                )
+            })
+            .and_then(|stale| root.accept_segment(&stale))
+        }
+
+        "replayed-item-version" => current.accept_item(1, &[0xB1; 32]),
+
+        "substituted-ciphertext" => current.accept_item(2, &[0x99; 32]),
+
+        "untombstoned-deletion" => segment.reconcile(&[]),
+
+        "rewound-high-water-mark" => {
+            let mut store = match Store::open_in_memory(
+                &Secret::<Muk>::from_derived_bytes(vec![0x4D; 32]),
+                Box::new(Unanchored),
+            ) {
+                Ok(s) => s,
+                Err(e) => return Outcome::Refused(e.to_string()),
+            };
+            advance_high_water_mark(&mut store, VAULT, &root).and_then(|()| {
+                ManifestRoot::new(root_fields(1, 1), vec![RootEntry::new(whole, digest, 1)])
+                    .and_then(|old| advance_high_water_mark(&mut store, VAULT, &old))
+            })
+        }
+
+        other => panic!("unknown manifest-read mutation {other:?}"),
+    };
+
+    match outcome {
+        Ok(()) => Outcome::Accepted,
+        Err(e) => Outcome::Refused(e.to_string()),
+    }
+}
+
 fn apply(f: &Fixture) -> Outcome {
     match f.kind.as_str() {
         "item-payload" => apply_item_payload(f),
         "wrapped-key" => apply_wrapped_key(f),
         "aad-bytes" => apply_aad_bytes(f),
         "kdf-params" => apply_kdf_params(f),
+        "manifest-read" => apply_manifest_read(f),
         other => panic!("unknown fixture kind {other:?}"),
     }
 }
 
-const MINIMUM_FIXTURES: usize = 14;
+/// The corpus only grows; raise this when fixtures are added.
+const MINIMUM_FIXTURES: usize = 20;
 
 #[test]
 fn every_hostile_fixture_is_refused_and_names_its_invariant() {

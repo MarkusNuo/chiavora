@@ -1,0 +1,7 @@
+{
+  "attacks": "I6a",
+  "why": "A genuine earlier manifest root authenticates but is not the latest, and accepting it would roll the whole vault back.",
+  "expect": "refused",
+  "kind": "manifest-read",
+  "mutation": "rewound-root"
+}

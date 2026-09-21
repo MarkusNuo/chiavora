@@ -9,6 +9,7 @@ use crate::aad::{self, AadError, AadFields};
 use crate::item::{self, ItemError, SealedPayload};
 use crate::nonce::FreshNonce;
 use crate::secret::{kind::VaultKey, Secret};
+use crate::store::{RollbackProtection, Store, StoreError};
 
 pub const TARGET_ENTRIES_PER_SEGMENT: usize = 256;
 
@@ -61,6 +62,8 @@ pub mod attachment_tag {
 pub enum ManifestError {
     Aad(AadError),
     Wire(WireError),
+    /// Carries no payload, so `ManifestError` stays `Copy` and `Eq`.
+    StoreRefused,
     Sealed(ItemError),
     NonCanonicalPrefix(AadError),
     NotAManifestRoot,
@@ -84,6 +87,22 @@ pub enum ManifestError {
     },
     NotABoolean,
     TrailingFields,
+    RootBelowHighWaterMark {
+        offered: u64,
+        mark: u64,
+    },
+    SegmentNotInRoot {
+        prefix_len: u8,
+    },
+    SegmentDigestMismatch,
+    ItemVersionRollback {
+        delivered: u64,
+        current: u64,
+    },
+    CiphertextDigestMismatch,
+    ItemListedNotDelivered,
+    ItemDeliveredNotListed,
+    HighWaterMarkRewound,
 }
 
 impl fmt::Display for ManifestError {
@@ -92,6 +111,7 @@ impl fmt::Display for ManifestError {
             Self::Aad(e) => write!(f, "manifest AAD: {e}"),
             Self::Wire(e) => write!(f, "manifest framing: {e}"),
             Self::Sealed(e) => write!(f, "manifest record: {e}"),
+            Self::StoreRefused => f.write_str("the local store refused a sync write"),
             Self::NonCanonicalPrefix(e) => {
                 write!(f, "non-canonical segment prefix, so I6b fails: {e}")
             }
@@ -118,6 +138,36 @@ impl fmt::Display for ManifestError {
             }
             Self::NotABoolean => f.write_str("a tombstone byte is neither 0 nor 1"),
             Self::TrailingFields => f.write_str("trailing fields after a complete manifest record"),
+            Self::RootBelowHighWaterMark { offered, mark } => write!(
+                f,
+                "the manifest root offers manifestSeq {offered}, below the {mark} this device \
+                 has accepted: a vault-wide rollback"
+            ),
+            Self::SegmentNotInRoot { prefix_len } => write!(
+                f,
+                "the root vouches for no segment at prefix length {prefix_len}"
+            ),
+            Self::SegmentDigestMismatch => {
+                f.write_str("the segment's digest is not the one the root vouches for")
+            }
+            Self::ItemVersionRollback { delivered, current } => write!(
+                f,
+                "an item arrived at version {delivered}, below the {current} the manifest \
+                 vouches for: a replayed item"
+            ),
+            Self::CiphertextDigestMismatch => f.write_str(
+                "an item's ciphertext is not the one its manifest entry vouches for: a \
+                 substitution at an unchanged version",
+            ),
+            Self::ItemListedNotDelivered => {
+                f.write_str("the manifest lists an item the server did not deliver")
+            }
+            Self::ItemDeliveredNotListed => {
+                f.write_str("the server delivered an item no segment lists")
+            }
+            Self::HighWaterMarkRewound => f.write_str(
+                "the on-disk high-water mark went backwards, which no honest client does",
+            ),
         }
     }
 }
@@ -808,4 +858,132 @@ pub fn open_segment(
         aad::RECORD_MANIFEST_SEGMENT,
     )?;
     ManifestSegment::decode(stored.fields().clone(), &body)
+}
+
+impl ManifestRoot {
+    pub fn check_not_rolled_back(&self, mark: Option<u64>) -> Result<(), ManifestError> {
+        if let Some(mark) = mark {
+            let offered = self.manifest_seq();
+            if offered < mark {
+                return Err(ManifestError::RootBelowHighWaterMark { offered, mark });
+            }
+        }
+        Ok(())
+    }
+
+    /// I6a then I6b, before any segment is read, since a gap would hide every item in it.
+    pub fn accept(&self, mark: Option<u64>) -> Result<(), ManifestError> {
+        self.check_not_rolled_back(mark)?;
+        self.check_tiles()
+    }
+
+    pub fn vouched_digest(&self, prefix: CanonicalPrefix) -> Result<&[u8; 32], ManifestError> {
+        self.segments()
+            .iter()
+            .find(|entry| entry.prefix() == prefix)
+            .map(RootEntry::digest)
+            .ok_or(ManifestError::SegmentNotInRoot {
+                prefix_len: prefix.bit_len(),
+            })
+    }
+
+    /// I6b. Takes the stored record, since the digest is over it.
+    pub fn accept_segment(&self, stored: &StoredManifest) -> Result<(), ManifestError> {
+        let AadFields::ManifestSegment {
+            prefix_len,
+            prefix_bits,
+            ..
+        } = *stored.fields()
+        else {
+            return Err(ManifestError::NotAManifestSegment);
+        };
+        let prefix = CanonicalPrefix::new(prefix_len, prefix_bits)?;
+        let vouched = *self.vouched_digest(prefix)?;
+        if stored.digest()? != vouched {
+            return Err(ManifestError::SegmentDigestMismatch);
+        }
+        Ok(())
+    }
+}
+
+impl Entry {
+    /// I6c, then I6d: the version is checked first, since it names a replay.
+    pub fn accept_item(&self, version: u64, digest: &[u8; 32]) -> Result<(), ManifestError> {
+        if version < self.current_version() {
+            return Err(ManifestError::ItemVersionRollback {
+                delivered: version,
+                current: self.current_version(),
+            });
+        }
+        if digest != self.ciphertext_digest() {
+            return Err(ManifestError::CiphertextDigestMismatch);
+        }
+        Ok(())
+    }
+}
+
+impl ManifestSegment {
+    #[must_use]
+    pub fn entry(&self, item_id: &[u8]) -> Option<&Entry> {
+        self.entries().iter().find(|e| e.item_id() == item_id)
+    }
+
+    /// I6e, both ways. A tombstoned entry must be absent from `delivered`.
+    pub fn reconcile(&self, delivered: &[&[u8]]) -> Result<(), ManifestError> {
+        for entry in self.entries() {
+            let present = delivered.iter().any(|id| *id == entry.item_id());
+            if entry.tombstone() {
+                if present {
+                    return Err(ManifestError::ItemDeliveredNotListed);
+                }
+            } else if !present {
+                return Err(ManifestError::ItemListedNotDelivered);
+            }
+        }
+        for id in delivered {
+            if self.entry(id).is_none() {
+                return Err(ManifestError::ItemDeliveredNotListed);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Without a platform anchor, a whole-file rewind of the local store goes unseen, and
+/// I6f is only as good as the mark.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SyncPosture {
+    rollback: RollbackProtection,
+}
+
+impl SyncPosture {
+    #[must_use]
+    pub fn of(store: &Store) -> Self {
+        Self {
+            rollback: store.rollback_protection(),
+        }
+    }
+
+    #[must_use]
+    pub const fn detects_local_rewind(&self) -> bool {
+        matches!(self.rollback, RollbackProtection::Anchored)
+    }
+
+    #[must_use]
+    pub const fn rollback_protection(&self) -> RollbackProtection {
+        self.rollback
+    }
+}
+
+/// I6f: raises the mark after a root is accepted.
+pub fn advance_high_water_mark(
+    store: &mut Store,
+    vault_id: &[u8],
+    root: &ManifestRoot,
+) -> Result<(), ManifestError> {
+    match store.set_high_water_mark(vault_id, root.manifest_seq()) {
+        Ok(()) => Ok(()),
+        Err(StoreError::HighWaterMarkDecrease { .. }) => Err(ManifestError::HighWaterMarkRewound),
+        Err(_) => Err(ManifestError::StoreRefused),
+    }
 }

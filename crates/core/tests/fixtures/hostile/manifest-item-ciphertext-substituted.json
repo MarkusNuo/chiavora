@@ -1,0 +1,7 @@
+{
+  "attacks": "I6d",
+  "why": "A different ciphertext at the current version passes every other read rule, so without the digest check a server could serve any ciphertext it liked.",
+  "expect": "refused",
+  "kind": "manifest-read",
+  "mutation": "substituted-ciphertext"
+}

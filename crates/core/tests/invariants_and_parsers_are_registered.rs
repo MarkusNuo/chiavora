@@ -111,6 +111,49 @@ const CORE_INVARIANTS: [(&str, &str); 5] = [
     ("i7", "double-wrap agreement"),
 ];
 
+const I6_CLAUSES: [(&str, &str); 6] = [
+    ("i6a", "No manifest root below the client's persisted"),
+    ("i6b", "No segment whose digest the root does not vouch for"),
+    ("i6c", "No item below its entry's"),
+    (
+        "i6d",
+        "No item whose ciphertext fails to digest-match its entry",
+    ),
+    ("i6e", "No silently missing or silently extra item"),
+    ("i6f", "is strictly monotonic"),
+];
+
+#[test]
+fn every_i6_clause_has_a_test_named_for_it_and_a_phrase_in_the_design() {
+    let sources = test_sources();
+    let plan = read("docs/security-design.md");
+    let flat = plan.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    let mut problems: Vec<String> = Vec::new();
+    for (clause, phrase) in I6_CLAUSES {
+        let needle = format!("fn {clause}_");
+        let count: usize = sources
+            .iter()
+            .map(|(_, src)| src.matches(&needle).count())
+            .sum();
+        if count == 0 {
+            problems.push(format!("{clause}: no test named for it"));
+        }
+        if !flat.contains(phrase) {
+            problems.push(format!(
+                "{clause}: docs/security-design.md no longer states {phrase:?} -- either the \
+                 clause was reworded, in which case fix this row, or it was \
+                 dropped, in which case the test guards nothing"
+            ));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "I6 registry:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
 #[test]
 fn every_core_invariant_has_at_least_one_test_named_for_it() {
     let sources = test_sources();
@@ -325,7 +368,27 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 65] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 69] = [
+    (
+        "core/src/manifest.rs",
+        "Entry::accept_item",
+        "SAFE BY CONSTRUCTION: two comparisons and no parsing. The digest is a          fixed-size array the caller computed with          StoredRecord::ciphertext_digest, and the version is a u64. This is          I6c and I6d themselves -- the thing that refuses attacker input, not          a thing that reads it",
+    ),
+    (
+        "core/src/manifest.rs",
+        "ManifestSegment::entry",
+        "SAFE BY CONSTRUCTION: an itemId used as an opaque key in a linear          search over entries this build decoded. Returns a borrow or None, and          the None is I6e's ItemDeliveredNotListed at every call site",
+    ),
+    (
+        "core/src/manifest.rs",
+        "ManifestSegment::reconcile",
+        "SAFE BY CONSTRUCTION: set comparison over itemIds used as opaque          keys. It parses nothing; it is I6e, the rule that decides whether an          absence is a tombstoned delete or an attack",
+    ),
+    (
+        "core/src/manifest.rs",
+        "advance_high_water_mark",
+        "SAFE BY CONSTRUCTION: the vaultId is an opaque key into the store's          metadata map, never parsed, and the only other input is a u64 read          from a root this build has already authenticated. What the function          decides is which of two errors a refused write is -- I6f's rewind or          an ordinary store fault -- and it parses nothing to do it",
+    ),
     (
         "core/src/item.rs",
         "seal_record",

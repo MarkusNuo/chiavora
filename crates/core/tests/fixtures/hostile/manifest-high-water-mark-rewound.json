@@ -1,0 +1,7 @@
+{
+  "attacks": "I6f",
+  "why": "A local process that rewinds the on-disk high-water mark would re-enable every rollback the other I6 clauses refuse.",
+  "expect": "refused",
+  "kind": "manifest-read",
+  "mutation": "rewound-high-water-mark"
+}

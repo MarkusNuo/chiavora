@@ -1,0 +1,7 @@
+{
+  "attacks": "I6b",
+  "why": "A genuine segment from an earlier manifestSeq authenticates, but accepting it under the current root would restore an older view of its prefix range.",
+  "expect": "refused",
+  "kind": "manifest-read",
+  "mutation": "stale-segment"
+}

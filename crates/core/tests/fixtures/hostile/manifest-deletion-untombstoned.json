@@ -1,0 +1,7 @@
+{
+  "attacks": "I6e",
+  "why": "An item the manifest lists but the server does not deliver is suppression unless a tombstone accounts for it.",
+  "expect": "refused",
+  "kind": "manifest-read",
+  "mutation": "untombstoned-deletion"
+}

@@ -1,0 +1,7 @@
+{
+  "attacks": "I6c",
+  "why": "A genuine older ciphertext replayed under a current manifest would serve a breached password from before the user rotated it.",
+  "expect": "refused",
+  "kind": "manifest-read",
+  "mutation": "replayed-item-version"
+}

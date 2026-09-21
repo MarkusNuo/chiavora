@@ -1,9 +1,15 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
 
 use chiavora_core::aad::{
-    decode, encode, AadError, AadFields, MAX_PREFIX_LEN, RECORD_ATTACHMENT_CHUNK,
-    RECORD_ITEM_PAYLOAD, RECORD_MANIFEST_ROOT, RECORD_MANIFEST_SEGMENT, RECORD_WRAPPED_ITEM_KEY,
-    WRAP_PURPOSE_AUTOFILL, WRAP_PURPOSE_VAULT,
+    // The record-type constants are used only as keys of `strategies_by_record_type`.
+    decode,
+    encode,
+    AadError,
+    AadFields,
+    ALL_RECORD_TYPES,
+    MAX_PREFIX_LEN,
+    WRAP_PURPOSE_AUTOFILL,
+    WRAP_PURPOSE_VAULT,
 };
 use proptest::prelude::{any, prop, ProptestConfig, Strategy};
 use proptest::{prop_assert, prop_assert_eq, prop_assume, proptest};
@@ -114,6 +120,16 @@ fn wrapped_item_key() -> impl Strategy<Value = AadFields> {
         )
 }
 
+fn sealed_vault_key() -> impl Strategy<Value = AadFields> {
+    (var_field(), any::<u32>(), var_field()).prop_map(
+        |(vault_id, vault_key_epoch, recipient_public_key)| AadFields::SealedVaultKey {
+            vault_id,
+            vault_key_epoch,
+            recipient_public_key,
+        },
+    )
+}
+
 fn any_record() -> impl Strategy<Value = AadFields> {
     prop::strategy::Union::new(vec![
         item_payload().boxed(),
@@ -121,6 +137,7 @@ fn any_record() -> impl Strategy<Value = AadFields> {
         manifest_root().boxed(),
         manifest_segment().boxed(),
         wrapped_item_key().boxed(),
+        sealed_vault_key().boxed(),
     ])
 }
 
@@ -179,18 +196,18 @@ fn i3_every_record_type_round_trips_at_least_once() {
             item_id: b"item".to_vec(),
             wrap_purpose: WRAP_PURPOSE_VAULT,
         },
+        AadFields::SealedVaultKey {
+            vault_id: b"vault".to_vec(),
+            vault_key_epoch: 7,
+            recipient_public_key: vec![0x42; 32],
+        },
     ];
     let seen: Vec<u8> = cases.iter().map(AadFields::record_type).collect();
 
     assert_eq!(
         seen,
-        vec![
-            RECORD_ITEM_PAYLOAD,
-            RECORD_ATTACHMENT_CHUNK,
-            RECORD_MANIFEST_ROOT,
-            RECORD_MANIFEST_SEGMENT,
-            RECORD_WRAPPED_ITEM_KEY
-        ]
+        ALL_RECORD_TYPES.to_vec(),
+        "the round-trip cases do not cover every record type the encoder defines"
     );
     for fields in cases {
         let bytes = encode(&fields).expect("must encode");

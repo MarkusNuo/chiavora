@@ -580,10 +580,21 @@ fn c7_the_previous_epochs_key_is_retained_until_explicitly_released() {
         "writes alone never release an epoch: the server cannot see re-wrap \
          progress, so it has no basis on which to decide"
     );
+
+    server.release_epoch(1);
+    assert!(!server.retains(1), "an explicit release is what drops it");
+}
+
+#[test]
+fn c7s_authentication_half_belongs_to_the_server_and_is_not_tested_here() {
+    // The server's SRP session enforces this half of C7; `crates/core` has no session.
+    let mut server = FakeServer::empty();
+    assert!(server.retains(1));
     server.release_epoch(1);
     assert!(
         !server.retains(1),
-        "only the client saying so, over the authenticated session, releases it"
+        "the fake has no authentication, which is exactly the point: this suite \
+         proves the release is explicit, never that it is authorised"
     );
 }
 

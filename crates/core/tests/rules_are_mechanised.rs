@@ -134,17 +134,39 @@ fn r1_absorbing_problems(modules: &[(String, String)]) -> Vec<String> {
                 continue;
             }
             let window_start = index.saturating_sub(8);
-            let justified = lines
-                .get(window_start..=index)
-                .unwrap_or_default()
-                .iter()
-                .any(|l| l.contains("R1:"));
+            let above = lines.get(window_start..=index).unwrap_or_default();
+            let justified = above.iter().any(|l| l.contains("R1:"));
             if !justified {
-                unjustified.push(format!("{name}:{}  {}", index + 1, code.trim()));
+                unjustified.push(format!(
+                    "{name}:{}  {}{}",
+                    index + 1,
+                    code.trim(),
+                    near_miss(above, lines.get(index..).unwrap_or_default())
+                ));
             }
         }
     }
     unjustified
+}
+
+/// Names the near miss: `R1` without its colon above the absorber, or `R1:` below it.
+fn near_miss(above: &[&str], from_absorber: &[&str]) -> String {
+    if above.iter().any(|l| l.contains("R1") && !l.contains("R1:")) {
+        return "\n      ^ found `R1` above WITHOUT THE COLON — the scan matches the literal \
+                token `R1:`, which is the one form nobody writes by instinct"
+            .to_owned();
+    }
+    if from_absorber
+        .iter()
+        .skip(1)
+        .take(8)
+        .any(|l| l.contains("R1:"))
+    {
+        return "\n      ^ found `R1:` BELOW this line — the note must be in the eight lines \
+                ABOVE, because that is where a reader meets it first"
+            .to_owned();
+    }
+    String::new()
 }
 
 #[test]
@@ -160,6 +182,36 @@ fn r1_every_absorbing_pattern_carries_a_justification() {
          a cryptographic output:\n  {}",
         unjustified.join("\n  ")
     );
+}
+
+#[test]
+fn r1_the_failure_names_which_near_miss_it_was() {
+    let wrong_token = [
+        "    // R1, capacity corollary: the width is a module constant.",
+        "    let mut out = Vec::with_capacity(width);",
+    ];
+    let wrong_position = [
+        "    let n = u32::try_from(bytes).unwrap_or(u32::MAX);",
+        "    // R1: unreachable, `bytes` is a compile-time constant.",
+    ];
+
+    let token = near_miss(&wrong_token, &wrong_token[1..]);
+    assert!(
+        token.contains("WITHOUT THE COLON"),
+        "the wrong-token near miss was not named: {token:?}"
+    );
+
+    let position = near_miss(&wrong_position[..1], &wrong_position);
+    assert!(
+        position.contains("BELOW this line"),
+        "the wrong-position near miss was not named: {position:?}"
+    );
+
+    let neither = ["    let x = 1;", "    y.unwrap_or(0)"];
+    assert_eq!(near_miss(&neither, &neither[1..]), "");
+
+    let correct = ["    // R1: justified.", "    y.unwrap_or(0)"];
+    assert_eq!(near_miss(&correct[..1], &correct[1..]), "");
 }
 
 #[test]

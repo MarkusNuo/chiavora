@@ -152,9 +152,12 @@ fn r1_every_absorbing_pattern_carries_a_justification() {
     let unjustified = r1_absorbing_problems(&core_modules());
     assert!(
         unjustified.is_empty(),
-        "R1: these absorb a failure with no `R1:` justification within eight \
-         lines above. Either propagate the error, or write why the absorbed \
-         value cannot be a cryptographic output:\n  {}",
+        "R1: these absorb a failure with no justification.\n  \
+         The note must contain the literal token `R1:` and must be ABOVE the \
+         line, within the eight lines preceding it — a note below the line \
+         does not count, however close.\n  \
+         Either propagate the error, or write why the absorbed value cannot be \
+         a cryptographic output:\n  {}",
         unjustified.join("\n  ")
     );
 }

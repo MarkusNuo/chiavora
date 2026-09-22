@@ -12,8 +12,10 @@ $verdictPath = Join-Path $repo 'target/gate-verdict.txt'
 # Listed here as well as in `gate.ps1`, so a step dropped from the gate fails here.
 $required = @(
     'FMT_OK', 'CLIPPY_OK', 'TEST_OK', 'RELEASE_SHAPE_OK',
-    'HARNESS_CLIPPY_OK', 'HARNESS_OK', 'DENY_OK', 'MOBILE_COMPILE_OK'
+    'HARNESS_CLIPPY_OK', 'HARNESS_OK', 'DENY_OK'
 )
+
+$mobileMarkers = @('MOBILE_COMPILE_OK', 'MOBILE_COMPILE_SKIPPED')
 
 function Fail([string] $why) {
     Write-Host 'GATE VERDICT: FAIL' -ForegroundColor Red
@@ -44,10 +46,19 @@ foreach ($marker in $required) {
     }
 }
 
+$mobileSeen = @($mobileMarkers | Where-Object { $lines -contains $_ })
+if ($mobileSeen.Count -ne 1) {
+    Fail ("the verdict has neither MOBILE_COMPILE_OK nor MOBILE_COMPILE_SKIPPED " +
+        "($($mobileSeen.Count) found) — the run did not finish")
+}
+
 if (-not ($lines -contains 'EXIT 0')) {
     Fail 'the verdict does not end EXIT 0'
 }
 
 Write-Host 'GATE VERDICT: PASS' -ForegroundColor Green
-Write-Host "  commit $head, all $($required.Count) markers, EXIT 0"
+Write-Host "  commit $head, all $($required.Count + 1) markers, EXIT 0"
+if ($mobileSeen[0] -eq 'MOBILE_COMPILE_SKIPPED') {
+    Write-Host '  NOTE: the Android app was NOT compiled (no SDK on this machine).' -ForegroundColor Yellow
+}
 exit 0

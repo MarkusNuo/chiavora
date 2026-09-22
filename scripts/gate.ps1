@@ -77,7 +77,14 @@ try {
     Complete-Step 'DENY_OK' $LASTEXITCODE
 
     & (Join-Path $PSScriptRoot 'mobile-compile.ps1')
-    Complete-Step 'MOBILE_COMPILE_OK' $LASTEXITCODE
+    # Exit 2 means no Android SDK: recorded as skipped, not as a pass.
+    if ($LASTEXITCODE -eq 2) {
+        Write-Host 'MOBILE_COMPILE_SKIPPED' -ForegroundColor Yellow
+        Write-Verdict 'MOBILE_COMPILE_SKIPPED'
+    }
+    else {
+        Complete-Step 'MOBILE_COMPILE_OK' $LASTEXITCODE
+    }
 
     Write-Verdict 'EXIT 0'
     Write-Host ''

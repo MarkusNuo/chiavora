@@ -29,7 +29,8 @@ if ($reasons.Count -gt 0) {
     }
     Write-Host '  The app was NOT compiled. This is the check that catches a' -ForegroundColor Yellow
     Write-Host '  ChiavoraCoreModule.kt that does not build -- see the header.' -ForegroundColor Yellow
-    exit 0
+    # 2, not 1: a skip is not a failure, but `gate.ps1` must not record a pass.
+    exit 2
 }
 
 # Gradle fails with "Unable to establish loopback connection" under a long Windows temp path.

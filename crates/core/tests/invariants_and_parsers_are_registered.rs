@@ -368,7 +368,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 73] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 74] = [
     (
         "core/src/seal.rs",
         "AccountKeypair::from_private",
@@ -802,6 +802,11 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 73] = [
         "protocol/src/lib.rs",
         "Record::with_field",
         "NOT A BOUNDARY: the encode direction, and the same reasoning as new",
+    ),
+    (
+        "core/src/srp.rs",
+        "private_exponent",
+        "SAFE BY CONSTRUCTION: `srpSalt` genuinely is attacker-facing -- the          server hands it to the client in the login exchange, so a hostile          server chooses it. But it reaches SHA-256 and nothing else. There          is no length to trust, no structure to parse, and no branch taken          on its contents; any 32 bytes are as valid as any other. A chosen          salt produces a different `x`, which produces a verifier that does          not match the stored one, and the exchange fails to authenticate --          §2.1's self-detecting downgrade wearing different clothes. The one          thing a fuzzer could look for here, a panic on an odd length, cannot          happen: `update` takes any slice",
     ),
 ];
 

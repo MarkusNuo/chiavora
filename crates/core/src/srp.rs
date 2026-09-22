@@ -6,7 +6,7 @@ use sha2::{Digest as _, Sha256};
 use zeroize::Zeroizing;
 
 use crate::secret::{
-    kind::{SrpEphemeralSecret, SrpExponent, SrpPremasterSecret},
+    kind::{SrpEphemeralSecret, SrpExponent, SrpPremasterSecret, SrpX},
     Secret,
 };
 
@@ -120,6 +120,7 @@ pub enum SrpError {
     Group,
     EvenModulus,
     PublicValueOutOfRange,
+    Csprng,
     Precision,
 }
 
@@ -130,6 +131,9 @@ impl core::fmt::Display for SrpError {
             Self::EvenModulus => f.write_str("the SRP modulus is even"),
             Self::PublicValueOutOfRange => {
                 f.write_str("an SRP public value is zero mod N or out of range; refusing")
+            }
+            Self::Csprng => {
+                f.write_str("the platform CSPRNG failed while drawing srpSalt; refusing")
             }
             Self::Precision => f.write_str("an SRP value did not fit the requested precision"),
         }
@@ -179,6 +183,37 @@ fn secret_to_uint(secret: &[u8]) -> Result<BoxedUint, SrpError> {
 
 fn generator(group: Group) -> Result<BoxedUint, SrpError> {
     widen(BoxedUint::from(u64::from(group.generator)), group.bits)
+}
+
+pub const SRP_SALT_LEN: usize = 32;
+
+pub fn generate_srp_salt() -> Result<Vec<u8>, SrpError> {
+    let mut salt = vec![0_u8; SRP_SALT_LEN];
+    crate::csprng::fill_bytes(&mut salt).map_err(|_| SrpError::Csprng)?;
+    Ok(salt)
+}
+
+/// This replaces RFC 5054's `x = H(s, H(I:p))` (`docs/adr/0008`). `srpSalt` adds no entropy; it
+/// only keeps the construction in SRP's shape.
+pub fn private_exponent(
+    srp_salt: &[u8],
+    srp_x: &Secret<SrpX>,
+) -> Result<Secret<SrpExponent>, SrpError> {
+    let mut hasher = Sha256::new();
+    hasher.update(srp_salt);
+    hasher.update(srp_x.expose());
+    let digest = Zeroizing::new(hasher.finalize().to_vec());
+    Ok(Secret::from_derived_bytes(digest.to_vec()))
+}
+
+/// `v = g^x mod N`, the verifier the server stores (RFC 5054 §2.4); constant-time in `x`.
+pub fn verifier(group: Group, exponent: &Secret<SrpExponent>) -> Result<BoxedUint, SrpError> {
+    let monty = params(group)?;
+    let x = secret_to_uint(exponent.expose())?;
+    let bound = x.bits_precision();
+    Ok(BoxedMontyForm::new(generator(group)?, &monty)
+        .pow_bounded_exp(&x, bound)
+        .retrieve())
 }
 
 /// `k = H(N ‖ PAD(g))`, SRP-6a's multiplier (RFC 5054 §2.5.3), at `N`'s precision.

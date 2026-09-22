@@ -442,6 +442,17 @@ impl AnyWrapSet {
             Self::VaultAndAutofill(_) => <VaultAndAutofill as WrapSet>::WRAP_COUNT,
         }
     }
+
+    pub fn unwrap(
+        &self,
+        keys: VaultKeys<'_>,
+        ctx: WrapContext<'_>,
+    ) -> Result<Secret<ItemKey>, WrapError> {
+        match self {
+            Self::VaultOnly(set) => set.unwrap(keys.vault, ctx),
+            Self::VaultAndAutofill(set) => set.unwrap(keys.vault, keys.autofill, ctx),
+        }
+    }
 }
 
 item_type! {
@@ -457,4 +468,79 @@ item_type! {
     Identity => "identity", VaultOnly, false;
     #[doc = "An SSH key, not fillable and wrapped under the Vault Key only."]
     SshKey => "SSH key", VaultOnly, false;
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use crate::secret::kind::{AutofillKey, ItemKey, VaultKey};
+
+    fn item_key(fill: u8) -> Secret<ItemKey> {
+        Secret::from_derived_bytes(vec![fill; 32])
+    }
+
+    fn vault_key() -> Secret<VaultKey> {
+        Secret::from_derived_bytes(vec![0x11; 32])
+    }
+
+    fn autofill_key() -> Secret<AutofillKey> {
+        Secret::from_derived_bytes(vec![0x22; 32])
+    }
+
+    fn ctx() -> WrapContext<'static> {
+        WrapContext {
+            vault_id: b"vault-1",
+            item_id: b"item-1",
+        }
+    }
+
+    fn keys<'a>(vault: &'a Secret<VaultKey>, autofill: &'a Secret<AutofillKey>) -> VaultKeys<'a> {
+        VaultKeys { vault, autofill }
+    }
+
+    #[test]
+    fn the_generic_opener_recovers_a_single_wrapped_key() {
+        let original = item_key(0xAB);
+        let set = VaultOnly::wrap(&original, &vault_key(), ctx()).expect("must wrap");
+
+        let (v, a) = (vault_key(), autofill_key());
+        let recovered = AnyWrapSet::from(set)
+            .unwrap(keys(&v, &a), ctx())
+            .expect("a VaultOnly set must open under the Vault Key");
+        assert_eq!(recovered.expose(), original.expose());
+    }
+
+    #[test]
+    fn the_generic_opener_recovers_a_double_wrapped_key() {
+        let original = item_key(0xAB);
+        let set = VaultAndAutofill::wrap(&original, &vault_key(), &autofill_key(), ctx())
+            .expect("must wrap");
+
+        let (v, a) = (vault_key(), autofill_key());
+        let recovered = AnyWrapSet::from(set)
+            .unwrap(keys(&v, &a), ctx())
+            .expect("agreeing wraps must open");
+        assert_eq!(recovered.expose(), original.expose());
+    }
+
+    #[test]
+    fn the_generic_opener_still_refuses_a_disagreeing_pair() {
+        let good = VaultAndAutofill::wrap(&item_key(0xAB), &vault_key(), &autofill_key(), ctx())
+            .expect("must wrap");
+        let bad = VaultAndAutofill::wrap(&item_key(0xCD), &vault_key(), &autofill_key(), ctx())
+            .expect("must wrap");
+
+        let mixed = AnyWrapSet::from(VaultAndAutofill::from_stored_parts(
+            good.vault_wrap().clone(),
+            bad.autofill_wrap().clone(),
+        ));
+
+        // `Secret` has no `PartialEq`, so only the error side is compared.
+        let (v, a) = (vault_key(), autofill_key());
+        assert_eq!(
+            mixed.unwrap(keys(&v, &a), ctx()).err(),
+            Some(WrapError::I7Disagreement)
+        );
+    }
 }

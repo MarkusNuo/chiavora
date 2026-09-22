@@ -13,6 +13,7 @@ use chiavora_core::aad::{
     RECORD_MANIFEST_ROOT,
     RECORD_MANIFEST_SEGMENT,
     RECORD_SEALED_VAULT_KEY,
+    RECORD_WRAPPED_ACCOUNT_KEY,
     RECORD_WRAPPED_AUTOFILL_KEY,
     RECORD_WRAPPED_ITEM_KEY,
     WRAP_PURPOSE_AUTOFILL,
@@ -127,6 +128,15 @@ fn wrapped_item_key() -> impl Strategy<Value = AadFields> {
         )
 }
 
+fn wrapped_account_key() -> impl Strategy<Value = AadFields> {
+    (var_field(), any::<u32>()).prop_map(|(account_id, account_key_epoch)| {
+        AadFields::WrappedAccountKey {
+            account_id,
+            account_key_epoch,
+        }
+    })
+}
+
 fn wrapped_autofill_key() -> impl Strategy<Value = AadFields> {
     (var_field(), any::<u32>()).prop_map(|(vault_id, vault_key_epoch)| {
         AadFields::WrappedAutofillKey {
@@ -164,6 +174,7 @@ fn strategies_by_record_type() -> Vec<(u8, BoxedStrategy<AadFields>)> {
         (RECORD_WRAPPED_ITEM_KEY, wrapped_item_key().boxed()),
         (RECORD_SEALED_VAULT_KEY, sealed_vault_key().boxed()),
         (RECORD_WRAPPED_AUTOFILL_KEY, wrapped_autofill_key().boxed()),
+        (RECORD_WRAPPED_ACCOUNT_KEY, wrapped_account_key().boxed()),
     ]
 }
 
@@ -243,6 +254,10 @@ fn i3_every_record_type_round_trips_at_least_once() {
         AadFields::WrappedAutofillKey {
             vault_id: b"vault".to_vec(),
             vault_key_epoch: 7,
+        },
+        AadFields::WrappedAccountKey {
+            account_id: b"account".to_vec(),
+            account_key_epoch: 3,
         },
     ];
     let seen: Vec<u8> = cases.iter().map(AadFields::record_type).collect();

@@ -368,11 +368,26 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 81] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 84] = [
     (
         "core/src/manifest.rs",
         "hash_item_id",
         "SAFE BY CONSTRUCTION: SHA-256 over a byte string, returning its top          eight bytes. It parses nothing, and there is no length, content or          encoding it can be wrong about -- a hash is total over bytes. A          hostile itemId lands in the segment its hash selects, which is where          it belongs; what must not be wrong is the ORIENTATION of those eight          bytes, and that is vectored and property-tested in          segment_split_is_one_cas_write.rs rather than left to this row",
+    ),
+    (
+        "core/src/account_key.rs",
+        "WrappedAccountKey::from_stored_parts",
+        "COVERED ELSEWHERE: it stores a nonce and a byte string without reading either. Every byte reaches XChaCha20-Poly1305's own decrypt under the MUK with the 0x08 AAD, so hostile bytes fail the tag rather than a parse this module wrote, and what survives the tag is then refused by AccountKeypair::from_private unless it is a valid X25519 key. The framing they came out of is chiavora-protocol's CHVR record, which is in PARSERS and fuzzed",
+    ),
+    (
+        "core/src/keywrap.rs",
+        "seal",
+        "NOT A BOUNDARY: the encrypt direction, over key material this crate holds -- an Autofill Key it just drew or an account private key it just generated. The AAD argument is a byte string aad::encode produced in this same call chain, not one a caller supplied. There is nothing here that reads foreign bytes",
+    ),
+    (
+        "core/src/keywrap.rs",
+        "open",
+        "COVERED ELSEWHERE: one AEAD decrypt and no parse. Hostile ciphertext fails Poly1305 and hostile AAD fails it too, which is the whole of what this function decides; the plaintext it returns is then length- and shape-checked by its caller -- autofill::unwrap and account_key::unwrap, both one frame up and both in this list. The bytes' framing is chiavora-protocol's CHVR record, in PARSERS and fuzzed",
     ),
     (
         "core/src/autofill.rs",

@@ -9,8 +9,10 @@ pub const RECORD_MANIFEST_SEGMENT: u8 = 0x04;
 pub const RECORD_WRAPPED_ITEM_KEY: u8 = 0x05;
 pub const RECORD_SEALED_VAULT_KEY: u8 = 0x06;
 pub const RECORD_WRAPPED_AUTOFILL_KEY: u8 = 0x07;
+pub const RECORD_WRAPPED_ACCOUNT_KEY: u8 = 0x08;
 
-pub const ALL_RECORD_TYPES: [u8; 7] = [
+/// The injectivity tests check their cases against this list, so a new type cannot go untested.
+pub const ALL_RECORD_TYPES: [u8; 8] = [
     RECORD_ITEM_PAYLOAD,
     RECORD_ATTACHMENT_CHUNK,
     RECORD_MANIFEST_ROOT,
@@ -18,6 +20,7 @@ pub const ALL_RECORD_TYPES: [u8; 7] = [
     RECORD_WRAPPED_ITEM_KEY,
     RECORD_SEALED_VAULT_KEY,
     RECORD_WRAPPED_AUTOFILL_KEY,
+    RECORD_WRAPPED_ACCOUNT_KEY,
 ];
 
 pub const WRAP_PURPOSE_VAULT: u8 = 0x01;
@@ -76,6 +79,13 @@ pub enum AadFields {
         vault_id: Vec<u8>,
         vault_key_epoch: u32,
     },
+
+    /// The epoch is bound because keypair rotation can leave the MUK unchanged, and the old
+    /// private key must never open again.
+    WrappedAccountKey {
+        account_id: Vec<u8>,
+        account_key_epoch: u32,
+    },
 }
 
 impl AadFields {
@@ -89,6 +99,7 @@ impl AadFields {
             Self::WrappedItemKey { .. } => RECORD_WRAPPED_ITEM_KEY,
             Self::SealedVaultKey { .. } => RECORD_SEALED_VAULT_KEY,
             Self::WrappedAutofillKey { .. } => RECORD_WRAPPED_AUTOFILL_KEY,
+            Self::WrappedAccountKey { .. } => RECORD_WRAPPED_ACCOUNT_KEY,
         }
     }
 }
@@ -177,6 +188,10 @@ fn put_common(
     out.extend_from_slice(&version.to_le_bytes());
     Ok(())
 }
+
+// One arm per record type in §2.2's field order, so field order is decided in
+// exactly one place.
+#[allow(clippy::too_many_lines)]
 pub fn encode(fields: &AadFields) -> Result<Vec<u8>, AadError> {
     let mut out = Vec::new();
     match *fields {
@@ -270,6 +285,15 @@ pub fn encode(fields: &AadFields) -> Result<Vec<u8>, AadError> {
             out.push(RECORD_WRAPPED_AUTOFILL_KEY);
             put_var(&mut out, vault_id)?;
             out.extend_from_slice(&vault_key_epoch.to_le_bytes());
+        }
+        AadFields::WrappedAccountKey {
+            ref account_id,
+            account_key_epoch,
+        } => {
+            out.extend_from_slice(MAGIC);
+            out.push(RECORD_WRAPPED_ACCOUNT_KEY);
+            put_var(&mut out, account_id)?;
+            out.extend_from_slice(&account_key_epoch.to_le_bytes());
         }
     }
     Ok(out)
@@ -400,6 +424,14 @@ pub fn decode(bytes: &[u8]) -> Result<AadFields, AadError> {
             AadFields::WrappedAutofillKey {
                 vault_id,
                 vault_key_epoch,
+            }
+        }
+        RECORD_WRAPPED_ACCOUNT_KEY => {
+            let account_id = r.var()?;
+            let account_key_epoch = r.u32()?;
+            AadFields::WrappedAccountKey {
+                account_id,
+                account_key_epoch,
             }
         }
         other => return Err(AadError::UnknownRecordType(other)),

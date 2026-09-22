@@ -1,6 +1,7 @@
 //! Chiavora core: crypto, key hierarchy, item model, manifest and sync engine.
 
 pub mod aad;
+pub mod account_key;
 pub mod anchor;
 pub mod attachment;
 pub mod autofill;
@@ -18,6 +19,7 @@ pub mod ffi_guard;
 pub mod generate;
 pub mod import;
 pub mod item;
+pub(crate) mod keywrap;
 pub mod lastpass;
 pub mod manifest;
 pub mod model;

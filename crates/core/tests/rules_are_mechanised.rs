@@ -2553,7 +2553,7 @@ fn every_enumerable_set_is_derived_rather_than_listed_by_hand() {
 #[test]
 fn the_enumerable_set_reader_reads_each_definition() {
     let cases = [
-        ("crates/core/src/aad.rs", "pub const ALL_RECORD_TYPES", 7),
+        ("crates/core/src/aad.rs", "pub const ALL_RECORD_TYPES", 8),
         ("crates/core/src/secret.rs", "brand! {", 13),
     ];
     for (file, opener, expected) in cases {

@@ -122,7 +122,10 @@ mod tests {
 
     // Bytes no other test holds: the registry is process-wide and keyed by content.
     fn distinct(marker: u8) -> Vec<u8> {
-        vec![marker; 32]
+        let mut bytes = b"ffi_guard-test-".to_vec();
+        bytes.resize(31, marker);
+        bytes.push(marker);
+        bytes
     }
 
     #[test]

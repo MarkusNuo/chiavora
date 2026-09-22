@@ -1,16 +1,16 @@
-use chacha20poly1305::aead::{Aead, KeyInit, Payload};
-use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 //! Random per vault, so a password change does not force a re-wrap of every fillable item.
 
 use crate::aad::{self, AadFields};
 use crate::csprng;
-use crate::nonce::{FreshNonce, StoredNonce, NONCE_LEN};
+use crate::keywrap::{self, KeyWrapError, WRAPPING_KEY_LEN};
+use crate::nonce::NONCE_LEN;
 use crate::secret::{
     kind::{AutofillKey, VaultKey},
     Secret,
 };
 
-const AUTOFILL_KEY_LEN: usize = 32;
+/// Length of the Autofill Key, in bytes (§2.1: every key is 32 bytes).
+const AUTOFILL_KEY_LEN: usize = WRAPPING_KEY_LEN;
 
 #[derive(Debug, Clone, Copy)]
 pub struct AutofillContext<'a> {
@@ -85,12 +85,13 @@ impl From<csprng::CsprngError> for AutofillError {
     }
 }
 
-fn cipher(vault_key: &Secret<VaultKey>) -> Result<XChaCha20Poly1305, AutofillError> {
-    let bytes = vault_key.expose();
-    if bytes.len() != AUTOFILL_KEY_LEN {
-        return Err(AutofillError::BadVaultKeyLength);
+impl From<KeyWrapError> for AutofillError {
+    fn from(e: KeyWrapError) -> Self {
+        match e {
+            KeyWrapError::BadWrappingKeyLength => Self::BadVaultKeyLength,
+            KeyWrapError::Aead => Self::Aead,
+        }
     }
-    Ok(XChaCha20Poly1305::new(Key::from_slice(bytes)))
 }
 
 pub fn generate() -> Result<Secret<AutofillKey>, AutofillError> {
@@ -104,22 +105,8 @@ pub fn wrap(
     vault_key: &Secret<VaultKey>,
     ctx: AutofillContext<'_>,
 ) -> Result<WrappedAutofillKey, AutofillError> {
-    let aead = cipher(vault_key)?;
-    let nonce = FreshNonce::generate().map_err(|_| AutofillError::Aead)?;
-    let encoded_aad = ctx.aad()?;
-    let ciphertext = aead
-        .encrypt(
-            XNonce::from_slice(nonce.as_nonce().as_bytes()),
-            Payload {
-                msg: autofill_key.expose(),
-                aad: &encoded_aad,
-            },
-        )
-        .map_err(|_| AutofillError::Aead)?;
-    Ok(WrappedAutofillKey {
-        nonce: *nonce.as_nonce().as_bytes(),
-        ciphertext,
-    })
+    let (nonce, ciphertext) = keywrap::seal(autofill_key.expose(), vault_key, &ctx.aad()?)?;
+    Ok(WrappedAutofillKey { nonce, ciphertext })
 }
 
 pub fn unwrap(
@@ -127,22 +114,16 @@ pub fn unwrap(
     vault_key: &Secret<VaultKey>,
     ctx: AutofillContext<'_>,
 ) -> Result<Secret<AutofillKey>, AutofillError> {
-    let aead = cipher(vault_key)?;
-    let nonce = StoredNonce::from_stored_bytes(*wrapped.nonce());
-    let encoded_aad = ctx.aad()?;
-    let plaintext = aead
-        .decrypt(
-            XNonce::from_slice(nonce.as_nonce().as_bytes()),
-            Payload {
-                msg: wrapped.ciphertext(),
-                aad: &encoded_aad,
-            },
-        )
-        .map_err(|_| AutofillError::Aead)?;
+    let plaintext = keywrap::open(
+        wrapped.nonce(),
+        wrapped.ciphertext(),
+        vault_key,
+        &ctx.aad()?,
+    )?;
     if plaintext.len() != AUTOFILL_KEY_LEN {
         return Err(AutofillError::BadAutofillKeyLength);
     }
-    Ok(Secret::from_derived_bytes(plaintext))
+    Ok(Secret::from_derived_bytes(plaintext.to_vec()))
 }
 
 #[cfg(test)]

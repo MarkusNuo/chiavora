@@ -368,11 +368,41 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 88] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 94] = [
     (
         "core/src/manifest.rs",
         "hash_item_id",
         "SAFE BY CONSTRUCTION: SHA-256 over a byte string, returning its top          eight bytes. It parses nothing, and there is no length, content or          encoding it can be wrong about -- a hash is total over bytes. A          hostile itemId lands in the segment its hash selects, which is where          it belongs; what must not be wrong is the ORIENTATION of those eight          bytes, and that is vectored and property-tested in          segment_split_is_one_cas_write.rs rather than left to this row",
+    ),
+    (
+        "core/src/provision.rs",
+        "provision_first_vault",
+        "NOT A BOUNDARY: it draws sixteen bytes from csprng and hands them to provision, which is the row below. accountId is an opaque store key. There is nothing here that reads bytes from outside -- the only bytes it touches are ones it just drew",
+    ),
+    (
+        "core/src/unlock.rs",
+        "UnlockedVault::load_provisioning",
+        "COVERED ELSEWHERE: one line, delegating to provision::load with this vault's MUK. It exists so the MUK is never an argument a caller can name, which is §3.3 requirement 2 rather than a parsing concern; what the delegate does with hostile bytes is its own row",
+    ),
+    (
+        "core/src/unlock.rs",
+        "UnlockedVault::provision_first_vault",
+        "COVERED ELSEWHERE: as above, delegating to provision::provision_first_vault. The identifiers are opaque store keys and nothing is parsed here",
+    ),
+    (
+        "core/src/provision.rs",
+        "is_provisioned",
+        "SAFE BY CONSTRUCTION: a vaultId used as an opaque store key, and a MAX() over an integer column. It parses nothing and answers a boolean. What decides whether a byte string is a valid provisioning record is the AEAD one layer down, not this",
+    ),
+    (
+        "core/src/provision.rs",
+        "provision",
+        "NOT A BOUNDARY: the write direction. accountId and vaultId are opaque store keys, and every byte it stores was produced in this same call chain -- a keypair it just generated, a Vault Key it just drew, an Autofill Key it just drew. There is nothing here that reads bytes from outside, and the one branch that reads anything reads a record this process wrote",
+    ),
+    (
+        "core/src/provision.rs",
+        "load",
+        "COVERED ELSEWHERE: the read direction, and every byte reaches an AEAD before it reaches a decision. The account key fails account_key::unwrap, the sealed Vault Key fails HPKE's open, the Autofill Key fails autofill::unwrap -- all three authenticate under a key the caller holds. What load itself parses is the two-field CHVR record around them, and an unexpected tag is refused rather than skipped; that framing is chiavora-protocol's, which is in PARSERS and fuzzed. The epoch it uses to look records up comes from the store's HMAC'd metadata, never from the unauthenticated epoch column",
     ),
     (
         "core/src/store.rs",

@@ -602,6 +602,15 @@ impl Store {
             .optional()?)
     }
 
+    pub fn provisioning_owners(&self, record_type: u8) -> Result<Vec<Vec<u8>>, StoreError> {
+        let mut statement = self.conn.prepare(
+            "SELECT DISTINCT owner_id FROM provisioning WHERE record_type = ?1 ORDER BY owner_id",
+        )?;
+        let rows = statement.query_map(params![i64::from(record_type)], |row| row.get(0))?;
+        rows.collect::<Result<Vec<Vec<u8>>, _>>()
+            .map_err(StoreError::from)
+    }
+
     /// Not the committed mark: for `0x08` freshness use [`Store::account_key_epoch`].
     pub fn latest_provisioning_epoch(
         &self,

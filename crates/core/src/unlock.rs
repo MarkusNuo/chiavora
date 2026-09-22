@@ -50,6 +50,23 @@ impl UnlockedVault {
         crate::store::Store::open(path, &self.muk, anchor)
     }
 
+    pub fn load_provisioning(
+        &self,
+        store: &crate::store::Store,
+        account_id: &[u8],
+        vault_id: &[u8],
+    ) -> Result<crate::provision::Provisioning, crate::provision::ProvisionError> {
+        crate::provision::load(store, &self.muk, account_id, vault_id)
+    }
+
+    pub fn provision_first_vault(
+        &self,
+        store: &mut crate::store::Store,
+        account_id: &[u8],
+    ) -> Result<crate::provision::Provisioning, crate::provision::ProvisionError> {
+        crate::provision::provision_first_vault(store, &self.muk, account_id)
+    }
+
     /// Crate-private so that only [`crate::anchor::restore_from_older_backup`], which requires
     /// the password, can rewind a vault.
     pub(crate) fn open_store_reanchoring(

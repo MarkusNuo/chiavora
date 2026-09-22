@@ -3,8 +3,7 @@
 use std::sync::Arc;
 
 use chiavora_core::model::{Item, ItemField as CoreField};
-use chiavora_core::seal::{AccountKeypair, SealedVaultKey};
-use chiavora_core::secret::{kind::AutofillKey, Secret};
+use chiavora_core::provision::{ProvisionError, Provisioning as CoreProvisioning};
 use chiavora_core::vault::{OpenVault, VaultError};
 use chiavora_core::wrap::ItemKind;
 
@@ -15,6 +14,9 @@ use crate::vault::MobileVault;
 #[derive(Debug, uniffi::Error)]
 pub enum ItemError {
     NotProvisioned {
+        reason: String,
+    },
+    Provisioning {
         reason: String,
     },
     Store {
@@ -36,6 +38,7 @@ impl core::fmt::Display for ItemError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::NotProvisioned { reason }
+            | Self::Provisioning { reason }
             | Self::Store { reason }
             | Self::Vault { reason }
             | Self::BadField { reason } => f.write_str(reason),
@@ -86,6 +89,21 @@ const SHOWN_IN_CLEAR: [&str; 5] = ["title", "username", "url", "email", "website
 
 fn is_concealed(name: &str) -> bool {
     !SHOWN_IN_CLEAR.contains(&name)
+}
+
+fn only_vault(store: &chiavora_core::store::Store) -> Result<Vec<u8>, ItemError> {
+    let mut ids = chiavora_core::provision::vault_ids(store).map_err(|e| ItemError::Store {
+        reason: e.to_string(),
+    })?;
+    match ids.len() {
+        0 => Err(ItemError::NotProvisioned {
+            reason: "this device has no vault yet".to_owned(),
+        }),
+        1 => Ok(ids.remove(0)),
+        n => Err(ItemError::Provisioning {
+            reason: format!("this device has {n} vaults and the app has no screen that chooses one"),
+        }),
+    }
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -139,27 +157,22 @@ fn item_from(kind: ItemKind, fields: &[ItemField]) -> Result<Item, ItemError> {
     })
 }
 
-fn not_provisioned() -> ItemError {
-    ItemError::NotProvisioned {
-        reason: "this vault has no account keypair or Autofill Key yet: (where the \
-                 Autofill Key comes) and (the record type for the MUK-wrapped \
-                 account private key) are open, and both freeze at the first account"
-            .to_owned(),
-    }
-}
-
-struct Provisioning {
-    vault_id: Vec<u8>,
-    vault_key_epoch: u32,
-    sealed_vault_key: SealedVaultKey,
-    account: AccountKeypair,
-    autofill_key: Secret<AutofillKey>,
-}
-
 impl MobileVault {
-    #[allow(clippy::unused_self)]
-    fn provisioning(&self) -> Result<Provisioning, ItemError> {
-        Err(not_provisioned())
+    fn load_provisioning_from(
+        &self,
+        store: &chiavora_core::store::Store,
+        account_id: &[u8],
+        vault_id: &[u8],
+    ) -> Result<CoreProvisioning, ItemError> {
+        self.load_provisioning(store, account_id, vault_id)
+            .map_err(|e| match e {
+                ProvisionError::Incomplete { .. } => ItemError::NotProvisioned {
+                    reason: e.to_string(),
+                },
+                other => ItemError::Provisioning {
+                    reason: other.to_string(),
+                },
+            })
     }
 
     /// Opened per operation, so the rollback check runs every time rather than once at unlock.
@@ -167,9 +180,9 @@ impl MobileVault {
         &self,
         path: &str,
         storage: Arc<dyn DeviceAnchorStorage>,
+        account_id: &[u8],
         body: impl FnOnce(&mut OpenVault<'_>) -> Result<T, VaultError>,
     ) -> Result<T, ItemError> {
-        let p = self.provisioning()?;
         let anchor = crate::anchor::load(storage).map_err(|e| ItemError::Store {
             reason: e.to_string(),
         })?;
@@ -178,9 +191,11 @@ impl MobileVault {
             .map_err(|e| ItemError::Store {
                 reason: e.to_string(),
             })?;
+        let vault_id = only_vault(&store)?;
+        let p = self.load_provisioning_from(&store, account_id, &vault_id)?;
         let mut vault = OpenVault::new(
             &mut store,
-            p.vault_id,
+            vault_id,
             p.vault_key_epoch,
             p.sealed_vault_key,
             &p.account,
@@ -213,14 +228,58 @@ impl MobileVault {
 
 #[uniffi::export]
 impl MobileVault {
+    /// Signup: builds §2.2's hierarchy for this account and vault, all of it kept in `core`.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn provision_account(
+        &self,
+        path: String,
+        storage: Arc<dyn DeviceAnchorStorage>,
+        account_id: Vec<u8>,
+    ) -> Result<(), ItemError> {
+        let anchor = crate::anchor::load(storage).map_err(|e| ItemError::Store {
+            reason: e.to_string(),
+        })?;
+        let mut store = self
+            .open_store_at(std::path::Path::new(&path), anchor)
+            .map_err(|e| ItemError::Store {
+                reason: e.to_string(),
+            })?;
+        self.provision_first_vault(&mut store, &account_id)
+            .map(|_| ())
+            .map_err(|e| ItemError::Provisioning {
+                reason: e.to_string(),
+            })
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn is_provisioned(
+        &self,
+        path: String,
+        storage: Arc<dyn DeviceAnchorStorage>,
+    ) -> Result<bool, ItemError> {
+        let anchor = crate::anchor::load(storage).map_err(|e| ItemError::Store {
+            reason: e.to_string(),
+        })?;
+        let store = self
+            .open_store_at(std::path::Path::new(&path), anchor)
+            .map_err(|e| ItemError::Store {
+                reason: e.to_string(),
+            })?;
+        Ok(!chiavora_core::provision::vault_ids(&store)
+            .map_err(|e| ItemError::Store {
+                reason: e.to_string(),
+            })?
+            .is_empty())
+    }
 
     #[allow(clippy::needless_pass_by_value)]
     pub fn list_items(
         &self,
         path: String,
         storage: Arc<dyn DeviceAnchorStorage>,
+        account_id: Vec<u8>,
     ) -> Result<Vec<ItemSummary>, ItemError> {
-        self.with_store(&path, storage, |vault| {
+        self.with_store(&path, storage, &account_id, |vault| {
             Ok(vault
                 .list()?
                 .into_iter()
@@ -240,10 +299,11 @@ impl MobileVault {
         &self,
         path: String,
         storage: Arc<dyn DeviceAnchorStorage>,
+        account_id: Vec<u8>,
         item_id: String,
     ) -> Result<ItemDetail, ItemError> {
         let raw = unhex(&item_id)?;
-        let item = self.with_store(&path, storage, |vault| vault.read(&raw))?;
+        let item = self.with_store(&path, storage, &account_id, |vault| vault.read(&raw))?;
         Ok(Self::detail_from(&item_id, &item))
     }
 
@@ -252,12 +312,13 @@ impl MobileVault {
         &self,
         path: String,
         storage: Arc<dyn DeviceAnchorStorage>,
+        account_id: Vec<u8>,
         kind: String,
         fields: Vec<ItemField>,
     ) -> Result<String, ItemError> {
         let kind = kind_from(&kind)?;
         let item = item_from(kind, &fields)?;
-        let id = self.with_store(&path, storage, |vault| {
+        let id = self.with_store(&path, storage, &account_id, |vault| {
             let id = chiavora_core::vault::new_item_id()?;
             vault.create(&id, kind, &item)?;
             Ok(id)
@@ -265,11 +326,13 @@ impl MobileVault {
         Ok(hex(&id))
     }
 
-    #[allow(clippy::needless_pass_by_value)]
+    // Flat arguments: a `uniffi::Record` would put field values in a Kotlin data class.
+    #[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
     pub fn update_item(
         &self,
         path: String,
         storage: Arc<dyn DeviceAnchorStorage>,
+        account_id: Vec<u8>,
         item_id: String,
         kind: String,
         fields: Vec<ItemField>,
@@ -277,7 +340,9 @@ impl MobileVault {
         let raw = unhex(&item_id)?;
         let kind = kind_from(&kind)?;
         let item = item_from(kind, &fields)?;
-        self.with_store(&path, storage, |vault| vault.update(&raw, kind, &item))
+        self.with_store(&path, storage, &account_id, |vault| {
+            vault.update(&raw, kind, &item)
+        })
     }
 
     #[allow(clippy::needless_pass_by_value)]
@@ -285,10 +350,11 @@ impl MobileVault {
         &self,
         path: String,
         storage: Arc<dyn DeviceAnchorStorage>,
+        account_id: Vec<u8>,
         item_id: String,
     ) -> Result<(), ItemError> {
         let raw = unhex(&item_id)?;
-        self.with_store(&path, storage, |vault| vault.delete(&raw))
+        self.with_store(&path, storage, &account_id, |vault| vault.delete(&raw))
     }
 }
 
@@ -316,13 +382,6 @@ mod tests {
         assert!(is_concealed("recoveryCodeFromSomeFutureItemKind"));
         assert!(!is_concealed("title"));
         assert!(!is_concealed("username"));
-    }
-
-    #[test]
-    fn the_refusal_names_both_open_decisions() {
-        let text = not_provisioned().to_string();
-        assert!(text.contains(""), "the Autofill Key decision is named");
-        assert!(text.contains(""), "the account key record is named");
     }
 
     #[test]

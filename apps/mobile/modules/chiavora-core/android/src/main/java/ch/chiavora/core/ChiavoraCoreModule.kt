@@ -21,6 +21,9 @@ class ChiavoraCoreModule : Module() {
     @Volatile
     private var session: MobileVault? = null
 
+    @Volatile
+    private var sessionAccountId: ByteArray? = null
+
     override fun definition() = ModuleDefinition {
         Name("ChiavoraCore")
 
@@ -34,6 +37,7 @@ class ChiavoraCoreModule : Module() {
             val files = androidContext().filesDir
             VaultKeys.forget(files)
             VaultKeys.storeSecretKey(files, secretKey)
+            VaultKeys.storeAccountId(files, accountId)
             val muk = mukForDeviceWrapping(
                 password, secretKey, accountId, accountSalt,
                 memoryKib.toUInt(), iterations.toUInt(),
@@ -88,7 +92,9 @@ class ChiavoraCoreModule : Module() {
                     storePath(files),
                     AnchorStore.Backed(files),
                 )
+                // Kept only once nothing above can throw, so a failed unlock leaves no session.
                 session = vault
+                sessionAccountId = accountId
                 mapOf(
                     "mukLen" to vault.mukLen().toInt(),
                     "rollbackProtection" to protection,
@@ -113,6 +119,8 @@ class ChiavoraCoreModule : Module() {
                 AnchorStore.Backed(files),
             )
             session = vault
+            sessionAccountId = VaultKeys.readAccountId(files)
+                ?: throw IllegalStateException("this device is enrolled without an account identifier")
             mapOf(
                 "mukLen" to vault.mukLen().toInt(),
                 "rollbackProtection" to protection,
@@ -121,6 +129,7 @@ class ChiavoraCoreModule : Module() {
 
         AsyncFunction("lock") {
             session = null
+            sessionAccountId = null
             true
         }
 
@@ -171,7 +180,21 @@ class ChiavoraCoreModule : Module() {
 
         AsyncFunction("forgetDevice") {
             session = null
+            sessionAccountId = null
             VaultKeys.forget(androidContext().filesDir)
+            true
+        }
+
+        AsyncFunction("isProvisioned") {
+            val vault = requireSession()
+            val files = androidContext().filesDir
+            vault.isProvisioned(storePath(files), AnchorStore.Backed(files))
+        }
+
+        AsyncFunction("provisionAccount") {
+            val vault = requireSession()
+            val files = androidContext().filesDir
+            vault.provisionAccount(storePath(files), AnchorStore.Backed(files), requireAccountId())
             true
         }
 
@@ -179,7 +202,7 @@ class ChiavoraCoreModule : Module() {
         AsyncFunction("listItems") {
             val vault = requireSession()
             val files = androidContext().filesDir
-            vault.listItems(storePath(files), AnchorStore.Backed(files)).map { row ->
+            vault.listItems(storePath(files), AnchorStore.Backed(files), requireAccountId()).map { row ->
                 mapOf(
                     "itemId" to row.itemId,
                     "version" to row.version.toDouble(),
@@ -193,7 +216,8 @@ class ChiavoraCoreModule : Module() {
         AsyncFunction("readItem") { itemId: String ->
             val vault = requireSession()
             val files = androidContext().filesDir
-            val detail = vault.readItem(storePath(files), AnchorStore.Backed(files), itemId)
+            val detail =
+                vault.readItem(storePath(files), AnchorStore.Backed(files), requireAccountId(), itemId)
             mapOf(
                 "itemId" to detail.itemId,
                 "kind" to detail.kind,
@@ -210,7 +234,13 @@ class ChiavoraCoreModule : Module() {
         AsyncFunction("createItem") { kind: String, fields: List<Map<String, Any?>> ->
             val vault = requireSession()
             val files = androidContext().filesDir
-            vault.createItem(storePath(files), AnchorStore.Backed(files), kind, itemFields(fields))
+            vault.createItem(
+                storePath(files),
+                AnchorStore.Backed(files),
+                requireAccountId(),
+                kind,
+                itemFields(fields),
+            )
         }
 
         AsyncFunction("updateItem") { itemId: String, kind: String, fields: List<Map<String, Any?>> ->
@@ -219,6 +249,7 @@ class ChiavoraCoreModule : Module() {
             vault.updateItem(
                 storePath(files),
                 AnchorStore.Backed(files),
+                requireAccountId(),
                 itemId,
                 kind,
                 itemFields(fields),
@@ -228,7 +259,7 @@ class ChiavoraCoreModule : Module() {
         AsyncFunction("deleteItem") { itemId: String ->
             val vault = requireSession()
             val files = androidContext().filesDir
-            vault.deleteItem(storePath(files), AnchorStore.Backed(files), itemId)
+            vault.deleteItem(storePath(files), AnchorStore.Backed(files), requireAccountId(), itemId)
         }
 
         AsyncFunction("generatorLimits") {
@@ -266,6 +297,10 @@ class ChiavoraCoreModule : Module() {
 
     private fun requireSession(): MobileVault =
         session ?: throw IllegalStateException("no vault is open: unlock first")
+
+    private fun requireAccountId(): ByteArray =
+        sessionAccountId
+            ?: throw IllegalStateException("the open session has no account identifier")
 
     private fun itemFields(fields: List<Map<String, Any?>>): List<ItemField> =
         fields.map { field ->

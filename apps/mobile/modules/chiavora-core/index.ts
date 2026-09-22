@@ -122,6 +122,10 @@ interface ChiavoraCoreNativeModule {
   keystoreReport(): Promise<KeystoreReport>;
   forgetDevice(): Promise<boolean>;
 
+  isProvisioned(): Promise<boolean>;
+  /** Rejects `AlreadyProvisioned` on a second run: a new Vault Key would orphan every item. */
+  provisionAccount(): Promise<boolean>;
+
   listItems(): Promise<ItemSummary[]>;
   /** Concealment is the screen's job, not this call's. */
   readItem(itemId: string): Promise<ItemDetail>;

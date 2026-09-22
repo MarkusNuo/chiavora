@@ -27,6 +27,7 @@ pub mod nonce;
 pub mod onepif;
 pub mod onepux;
 pub mod passphrase;
+pub mod provision;
 #[cfg(test)]
 pub(crate) mod scan;
 pub mod seal;

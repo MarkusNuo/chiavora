@@ -19,6 +19,7 @@ internal object VaultKeys {
     private const val GCM_TAG_BITS = 128
     private const val WRAPPED_MUK_FILE = "muk.wrapped"
     private const val SECRET_KEY_FILE = "secret-key.wrapped"
+    private const val ACCOUNT_ID_FILE = "account-id"
 
     suspend fun storeWrappedMukAuthenticated(
         activity: FragmentActivity,
@@ -98,7 +99,17 @@ internal object VaultKeys {
 
     fun hasSecretKey(filesDir: File): Boolean = File(filesDir, SECRET_KEY_FILE).exists()
 
+    fun storeAccountId(filesDir: File, accountId: ByteArray) {
+        File(filesDir, ACCOUNT_ID_FILE).writeBytes(accountId)
+    }
+
+    fun readAccountId(filesDir: File): ByteArray? {
+        val file = File(filesDir, ACCOUNT_ID_FILE)
+        return if (file.exists()) file.readBytes() else null
+    }
+
     fun forget(filesDir: File) {
+        File(filesDir, ACCOUNT_ID_FILE).delete()
         File(filesDir, WRAPPED_MUK_FILE).delete()
         File(filesDir, SECRET_KEY_FILE).delete()
         for (alias in listOf(DeviceKeys.MUK_WRAPPING_KEY_ALIAS, DeviceKeys.SECRET_KEY_ALIAS)) {

@@ -168,6 +168,25 @@ impl MobileVault {
     pub(crate) fn wrapping(inner: UnlockedVault) -> Arc<Self> {
         Arc::new(Self { inner })
     }
+
+    pub(crate) fn load_provisioning(
+        &self,
+        store: &chiavora_core::store::Store,
+        account_id: &[u8],
+        vault_id: &[u8],
+    ) -> Result<chiavora_core::provision::Provisioning, chiavora_core::provision::ProvisionError>
+    {
+        self.inner.load_provisioning(store, account_id, vault_id)
+    }
+
+    pub(crate) fn provision_first_vault(
+        &self,
+        store: &mut chiavora_core::store::Store,
+        account_id: &[u8],
+    ) -> Result<chiavora_core::provision::Provisioning, chiavora_core::provision::ProvisionError>
+    {
+        self.inner.provision_first_vault(store, account_id)
+    }
 }
 
 /// The MUK for the platform to wrap: on Android a Java API, so the plaintext must reach Kotlin.

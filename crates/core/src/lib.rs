@@ -35,5 +35,6 @@ pub mod store;
 pub mod stored_record;
 pub mod sync;
 pub mod unlock;
+pub mod vault;
 pub mod wrap;
 pub mod zip;

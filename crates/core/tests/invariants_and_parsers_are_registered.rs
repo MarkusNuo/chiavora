@@ -368,7 +368,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 75] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 80] = [
     (
         "core/src/manifest.rs",
         "hash_item_id",
@@ -383,6 +383,31 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 75] = [
         "core/src/seal.rs",
         "SealedVaultKey::from_stored_parts",
         "COVERED ELSEWHERE: it stores two byte strings without reading them.          Every byte reaches HPKE's own open, which authenticates the          ciphertext under a key derived from the 0x06 info -- so hostile          bytes here fail at single_shot_open rather than at a parse this          module wrote. The framing they came out of is chiavora-protocol's          CHVR record, which is in PARSERS and fuzzed",
+    ),
+    (
+        "core/src/vault.rs",
+        "OpenVault::new",
+        "COVERED ELSEWHERE: it holds its arguments and reads none of them. The vaultId is an opaque store key; the sealed Vault Key is not opened until an operation asks for it, and when it is, HPKE authenticates every byte under a key derived from the 0x06 info -- hostile bytes fail at single_shot_open. The framing they came out of is chiavora-protocol's CHVR record, which is in PARSERS and fuzzed",
+    ),
+    (
+        "core/src/vault.rs",
+        "OpenVault::read",
+        "COVERED ELSEWHERE: the itemId is an opaque store key used for lookup and never parsed. Every byte that comes back reaches StoredRecord::decode and then Item::from_bytes, both in PARSERS with fuzz targets of their own. What read adds between them is unsealing, which authenticates -- a record this vault did not seal fails its tag rather than reaching a parse this module wrote",
+    ),
+    (
+        "core/src/vault.rs",
+        "OpenVault::create",
+        "SAFE BY CONSTRUCTION: the itemId is an opaque store key, never parsed, and the Item is a typed value this process built rather than bytes it read. This is the encode direction; nothing here decides what a foreign byte string means. The bytes it produces are read back by OpenVault::read, one row above",
+    ),
+    (
+        "core/src/vault.rs",
+        "OpenVault::update",
+        "COVERED ELSEWHERE: as create, plus one store read to learn the current version -- and that record arrives through StoredRecord::decode, which is in PARSERS. A hostile version is a u64 that has already survived decoding, and what update does with it is saturating_add. The failure it could cause is a version that fails to advance, which is I6c's refusal and not a parse",
+    ),
+    (
+        "core/src/vault.rs",
+        "OpenVault::delete",
+        "SAFE BY CONSTRUCTION: one opaque store key and a bool back. It parses nothing and unseals nothing. The bool is the whole decision -- false becomes NoSuchItem rather than Ok, because deleted and was-never-there are different answers to the screen that asked",
     ),
     (
         "core/src/sync.rs",

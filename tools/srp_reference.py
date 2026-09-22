@@ -137,6 +137,49 @@ class Srp:
         return pow(public_a * pow(verifier, u, self.N), b, self.N)
 
 
+def chiavora_x(srp_salt: bytes, srp_x: bytes) -> bytes:
+    """`x = SHA-256(srpSalt ‖ srpX)` (ADR-0008 §3.3), written from the ADR."""
+    return hashlib.sha256(srp_salt + srp_x).digest()
+
+
+def chiavora_verifier(modulus: int, generator: int, x: bytes) -> int:
+    """`v = g^x mod N`, the value the server stores."""
+    return pow(generator, int.from_bytes(x, "big"), modulus)
+
+
+def derivation_vectors(modulus_hex: str, generator: int) -> list[dict]:
+    """The derivation cases: all-zero srpX, all-ones srpSalt, an ordinary one,
+    and a searched-for x with a leading zero byte."""
+    modulus = int(modulus_hex, 16)
+    cases: list[tuple[str, bytes, bytes]] = [
+        ("all_zero_srp_x", bytes(32), bytes(32)),
+        ("all_ones_srp_salt", b"\xff" * 32, bytes(range(32))),
+        ("ordinary", bytes(range(32)), bytes(range(32, 64))),
+    ]
+
+    for counter in range(4096):
+        salt = b"leading-zero-probe".ljust(32, b"\x00")
+        srp_x = counter.to_bytes(32, "big")
+        if chiavora_x(salt, srp_x)[0] == 0:
+            cases.append(("x_has_a_leading_zero_byte", salt, srp_x))
+            break
+    else:  # pragma: no cover - 4096 tries at p=1/256 will not all miss
+        raise RuntimeError("no leading-zero x found; widen the search")
+
+    out = []
+    for name, salt, srp_x in cases:
+        x = chiavora_x(salt, srp_x)
+        out.append({
+            "name": name,
+            "srp_salt": salt.hex().upper(),
+            "srp_x": srp_x.hex().upper(),
+            "x": x.hex().upper(),
+            "verifier": f"{chiavora_verifier(modulus, generator, x):0{len(modulus_hex)}X}",
+        })
+
+    return out
+
+
 def is_probable_prime(n: int, rounds: int = 24) -> bool:
     """Miller-Rabin with 12 small bases plus `rounds` witnesses; not a proof."""
     if n < 2:
@@ -291,8 +334,39 @@ def main() -> int:
         "vectors": published,
     }, indent=1) + "\n", encoding="utf-8")
 
+    derivation = derivation_vectors(n4096, g4096)
+    leading_zero = [v for v in derivation if v["x"].startswith("00")]
+    if not leading_zero:
+        print("FAIL: no vector has an x with a leading zero byte", file=sys.stderr)
+        return 1
+    print(f"OK: {len(derivation)} derivation vectors, "
+          f"{len(leading_zero)} with a leading-zero x")
+
+    (args.out / "srp_derivation.json").write_text(json.dumps({
+        "source": "docs/adr/0008 section 3.3 — x = SHA-256(srpSalt || srpX), v = g^x mod N",
+        "note": provenance,
+        "checked_against": (
+            "NOTHING EXTERNAL, AND THAT IS THE POINT. RFC 5054's vectors above are "
+            "recomputed and compared against the RFC's own published values. These "
+            "cannot be: no other implementation of x = SHA-256(srpSalt || srpX) "
+            "exists, because the construction is this project's. The only evidence "
+            "here is that a second implementation -- this file, written from the "
+            "ADR and sharing no code with crates/core -- agrees with the Rust. "
+            "Stated rather than implied by the `source` field, per docs/crypto.md R7."
+        ),
+        "scope": (
+            "The SHIPPING configuration: RFC 5054's 4096-bit group with SHA-256. "
+            "This is adr/0008 section 4's third evidence row, and it is the only "
+            "one of the three that reaches what ships."
+        ),
+        "group": "4096",
+        "hash": "sha256",
+        "vectors": derivation,
+    }, indent=1) + "\n", encoding="utf-8")
+
     print(f"wrote {args.out / 'srp_groups.json'}")
     print(f"wrote {args.out / 'rfc5054_appendix_b.json'}")
+    print(f"wrote {args.out / 'srp_derivation.json'}")
     return 0
 
 

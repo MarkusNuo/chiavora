@@ -87,6 +87,7 @@ pub enum ManifestError {
     },
     NotABoolean,
     TrailingFields,
+    TooManySegments,
     RootBelowHighWaterMark {
         offered: u64,
         mark: u64,
@@ -141,6 +142,9 @@ impl fmt::Display for ManifestError {
             }
             Self::NotABoolean => f.write_str("a tombstone byte is neither 0 nor 1"),
             Self::TrailingFields => f.write_str("trailing fields after a complete manifest record"),
+            Self::TooManySegments => {
+                f.write_str("a root would carry more segments than u32 can count")
+            }
             Self::RootBelowHighWaterMark { offered, mark } => write!(
                 f,
                 "the manifest root offers manifestSeq {offered}, below the {mark} this device \
@@ -246,6 +250,16 @@ impl CanonicalPrefix {
         }
         (hash >> (64 - self.len as u32)) == (self.bits >> (64 - self.len as u32))
     }
+}
+
+/// Big-endian so a prefix matches the front of the digest (§2.5). Read the other way,
+/// every root would still tile while items landed in the wrong segments.
+#[must_use]
+pub fn hash_item_id(item_id: &[u8]) -> u64 {
+    let digest: [u8; 32] = Sha256::digest(item_id).into();
+    // Destructured rather than sliced, so there is no fallible step.
+    let [b0, b1, b2, b3, b4, b5, b6, b7, ..] = digest;
+    u64::from_be_bytes([b0, b1, b2, b3, b4, b5, b6, b7])
 }
 
 /// I6b. Takes only [`CanonicalPrefix`], since non-canonical prefixes could hide a range.
@@ -1001,5 +1015,114 @@ pub fn advance_high_water_mark(
         Ok(()) => Ok(()),
         Err(StoreError::HighWaterMarkDecrease { .. }) => Err(ManifestError::HighWaterMarkRewound),
         Err(_) => Err(ManifestError::StoreRefused),
+    }
+}
+
+impl CanonicalPrefix {
+    pub fn split(self) -> Result<(Self, Self), ManifestError> {
+        let longer = self.bit_len().saturating_add(1);
+        // A length of 65 is left for `Self::new` to refuse, the one home of the rule.
+        let bit = 64_u32
+            .checked_sub(u32::from(longer))
+            .map_or(0, |shift| 1_u64 << shift);
+        Ok((
+            Self::new(longer, self.bits())?,
+            Self::new(longer, self.bits() | bit)?,
+        ))
+    }
+}
+
+impl ManifestSegment {
+    pub fn owns(&self, hash: u64) -> Result<bool, ManifestError> {
+        Ok(self.prefix()?.contains(hash))
+    }
+
+    /// `segment_seq` is the sequence the write lands at. The caller writes both halves
+    /// and the new root in one CAS write.
+    pub fn split(&self, segment_seq: u64) -> Result<(Self, Self), ManifestError> {
+        let (low, high) = self.prefix()?.split()?;
+        let AadFields::ManifestSegment {
+            ref vault_id,
+            vault_key_epoch,
+            ..
+        } = *self.fields()
+        else {
+            return Err(ManifestError::NotAManifestSegment);
+        };
+
+        let mut low_entries = Vec::new();
+        let mut high_entries = Vec::new();
+        for entry in self.entries() {
+            let hash = hash_item_id(entry.item_id());
+            if high.contains(hash) {
+                high_entries.push(entry.clone());
+            } else {
+                low_entries.push(entry.clone());
+            }
+        }
+
+        let make = |prefix: CanonicalPrefix, entries: Vec<Entry>| {
+            Self::new(
+                AadFields::ManifestSegment {
+                    vault_id: vault_id.clone(),
+                    segment_seq,
+                    vault_key_epoch,
+                    prefix_len: prefix.bit_len(),
+                    prefix_bits: prefix.bits(),
+                },
+                entries,
+            )
+        };
+        Ok((make(low, low_entries)?, make(high, high_entries)?))
+    }
+}
+
+impl ManifestRoot {
+    pub fn with_split(
+        &self,
+        splitting: CanonicalPrefix,
+        low: (&StoredManifest, CanonicalPrefix),
+        high: (&StoredManifest, CanonicalPrefix),
+        manifest_seq: u64,
+    ) -> Result<Self, ManifestError> {
+        if !self
+            .segments()
+            .iter()
+            .any(|entry| entry.prefix() == splitting)
+        {
+            return Err(ManifestError::SegmentNotInRoot {
+                prefix_len: splitting.bit_len(),
+            });
+        }
+
+        let mut entries: Vec<RootEntry> = self
+            .segments()
+            .iter()
+            .filter(|entry| entry.prefix() != splitting)
+            .cloned()
+            .collect();
+        entries.push(RootEntry::new(low.1, low.0.digest()?, manifest_seq));
+        entries.push(RootEntry::new(high.1, high.0.digest()?, manifest_seq));
+
+        let count = u32::try_from(entries.len()).map_err(|_| ManifestError::TooManySegments)?;
+        let AadFields::ManifestRoot {
+            ref vault_id,
+            vault_key_epoch,
+            ..
+        } = *self.fields()
+        else {
+            return Err(ManifestError::NotAManifestRoot);
+        };
+        let root = Self::new(
+            AadFields::ManifestRoot {
+                vault_id: vault_id.clone(),
+                manifest_seq,
+                vault_key_epoch,
+                segment_count: count,
+            },
+            entries,
+        )?;
+        root.check_tiles()?;
+        Ok(root)
     }
 }

@@ -368,7 +368,12 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 74] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 75] = [
+    (
+        "core/src/manifest.rs",
+        "hash_item_id",
+        "SAFE BY CONSTRUCTION: SHA-256 over a byte string, returning its top          eight bytes. It parses nothing, and there is no length, content or          encoding it can be wrong about -- a hash is total over bytes. A          hostile itemId lands in the segment its hash selects, which is where          it belongs; what must not be wrong is the ORIENTATION of those eight          bytes, and that is vectored and property-tested in          segment_split_is_one_cas_write.rs rather than left to this row",
+    ),
     (
         "core/src/seal.rs",
         "AccountKeypair::from_private",

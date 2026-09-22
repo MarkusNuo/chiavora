@@ -2553,7 +2553,7 @@ fn every_enumerable_set_is_derived_rather_than_listed_by_hand() {
 #[test]
 fn the_enumerable_set_reader_reads_each_definition() {
     let cases = [
-        ("crates/core/src/aad.rs", "pub const ALL_RECORD_TYPES", 6),
+        ("crates/core/src/aad.rs", "pub const ALL_RECORD_TYPES", 7),
         ("crates/core/src/secret.rs", "brand! {", 13),
     ];
     for (file, opener, expected) in cases {
@@ -2566,6 +2566,34 @@ fn the_enumerable_set_reader_reads_each_definition() {
     }
 
     assert!(set_members("fn nothing() {}", "pub enum Absent").is_empty());
+}
+
+#[test]
+fn plan_mds_record_table_and_the_encoder_define_the_same_set() {
+    let plan = read("docs/security-design.md");
+    let mut in_plan: Vec<u8> = plan
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("recordType 0x"))
+        .filter_map(|rest| u8::from_str_radix(rest.get(..2)?, 16).ok())
+        .collect();
+    in_plan.sort_unstable();
+    in_plan.dedup();
+
+    let mut in_code = chiavora_core::aad::ALL_RECORD_TYPES.to_vec();
+    in_code.sort_unstable();
+
+    assert!(
+        !in_plan.is_empty(),
+        "no `recordType 0xNN` lines found in docs/security-design.md -- the §2.2 table moved or \
+         changed shape, and this check reads nothing rather than checking \
+         nothing"
+    );
+    assert_eq!(
+        in_plan, in_code,
+        "docs/security-design.md §2.2 and `aad::ALL_RECORD_TYPES` define different record-type \
+         sets. A type in one and not the other is a format that exists in the \
+         design and not the encoder, or the reverse"
+    );
 }
 
 /// Keeps `Path` in use on every platform without a `cfg`.

@@ -8,14 +8,16 @@ pub const RECORD_MANIFEST_ROOT: u8 = 0x03;
 pub const RECORD_MANIFEST_SEGMENT: u8 = 0x04;
 pub const RECORD_WRAPPED_ITEM_KEY: u8 = 0x05;
 pub const RECORD_SEALED_VAULT_KEY: u8 = 0x06;
+pub const RECORD_WRAPPED_AUTOFILL_KEY: u8 = 0x07;
 
-pub const ALL_RECORD_TYPES: [u8; 6] = [
+pub const ALL_RECORD_TYPES: [u8; 7] = [
     RECORD_ITEM_PAYLOAD,
     RECORD_ATTACHMENT_CHUNK,
     RECORD_MANIFEST_ROOT,
     RECORD_MANIFEST_SEGMENT,
     RECORD_WRAPPED_ITEM_KEY,
     RECORD_SEALED_VAULT_KEY,
+    RECORD_WRAPPED_AUTOFILL_KEY,
 ];
 
 pub const WRAP_PURPOSE_VAULT: u8 = 0x01;
@@ -69,6 +71,11 @@ pub enum AadFields {
         vault_key_epoch: u32,
         recipient_public_key: Vec<u8>,
     },
+
+    WrappedAutofillKey {
+        vault_id: Vec<u8>,
+        vault_key_epoch: u32,
+    },
 }
 
 impl AadFields {
@@ -81,6 +88,7 @@ impl AadFields {
             Self::ManifestSegment { .. } => RECORD_MANIFEST_SEGMENT,
             Self::WrappedItemKey { .. } => RECORD_WRAPPED_ITEM_KEY,
             Self::SealedVaultKey { .. } => RECORD_SEALED_VAULT_KEY,
+            Self::WrappedAutofillKey { .. } => RECORD_WRAPPED_AUTOFILL_KEY,
         }
     }
 }
@@ -254,6 +262,15 @@ pub fn encode(fields: &AadFields) -> Result<Vec<u8>, AadError> {
             out.extend_from_slice(&vault_key_epoch.to_le_bytes());
             put_var(&mut out, recipient_public_key)?;
         }
+        AadFields::WrappedAutofillKey {
+            ref vault_id,
+            vault_key_epoch,
+        } => {
+            out.extend_from_slice(MAGIC);
+            out.push(RECORD_WRAPPED_AUTOFILL_KEY);
+            put_var(&mut out, vault_id)?;
+            out.extend_from_slice(&vault_key_epoch.to_le_bytes());
+        }
     }
     Ok(out)
 }
@@ -375,6 +392,14 @@ pub fn decode(bytes: &[u8]) -> Result<AadFields, AadError> {
                 vault_id,
                 vault_key_epoch,
                 recipient_public_key,
+            }
+        }
+        RECORD_WRAPPED_AUTOFILL_KEY => {
+            let vault_id = r.var()?;
+            let vault_key_epoch = r.u32()?;
+            AadFields::WrappedAutofillKey {
+                vault_id,
+                vault_key_epoch,
             }
         }
         other => return Err(AadError::UnknownRecordType(other)),

@@ -8,10 +8,17 @@ use chiavora_core::aad::{
     AadFields,
     ALL_RECORD_TYPES,
     MAX_PREFIX_LEN,
+    RECORD_ATTACHMENT_CHUNK,
+    RECORD_ITEM_PAYLOAD,
+    RECORD_MANIFEST_ROOT,
+    RECORD_MANIFEST_SEGMENT,
+    RECORD_SEALED_VAULT_KEY,
+    RECORD_WRAPPED_AUTOFILL_KEY,
+    RECORD_WRAPPED_ITEM_KEY,
     WRAP_PURPOSE_AUTOFILL,
     WRAP_PURPOSE_VAULT,
 };
-use proptest::prelude::{any, prop, ProptestConfig, Strategy};
+use proptest::prelude::{any, prop, BoxedStrategy, ProptestConfig, Strategy};
 use proptest::{prop_assert, prop_assert_eq, prop_assume, proptest};
 
 /// Regression files are off: proptest cannot place them beside a test in `tests/`.
@@ -120,6 +127,15 @@ fn wrapped_item_key() -> impl Strategy<Value = AadFields> {
         )
 }
 
+fn wrapped_autofill_key() -> impl Strategy<Value = AadFields> {
+    (var_field(), any::<u32>()).prop_map(|(vault_id, vault_key_epoch)| {
+        AadFields::WrappedAutofillKey {
+            vault_id,
+            vault_key_epoch,
+        }
+    })
+}
+
 fn sealed_vault_key() -> impl Strategy<Value = AadFields> {
     (var_field(), any::<u32>(), var_field()).prop_map(
         |(vault_id, vault_key_epoch, recipient_public_key)| AadFields::SealedVaultKey {
@@ -131,14 +147,37 @@ fn sealed_vault_key() -> impl Strategy<Value = AadFields> {
 }
 
 fn any_record() -> impl Strategy<Value = AadFields> {
-    prop::strategy::Union::new(vec![
-        item_payload().boxed(),
-        attachment_chunk().boxed(),
-        manifest_root().boxed(),
-        manifest_segment().boxed(),
-        wrapped_item_key().boxed(),
-        sealed_vault_key().boxed(),
-    ])
+    prop::strategy::Union::new(
+        strategies_by_record_type()
+            .into_iter()
+            .map(|(_, strategy)| strategy)
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn strategies_by_record_type() -> Vec<(u8, BoxedStrategy<AadFields>)> {
+    vec![
+        (RECORD_ITEM_PAYLOAD, item_payload().boxed()),
+        (RECORD_ATTACHMENT_CHUNK, attachment_chunk().boxed()),
+        (RECORD_MANIFEST_ROOT, manifest_root().boxed()),
+        (RECORD_MANIFEST_SEGMENT, manifest_segment().boxed()),
+        (RECORD_WRAPPED_ITEM_KEY, wrapped_item_key().boxed()),
+        (RECORD_SEALED_VAULT_KEY, sealed_vault_key().boxed()),
+        (RECORD_WRAPPED_AUTOFILL_KEY, wrapped_autofill_key().boxed()),
+    ]
+}
+
+#[test]
+fn the_collision_hunt_can_draw_every_record_type() {
+    let drawn: Vec<u8> = strategies_by_record_type()
+        .into_iter()
+        .map(|(record_type, _)| record_type)
+        .collect();
+    assert_eq!(
+        drawn,
+        ALL_RECORD_TYPES.to_vec(),
+        "the collision hunt's strategy union does not cover every record type"
+    );
 }
 
 proptest! {
@@ -200,6 +239,10 @@ fn i3_every_record_type_round_trips_at_least_once() {
             vault_id: b"vault".to_vec(),
             vault_key_epoch: 7,
             recipient_public_key: vec![0x42; 32],
+        },
+        AadFields::WrappedAutofillKey {
+            vault_id: b"vault".to_vec(),
+            vault_key_epoch: 7,
         },
     ];
     let seen: Vec<u8> = cases.iter().map(AadFields::record_type).collect();

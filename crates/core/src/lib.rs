@@ -3,6 +3,7 @@
 pub mod aad;
 pub mod anchor;
 pub mod attachment;
+pub mod autofill;
 pub mod base32;
 pub mod bitwarden;
 pub mod chrome;

@@ -368,7 +368,17 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 71] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 73] = [
+    (
+        "core/src/seal.rs",
+        "AccountKeypair::from_private",
+        "NOT A BOUNDARY: the bytes are this account's own X25519 private key,          just unwrapped from under this device's MUK. They crossed no boundary          -- §2.2 wraps the private key locally and the unwrap authenticates          them, so a caller reaching here with attacker-chosen bytes has          already broken the MUK wrap. The length is checked and          x25519-dalek clamps the scalar; there is no parse to fuzz",
+    ),
+    (
+        "core/src/seal.rs",
+        "SealedVaultKey::from_stored_parts",
+        "COVERED ELSEWHERE: it stores two byte strings without reading them.          Every byte reaches HPKE's own open, which authenticates the          ciphertext under a key derived from the 0x06 info -- so hostile          bytes here fail at single_shot_open rather than at a parse this          module wrote. The framing they came out of is chiavora-protocol's          CHVR record, which is in PARSERS and fuzzed",
+    ),
     (
         "core/src/sync.rs",
         "StagedEdit::new",

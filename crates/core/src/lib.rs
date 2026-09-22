@@ -26,6 +26,7 @@ pub mod onepux;
 pub mod passphrase;
 #[cfg(test)]
 pub(crate) mod scan;
+pub mod seal;
 pub mod search;
 pub mod secret;
 pub mod secret_key;

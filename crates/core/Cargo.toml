@@ -25,6 +25,9 @@ chacha20poly1305 = "0.10"
 chiavora-protocol = { workspace = true }
 # `bundled` builds SQLite from source, so the file format does not depend on the platform.
 rusqlite = { version = "0.32", features = ["bundled"] }
+x25519-dalek = { version = "2.0", default-features = false, features = ["static_secrets"] }
+# 0.12, not 0.14: it shares `sha2`, `hkdf`, `chacha20poly1305` and `x25519-dalek` with this stack.
+hpke = { version = "0.12", default-features = false, features = ["alloc", "x25519"] }
 hmac = "0.12"
 # NFC for the account password, which can arrive as NFC from one keyboard and NFD from another.
 unicode-normalization = "0.1"
@@ -38,7 +41,6 @@ crypto-bigint = { version = "0.7.5", default-features = false, features = ["allo
 [dev-dependencies]
 # Turns `harness` on for integration tests, which build this crate without `cfg(test)`.
 chiavora-core = { path = ".", features = ["harness"] }
-x25519-dalek = { version = "2.0", default-features = false, features = ["static_secrets"] }
 trybuild = "1.0"
 proptest = "1.5"
 # The RFC 5054 SRP test vectors use SHA-1.

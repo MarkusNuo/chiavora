@@ -368,11 +368,31 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 84] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 88] = [
     (
         "core/src/manifest.rs",
         "hash_item_id",
         "SAFE BY CONSTRUCTION: SHA-256 over a byte string, returning its top          eight bytes. It parses nothing, and there is no length, content or          encoding it can be wrong about -- a hash is total over bytes. A          hostile itemId lands in the segment its hash selects, which is where          it belongs; what must not be wrong is the ORIENTATION of those eight          bytes, and that is vectored and property-tested in          segment_split_is_one_cas_write.rs rather than left to this row",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::account_key_epoch",
+        "SAFE BY CONSTRUCTION: an accountId used as an opaque key into a BTreeMap the store just authenticated under its own HMAC. It parses nothing and returns a u32 or None. What it is FOR is refusing attacker input -- it is the read half of the account-key high-water mark -- rather than reading any",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::put_provisioning",
+        "SAFE BY CONSTRUCTION: ownerId is an opaque key, recordType is one of §2.2's bytes, and the payload is stored without being read -- the same opaque-record obligation put_raw carries, and for the same reason: a byte this build cannot open still has to come back identical or its digest breaks. The one decision here is the 0x08 epoch comparison, which is I6-shaped and is what a_rewound_account_key_epoch_is_refused asserts",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::get_provisioning",
+        "COVERED ELSEWHERE: an opaque key in, stored bytes out, no parse between them. Every byte reaches seal::open_vault_key, autofill::unwrap or account_key::unwrap depending on its record type, and all three authenticate under a key the caller holds -- so hostile bytes fail a tag rather than a parse this function wrote. The framing they came out of is chiavora-protocol's CHVR record, in PARSERS and fuzzed",
+    ),
+    (
+        "core/src/store.rs",
+        "Store::latest_provisioning_epoch",
+        "SAFE BY CONSTRUCTION: a MAX() over an integer column, with the one i64 to u32 narrowing done by try_from so a corrupted row is refused rather than wrapped. ownerId is an opaque key and nothing is parsed. Deliberately NOT the freshness check -- account_key_epoch is, because it reads the authenticated metadata and this reads the file",
     ),
     (
         "core/src/account_key.rs",

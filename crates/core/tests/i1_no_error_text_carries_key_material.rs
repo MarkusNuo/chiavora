@@ -208,6 +208,12 @@ fn no_store_error_variant_carries_key_material() {
             current: 9,
             proposed: 8
         },
+        StoreError::AccountKeyRewound {
+            current: 2,
+            proposed: 1,
+        },
+        StoreError::NotAProvisioningRecord { record_type: 0x01 },
+        StoreError::ProvisioningRowMalformed,
         StoreError::VersionOutOfRange,
         StoreError::Derive(DeriveError::HkdfExpand),
         StoreError::Wire(WireError::Truncated),
@@ -365,7 +371,7 @@ fn the_variant_lists_match_the_source() {
         ("core/src/secret_key.rs", "SecretKeyError", 6),
         ("core/src/wrap.rs", "WrapError", 7),
         ("core/src/zip.rs", "ZipError", 21),
-        ("core/src/store.rs", "StoreError", 12),
+        ("core/src/store.rs", "StoreError", 15),
         ("core/src/stored_record.rs", "StoredRecordError", 8),
         ("protocol/src/lib.rs", "WireError", 6),
     ];

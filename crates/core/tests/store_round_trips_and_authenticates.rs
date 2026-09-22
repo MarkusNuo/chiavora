@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
-use chiavora_core::aad::{AadFields, RECORD_ITEM_PAYLOAD};
+use chiavora_core::aad::{
+    AadFields, RECORD_ITEM_PAYLOAD, RECORD_SEALED_VAULT_KEY, RECORD_WRAPPED_ACCOUNT_KEY,
+};
 use chiavora_core::item::{open, seal};
 use chiavora_core::model::{Item, ItemField};
 use chiavora_core::nonce::FreshNonce;
@@ -10,7 +12,9 @@ use chiavora_core::secret::{
     kind::{AutofillKey, ItemKey, Muk, VaultKey},
     Secret,
 };
-use chiavora_core::store::{RollbackAnchor, RollbackProtection, Store, StoreError, Unanchored};
+use chiavora_core::store::{
+    RollbackAnchor, RollbackProtection, Store, StoreError, Unanchored, PROVISIONING_RECORD_TYPES,
+};
 use chiavora_core::stored_record::StoredRecord;
 use chiavora_core::wrap::{ItemKind, VaultKeys, WrapContext};
 use chiavora_protocol::Record;
@@ -619,4 +623,119 @@ fn regenerate_stored_record_corpus() {
         }
     }
     assert!(n >= 10, "R7: at least ten seeds");
+}
+
+#[test]
+fn a_provisioning_record_is_not_an_item() {
+    let mut store = Store::open_in_memory(&muk(), Box::new(Unanchored)).unwrap();
+    store
+        .put_provisioning(RECORD_SEALED_VAULT_KEY, b"vault-1", 1, b"sealed")
+        .unwrap();
+
+    assert!(
+        store.list(b"vault-1").unwrap().is_empty(),
+        "a provisioning record must not appear in the vault's item list"
+    );
+    assert!(
+        store.get_raw(b"vault-1", b"vault-1").unwrap().is_none(),
+        "and must not be reachable as a record either"
+    );
+    assert_eq!(
+        store
+            .get_provisioning(RECORD_SEALED_VAULT_KEY, b"vault-1", 1)
+            .unwrap()
+            .as_deref(),
+        Some(&b"sealed"[..])
+    );
+}
+
+#[test]
+fn every_provisioning_record_type_shares_a_key_space_without_colliding() {
+    let mut store = Store::open_in_memory(&muk(), Box::new(Unanchored)).unwrap();
+    for record_type in PROVISIONING_RECORD_TYPES {
+        store
+            .put_provisioning(record_type, b"same", 1, &[record_type])
+            .unwrap();
+    }
+    for record_type in PROVISIONING_RECORD_TYPES {
+        assert_eq!(
+            store
+                .get_provisioning(record_type, b"same", 1)
+                .unwrap()
+                .as_deref(),
+            Some(&[record_type][..]),
+            "record type {record_type:#04x} did not come back as itself"
+        );
+    }
+}
+
+#[test]
+fn an_item_record_type_is_refused_by_the_provisioning_table() {
+    let mut store = Store::open_in_memory(&muk(), Box::new(Unanchored)).unwrap();
+    let err = store
+        .put_provisioning(RECORD_ITEM_PAYLOAD, b"vault-1", 1, b"an item")
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            StoreError::NotAProvisioningRecord {
+                record_type: RECORD_ITEM_PAYLOAD
+            }
+        ),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn a_rewound_account_key_epoch_is_refused() {
+    // `0x08` has no manifest above it, so it carries its own high-water mark.
+    let mut store = Store::open_in_memory(&muk(), Box::new(Unanchored)).unwrap();
+    store
+        .put_provisioning(RECORD_WRAPPED_ACCOUNT_KEY, b"account-1", 2, b"after")
+        .unwrap();
+    assert_eq!(store.account_key_epoch(b"account-1"), Some(2));
+
+    let err = store
+        .put_provisioning(RECORD_WRAPPED_ACCOUNT_KEY, b"account-1", 1, b"before")
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            StoreError::AccountKeyRewound {
+                current: 2,
+                proposed: 1
+            }
+        ),
+        "the pre-rotation account key must not be replayable, got {err:?}"
+    );
+
+    assert!(store
+        .get_provisioning(RECORD_WRAPPED_ACCOUNT_KEY, b"account-1", 1)
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn a_vault_level_provisioning_record_may_be_written_at_any_epoch() {
+    let mut store = Store::open_in_memory(&muk(), Box::new(Unanchored)).unwrap();
+    store
+        .put_provisioning(RECORD_SEALED_VAULT_KEY, b"vault-1", 5, b"newer")
+        .unwrap();
+    store
+        .put_provisioning(RECORD_SEALED_VAULT_KEY, b"vault-1", 2, b"older")
+        .expect(
+            "no account-key rule applies: the manifest root's AAD is what refuses a stale seal",
+        );
+
+    assert_eq!(
+        store
+            .latest_provisioning_epoch(RECORD_SEALED_VAULT_KEY, b"vault-1")
+            .unwrap(),
+        Some(5)
+    );
+    assert_eq!(
+        store.account_key_epoch(b"vault-1"),
+        None,
+        "and no account-key mark was invented for a vault-level record"
+    );
 }

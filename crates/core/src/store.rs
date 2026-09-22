@@ -15,7 +15,15 @@ use crate::secret::{
     Secret,
 };
 
-pub const STORE_SCHEMA_VERSION: u16 = 1;
+pub const STORE_SCHEMA_VERSION: u16 = 2;
+
+pub const OLDEST_MIGRATABLE_STORE_SCHEMA: u16 = 1;
+
+pub const PROVISIONING_RECORD_TYPES: [u8; 3] = [
+    crate::aad::RECORD_SEALED_VAULT_KEY,
+    crate::aad::RECORD_WRAPPED_AUTOFILL_KEY,
+    crate::aad::RECORD_WRAPPED_ACCOUNT_KEY,
+];
 
 /// Tags of the metadata record; additive only.
 pub mod meta_tag {
@@ -24,6 +32,8 @@ pub mod meta_tag {
     pub const SCHEMA_VERSION: Tag = 1;
     pub const GENERATION: Tag = 2;
     pub const HIGH_WATER_MARK: Tag = 3;
+    /// `0x08` records have no manifest above them, so this mark is their freshness check.
+    pub const ACCOUNT_KEY_HIGH_WATER_MARK: Tag = 4;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +96,14 @@ pub enum StoreError {
         current: u64,
         proposed: u64,
     },
+    AccountKeyRewound {
+        current: u32,
+        proposed: u32,
+    },
+    NotAProvisioningRecord {
+        record_type: u8,
+    },
+    ProvisioningRowMalformed,
     VersionOutOfRange,
     Derive(DeriveError),
     Wire(WireError),
@@ -111,6 +129,17 @@ impl core::fmt::Display for StoreError {
                 f,
                 "a high-water mark may only increase: {current} is stored, {proposed} was proposed"
             ),
+            Self::AccountKeyRewound { current, proposed } => write!(
+                f,
+                "the account key epoch may only increase: {current} is committed, {proposed} was offered"
+            ),
+            Self::NotAProvisioningRecord { record_type } => write!(
+                f,
+                "record type {record_type:#04x} does not belong in the provisioning table"
+            ),
+            Self::ProvisioningRowMalformed => {
+                f.write_str("a provisioning row holds an epoch this build cannot have written")
+            }
             Self::VersionOutOfRange => f.write_str("a record version exceeds what the store can hold"),
             Self::Derive(e) => write!(f, "{e}"),
             Self::Wire(e) => write!(f, "{e}"),
@@ -152,6 +181,7 @@ struct Metadata {
     generation: u64,
     /// `BTreeMap`, so the encoding is canonical.
     high_water_marks: BTreeMap<Vec<u8>, u64>,
+    account_key_marks: BTreeMap<Vec<u8>, u32>,
 }
 
 type HmacSha256 = Hmac<Sha256>;
@@ -162,6 +192,7 @@ impl Metadata {
             schema_version: STORE_SCHEMA_VERSION,
             generation: 0,
             high_water_marks: BTreeMap::new(),
+            account_key_marks: BTreeMap::new(),
         }
     }
 
@@ -180,6 +211,13 @@ impl Metadata {
             value.extend_from_slice(&seq.to_le_bytes());
             fields.push(Field::new(meta_tag::HIGH_WATER_MARK, value)?);
         }
+        for (account_id, epoch) in &self.account_key_marks {
+            let len = u16::try_from(account_id.len()).map_err(|_| StoreError::MetadataMalformed)?;
+            let mut value = len.to_le_bytes().to_vec();
+            value.extend_from_slice(account_id);
+            value.extend_from_slice(&epoch.to_le_bytes());
+            fields.push(Field::new(meta_tag::ACCOUNT_KEY_HIGH_WATER_MARK, value)?);
+        }
         Ok(Record::new(fields).encode()?)
     }
 
@@ -188,6 +226,7 @@ impl Metadata {
         let mut schema_version = None;
         let mut generation = None;
         let mut high_water_marks = BTreeMap::new();
+        let mut account_key_marks = BTreeMap::new();
         for field in record.fields() {
             match field.tag() {
                 meta_tag::SCHEMA_VERSION => {
@@ -226,20 +265,43 @@ impl Metadata {
                         return Err(StoreError::MetadataMalformed);
                     }
                 }
+                meta_tag::ACCOUNT_KEY_HIGH_WATER_MARK => {
+                    let value = field.value();
+                    let (len, rest) = value
+                        .split_first_chunk::<2>()
+                        .ok_or(StoreError::MetadataMalformed)?;
+                    let len = usize::from(u16::from_le_bytes(*len));
+                    if rest.len() != len + 4 {
+                        return Err(StoreError::MetadataMalformed);
+                    }
+                    let (account_id, epoch) = rest.split_at(len);
+                    let epoch: [u8; 4] = epoch
+                        .try_into()
+                        .map_err(|_| StoreError::MetadataMalformed)?;
+                    if account_key_marks
+                        .insert(account_id.to_vec(), u32::from_le_bytes(epoch))
+                        .is_some()
+                    {
+                        return Err(StoreError::MetadataMalformed);
+                    }
+                }
                 // Metadata is rewritten whole, so an unknown tag is malformed, not preserved.
                 _ => return Err(StoreError::MetadataMalformed),
             }
         }
         let schema_version = schema_version.ok_or(StoreError::MetadataMalformed)?;
-        if schema_version != STORE_SCHEMA_VERSION {
+        // Older schemas from the floor up migrate forward; a newer one is never half-read.
+        if !(OLDEST_MIGRATABLE_STORE_SCHEMA..=STORE_SCHEMA_VERSION).contains(&schema_version) {
             return Err(StoreError::UnsupportedStoreSchema {
                 found: schema_version,
             });
         }
         Ok(Self {
-            schema_version,
+            // The whole migration: version 2 only adds a table, created on open, and a tag.
+            schema_version: STORE_SCHEMA_VERSION,
             generation: generation.ok_or(StoreError::MetadataMalformed)?,
             high_water_marks,
+            account_key_marks,
         })
     }
 
@@ -290,6 +352,13 @@ CREATE TABLE IF NOT EXISTS chunks (
     chunk_index   INTEGER NOT NULL,
     bytes         BLOB    NOT NULL,
     PRIMARY KEY (vault_id, item_id, attachment_id, chunk_index)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS provisioning (
+    record_type INTEGER NOT NULL,
+    owner_id    BLOB    NOT NULL,
+    epoch       INTEGER NOT NULL,
+    bytes       BLOB    NOT NULL,
+    PRIMARY KEY (record_type, owner_id, epoch)
 ) WITHOUT ROWID;
 ";
 
@@ -477,6 +546,84 @@ impl Store {
         self.persist_metadata()
     }
 
+    #[must_use]
+    pub fn account_key_epoch(&self, account_id: &[u8]) -> Option<u32> {
+        self.meta.account_key_marks.get(account_id).copied()
+    }
+
+    /// `owner_id` is the `vaultId` for `0x06` and `0x07` and the `accountId` for `0x08`.
+    pub fn put_provisioning(
+        &mut self,
+        record_type: u8,
+        owner_id: &[u8],
+        epoch: u32,
+        bytes: &[u8],
+    ) -> Result<(), StoreError> {
+        if !PROVISIONING_RECORD_TYPES.contains(&record_type) {
+            return Err(StoreError::NotAProvisioningRecord { record_type });
+        }
+        if record_type == crate::aad::RECORD_WRAPPED_ACCOUNT_KEY {
+            if let Some(current) = self.account_key_epoch(owner_id) {
+                if epoch < current {
+                    return Err(StoreError::AccountKeyRewound {
+                        current,
+                        proposed: epoch,
+                    });
+                }
+            }
+        }
+        self.conn.execute(
+            "INSERT INTO provisioning (record_type, owner_id, epoch, bytes)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (record_type, owner_id, epoch) DO UPDATE SET bytes = excluded.bytes",
+            params![i64::from(record_type), owner_id, i64::from(epoch), bytes],
+        )?;
+        if record_type == crate::aad::RECORD_WRAPPED_ACCOUNT_KEY {
+            self.meta.account_key_marks.insert(owner_id.to_vec(), epoch);
+            self.persist_metadata()?;
+        }
+        Ok(())
+    }
+
+    pub fn get_provisioning(
+        &self,
+        record_type: u8,
+        owner_id: &[u8],
+        epoch: u32,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT bytes FROM provisioning
+                 WHERE record_type = ?1 AND owner_id = ?2 AND epoch = ?3",
+                params![i64::from(record_type), owner_id, i64::from(epoch)],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Not the committed mark: for `0x08` freshness use [`Store::account_key_epoch`].
+    pub fn latest_provisioning_epoch(
+        &self,
+        record_type: u8,
+        owner_id: &[u8],
+    ) -> Result<Option<u32>, StoreError> {
+        let found: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT MAX(epoch) FROM provisioning
+                 WHERE record_type = ?1 AND owner_id = ?2",
+                params![i64::from(record_type), owner_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        // An out-of-range row is reported, never folded into `None` ("not provisioned").
+        found
+            .map(|e| u32::try_from(e).map_err(|_| StoreError::ProvisioningRowMalformed))
+            .transpose()
+    }
+
     /// File first, so a crash leaves the file ahead, which [`Store::open`] treats as catch-up.
     fn persist_metadata(&mut self) -> Result<(), StoreError> {
         self.meta.generation = self.meta.generation.saturating_add(1);
@@ -625,7 +772,7 @@ fn stored_is_fresh(store: &Store) -> bool {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
-    use super::{Metadata, StoreError, STORE_SCHEMA_VERSION};
+    use super::{Metadata, StoreError, OLDEST_MIGRATABLE_STORE_SCHEMA, STORE_SCHEMA_VERSION};
 
     #[test]
     fn metadata_encoding_is_canonical_and_round_trips() {
@@ -648,5 +795,45 @@ mod tests {
             err,
             StoreError::UnsupportedStoreSchema { found } if found == STORE_SCHEMA_VERSION + 1
         ));
+    }
+
+    #[test]
+    fn a_version_one_store_is_read_forward_rather_than_refused() {
+        let mut m = Metadata::fresh();
+        m.schema_version = OLDEST_MIGRATABLE_STORE_SCHEMA;
+        m.high_water_marks.insert(b"vault-a".to_vec(), 9);
+
+        let migrated = Metadata::decode(&m.encode().unwrap()).unwrap();
+        assert_eq!(migrated.schema_version, STORE_SCHEMA_VERSION);
+        assert_eq!(
+            migrated.high_water_marks.get(b"vault-a".as_slice()),
+            Some(&9)
+        );
+        assert!(
+            migrated.account_key_marks.is_empty(),
+            "version 1 had no 0x08 records, so it has no marks to carry"
+        );
+    }
+
+    #[test]
+    fn a_schema_below_the_migratable_floor_is_refused() {
+        let mut m = Metadata::fresh();
+        m.schema_version = OLDEST_MIGRATABLE_STORE_SCHEMA - 1;
+        assert!(matches!(
+            Metadata::decode(&m.encode().unwrap()).unwrap_err(),
+            StoreError::UnsupportedStoreSchema { .. }
+        ));
+    }
+
+    #[test]
+    fn account_key_marks_round_trip_and_are_canonical() {
+        let mut a = Metadata::fresh();
+        a.account_key_marks.insert(b"account-b".to_vec(), 2);
+        a.account_key_marks.insert(b"account-a".to_vec(), 1);
+        let mut b = Metadata::fresh();
+        b.account_key_marks.insert(b"account-a".to_vec(), 1);
+        b.account_key_marks.insert(b"account-b".to_vec(), 2);
+        assert_eq!(a.encode().unwrap(), b.encode().unwrap());
+        assert_eq!(Metadata::decode(&a.encode().unwrap()).unwrap(), a);
     }
 }

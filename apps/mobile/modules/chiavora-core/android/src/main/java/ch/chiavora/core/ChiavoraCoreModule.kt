@@ -4,6 +4,7 @@ import androidx.fragment.app.FragmentActivity
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import uniffi.chiavora_ffi_mobile.ItemField
 import uniffi.chiavora_ffi_mobile.KeystoreReport
 import uniffi.chiavora_ffi_mobile.MobileVault
 import uniffi.chiavora_ffi_mobile.checkKeystoreArrangement
@@ -174,6 +175,62 @@ class ChiavoraCoreModule : Module() {
             true
         }
 
+        /** Each opens the store, so the rollback check runs per call, not once per session. */
+        AsyncFunction("listItems") {
+            val vault = requireSession()
+            val files = androidContext().filesDir
+            vault.listItems(storePath(files), AnchorStore.Backed(files)).map { row ->
+                mapOf(
+                    "itemId" to row.itemId,
+                    "version" to row.version.toDouble(),
+                    "kind" to row.kind,
+                    "title" to row.title,
+                    "username" to row.username,
+                )
+            }
+        }
+
+        AsyncFunction("readItem") { itemId: String ->
+            val vault = requireSession()
+            val files = androidContext().filesDir
+            val detail = vault.readItem(storePath(files), AnchorStore.Backed(files), itemId)
+            mapOf(
+                "itemId" to detail.itemId,
+                "kind" to detail.kind,
+                "fields" to detail.fields.map { field ->
+                    mapOf(
+                        "name" to field.name,
+                        "value" to field.value,
+                        "concealed" to field.concealed,
+                    )
+                },
+            )
+        }
+
+        AsyncFunction("createItem") { kind: String, fields: List<Map<String, Any?>> ->
+            val vault = requireSession()
+            val files = androidContext().filesDir
+            vault.createItem(storePath(files), AnchorStore.Backed(files), kind, itemFields(fields))
+        }
+
+        AsyncFunction("updateItem") { itemId: String, kind: String, fields: List<Map<String, Any?>> ->
+            val vault = requireSession()
+            val files = androidContext().filesDir
+            vault.updateItem(
+                storePath(files),
+                AnchorStore.Backed(files),
+                itemId,
+                kind,
+                itemFields(fields),
+            ).toDouble()
+        }
+
+        AsyncFunction("deleteItem") { itemId: String ->
+            val vault = requireSession()
+            val files = androidContext().filesDir
+            vault.deleteItem(storePath(files), AnchorStore.Backed(files), itemId)
+        }
+
         AsyncFunction("generatorLimits") {
             val limits = generatorLimits()
             mapOf(
@@ -206,6 +263,19 @@ class ChiavoraCoreModule : Module() {
     /** Kept out of backups by `with-chiavora-backup.js`. */
     private fun storePath(files: java.io.File): String =
         java.io.File(files, "vault.db").absolutePath
+
+    private fun requireSession(): MobileVault =
+        session ?: throw IllegalStateException("no vault is open: unlock first")
+
+    private fun itemFields(fields: List<Map<String, Any?>>): List<ItemField> =
+        fields.map { field ->
+            val name = field["name"] as? String
+                ?: throw IllegalArgumentException("a field arrived with no name")
+            val value = field["value"] as? String
+                ?: throw IllegalArgumentException("field '$name' arrived with no value")
+            // `concealed` is decided by `core`, never by the screen.
+            ItemField(name, value, false)
+        }
 
     private fun androidContext(): android.content.Context =
         appContext.reactContext

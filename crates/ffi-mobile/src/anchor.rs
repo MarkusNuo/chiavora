@@ -58,7 +58,9 @@ impl AnchorStorage for Foreign {
     }
 }
 
-fn load(storage: Arc<dyn DeviceAnchorStorage>) -> Result<Box<dyn RollbackAnchor>, UnlockError> {
+pub(crate) fn load(
+    storage: Arc<dyn DeviceAnchorStorage>,
+) -> Result<Box<dyn RollbackAnchor>, UnlockError> {
     let anchor = PlatformAnchor::load(Foreign(storage)).map_err(|e| UnlockError::Keystore {
         reason: e.to_string(),
     })?;

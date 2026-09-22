@@ -265,6 +265,14 @@ impl<'a> OpenVault<'a> {
     }
 }
 
+/// A store key for a new item: 16 random bytes, drawn here because the callers are above
+/// the FFI boundary and have no good randomness of their own.
+pub fn new_item_id() -> Result<Vec<u8>, VaultError> {
+    let mut id = vec![0_u8; 16];
+    csprng::fill_bytes(&mut id)?;
+    Ok(id)
+}
+
 /// Lossy on purpose: a title that is not UTF-8 should not refuse the whole list.
 fn field_text(item: &Item, name: &str) -> String {
     // R1: a display string from an authenticated item; a missing field is a blank row.

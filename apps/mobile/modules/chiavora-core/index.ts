@@ -44,6 +44,27 @@ export interface GeneratorLimits {
   readonly wordlistSource: string;
 }
 
+/** Title and username only, never the item (N1). */
+export interface ItemSummary {
+  readonly itemId: string;
+  readonly version: number;
+  readonly kind: string;
+  readonly title: string;
+  readonly username: string;
+}
+
+export interface ItemField {
+  readonly name: string;
+  readonly value: string;
+  readonly concealed: boolean;
+}
+
+export interface ItemDetail {
+  readonly itemId: string;
+  readonly kind: string;
+  readonly fields: readonly ItemField[];
+}
+
 export interface KeystoreReport {
   readonly mukBacking: string;
   /** Must be true: a new fingerprint destroys the MUK's wrapping key. */
@@ -100,6 +121,13 @@ interface ChiavoraCoreNativeModule {
   vaultState(): Promise<VaultState>;
   keystoreReport(): Promise<KeystoreReport>;
   forgetDevice(): Promise<boolean>;
+
+  listItems(): Promise<ItemSummary[]>;
+  /** Concealment is the screen's job, not this call's. */
+  readItem(itemId: string): Promise<ItemDetail>;
+  createItem(kind: string, fields: ItemField[]): Promise<string>;
+  updateItem(itemId: string, kind: string, fields: ItemField[]): Promise<number>;
+  deleteItem(itemId: string): Promise<void>;
 
   generatorLimits(): Promise<GeneratorLimits>;
   generatePassword(

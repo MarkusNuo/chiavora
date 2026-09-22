@@ -19,6 +19,15 @@ import ChiavoraCore, {
   type KeystoreReport,
   type VaultState,
 } from './modules/chiavora-core';
+import { ItemDetail } from './screens/ItemDetail';
+import { ItemEditor } from './screens/ItemEditor';
+import { VaultList } from './screens/VaultList';
+
+/** Screens are swapped, not kept mounted: `ItemDetail` forgets revealed fields by unmounting. */
+type Screen =
+  | { readonly at: 'list' }
+  | { readonly at: 'detail'; readonly itemId: string }
+  | { readonly at: 'editor'; readonly itemId: string | null };
 
 export default function App() {
   const [lines, setLines] = useState<string[]>([]);
@@ -31,6 +40,7 @@ export default function App() {
   const [generated, setGenerated] = useState<GeneratedValue | null>(null);
   const [passphraseMode, setPassphraseMode] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
+  const [screen, setScreen] = useState<Screen>({ at: 'list' });
 
   const say = useCallback((line: string) => {
     console.log(`CHIAVORA-APP ${line}`);
@@ -189,6 +199,7 @@ export default function App() {
   const lock = useCallback(async () => {
     await ChiavoraCore.lock();
     setUnlocked(false);
+    setScreen({ at: 'list' });
     say('locked: the vault handle is dropped and core has wiped the MUK');
   }, [say]);
 
@@ -231,6 +242,49 @@ export default function App() {
   }, [passphraseMode, say]);
 
   const invalidated = state?.mukKeyInvalidated ?? false;
+
+  if (unlocked) {
+    switch (screen.at) {
+      case 'detail':
+        return (
+          <ItemDetail
+            itemId={screen.itemId}
+            onBack={() => {
+              setScreen({ at: 'list' });
+            }}
+            onEdit={(itemId) => {
+              setScreen({ at: 'editor', itemId });
+            }}
+          />
+        );
+      case 'editor':
+        return (
+          <ItemEditor
+            itemId={screen.itemId}
+            onSaved={() => {
+              setScreen({ at: 'list' });
+            }}
+            onCancel={() => {
+              setScreen({ at: 'list' });
+            }}
+          />
+        );
+      default:
+        return (
+          <VaultList
+            onOpen={(itemId) => {
+              setScreen({ at: 'detail', itemId });
+            }}
+            onCreate={() => {
+              setScreen({ at: 'editor', itemId: null });
+            }}
+            onLock={() => {
+              void lock();
+            }}
+          />
+        );
+    }
+  }
 
   return (
     <View style={styles.screen}>

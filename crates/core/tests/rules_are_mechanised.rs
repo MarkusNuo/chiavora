@@ -16,6 +16,28 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
 }
 
+fn all_sources() -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = core_modules()
+        .into_iter()
+        .map(|(n, s)| (format!("core/src/{n}"), s))
+        .collect();
+    let tests = root().join("crates").join("core").join("tests");
+    let mut files = Vec::new();
+    rs_files_under(&tests, &mut files);
+    for path in files {
+        let name = path
+            .strip_prefix(&tests)
+            .expect("under tests")
+            .to_string_lossy()
+            .replace('\\', "/");
+        out.push((
+            format!("core/tests/{name}"),
+            std::fs::read_to_string(&path).expect("a test"),
+        ));
+    }
+    out
+}
+
 fn core_modules() -> Vec<(String, String)> {
     let src = root().join("crates").join("core").join("src");
     let mut files = Vec::new();
@@ -2285,6 +2307,7 @@ fn struct_fields(source: &str, name: &str) -> Vec<String> {
         return Vec::new();
     };
     let body = source.get(start..).unwrap_or_default();
+    // Ends at a `}` line at any indent, so an indented test struct is read too.
     body.lines()
         .skip(1)
         .take_while(|line| line.trim() != "}")
@@ -2392,6 +2415,157 @@ fn the_generator_knob_registry_would_notice_an_unregistered_knob() {
     );
 
     assert!(struct_fields(synthetic, "NoSuchStruct").is_empty());
+}
+
+/// Enumerable sets in `core`, as (label, defining file, opener of the member
+/// list, the name a consumer must use).
+const ENUMERABLE_SETS: [(&str, &str, &str, &str); 4] = [
+    (
+        "AAD record types",
+        "crates/core/src/aad.rs",
+        "pub const ALL_RECORD_TYPES",
+        "ALL_RECORD_TYPES",
+    ),
+    (
+        "item kinds",
+        "crates/core/src/wrap.rs",
+        "item_type! {",
+        "ItemKind::ALL",
+    ),
+    (
+        "generator character classes",
+        "crates/core/src/generate.rs",
+        "pub enum CharClass {",
+        "CharClass::ALL",
+    ),
+    (
+        "secret brands",
+        "crates/core/src/secret.rs",
+        "brand! {",
+        "assert_every_brand_redacts_debug",
+    ),
+];
+
+fn set_members(source: &str, opener: &str) -> Vec<String> {
+    let Some(start) = source.find(opener) else {
+        return Vec::new();
+    };
+    let body = source.get(start..).unwrap_or_default();
+    body.lines()
+        .skip(1)
+        .take_while(|line| {
+            let t = line.trim();
+            // `impl ` stops a run past a block whose closer this does not know.
+            t != "}" && t != "];" && !t.starts_with("impl ")
+        })
+        .filter_map(|line| {
+            let t = line.trim().trim_end_matches(',');
+            if t.is_empty() || t.starts_with("//") || t.starts_with('#') {
+                return None;
+            }
+            let ident = t
+                .split(&[' ', '=', '(', '{', ','][..])
+                .next()
+                .unwrap_or_default()
+                .trim_start_matches("Self::");
+            (ident.chars().next().is_some_and(char::is_uppercase)
+                && ident.chars().all(|c| c.is_alphanumeric() || c == '_'))
+            .then(|| ident.to_owned())
+        })
+        .collect()
+}
+
+const ENUMERATION_ALLOWED: [(&str, &str, &str); 3] = [
+    (
+        "item kinds",
+        "core/tests/i7_double_wrap_agreement.rs",
+        "TYPE-LEVEL, NOT VALUE-LEVEL: it names the marker types `Login`, `Note` \
+         and the rest, not `ItemKind::Login`. `ItemKind::ALL` is a slice of \
+         runtime values and types cannot be iterated, so there is nothing to \
+         derive from. What forces the decision for a new item type is the \
+         `item_type!` macro: `PROVIDER_READABLE` and `Wraps` have no defaults, \
+         so a seventh type cannot be declared without stating both. **The \
+         assertions could be macro-generated the way `brand!` now generates \
+         I1(a)'s** --- recorded here rather than done, because I7 is \
+         invariant and `wrap.rs` is not restructured here",
+    ),
+    (
+        "item kinds",
+        "core/tests/import_bitwarden_lastpass_chrome.rs",
+        "A MAPPING TABLE, NOT A COVERAGE CLAIM: it asserts which foreign type \
+         becomes which kind. A seventh item kind with no Bitwarden, LastPass or \
+         Chrome equivalent **should not** appear here, so deriving from \
+         `ItemKind::ALL` would assert something false",
+    ),
+    (
+        "item kinds",
+        "core/tests/import_one_password.rs",
+        "A MAPPING TABLE, NOT A COVERAGE CLAIM: as above, for 1PUX and 1PIF. A \
+         kind 1Password does not have is correctly absent",
+    ),
+];
+
+#[test]
+fn every_enumerable_set_is_derived_rather_than_listed_by_hand() {
+    let mut problems = Vec::new();
+
+    for (label, definition, opener, deriver) in ENUMERABLE_SETS {
+        let members = set_members(&read(definition), opener);
+        assert!(
+            members.len() >= 3,
+            "{label}: found {} members in {definition} — the member reader has \
+             stopped reading, which would make this test vacuous",
+            members.len()
+        );
+        let threshold = members.len().div_ceil(2);
+
+        // Suites only: production modules naming many members are doing their job.
+        for (name, source) in all_sources()
+            .into_iter()
+            .filter(|(n, _)| n.starts_with("core/tests/"))
+        {
+            let code = without_comments(&source);
+            let named = members.iter().filter(|m| code.contains(*m)).count();
+            if named < threshold || code.contains(deriver) {
+                continue;
+            }
+            if ENUMERATION_ALLOWED
+                .iter()
+                .any(|(l, f, _)| *l == label && *f == name)
+            {
+                continue;
+            }
+            problems.push(format!(
+                "{name} names {named} of {} {label} without using `{deriver}`",
+                members.len()
+            ));
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "these enumerate a set by hand, so they range over what somebody \
+         remembered rather than over what exists:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+#[test]
+fn the_enumerable_set_reader_reads_each_definition() {
+    let cases = [
+        ("crates/core/src/aad.rs", "pub const ALL_RECORD_TYPES", 6),
+        ("crates/core/src/secret.rs", "brand! {", 13),
+    ];
+    for (file, opener, expected) in cases {
+        let members = set_members(&read(file), opener);
+        assert_eq!(
+            members.len(),
+            expected,
+            "{file}: read {members:?} from `{opener}`"
+        );
+    }
+
+    assert!(set_members("fn nothing() {}", "pub enum Absent").is_empty());
 }
 
 /// Keeps `Path` in use on every platform without a `cfg`.

@@ -36,6 +36,17 @@ pub mod kind {
     use super::sealed::Sealed;
     use super::{DerivedKind, ExternalKind, SecretKind};
 
+    /// No catch-all arm, so a new provenance fails to compile here.
+    #[cfg(test)]
+    macro_rules! construct_for_test {
+        (ExternalKind, $name:ident, $bytes:expr) => {
+            super::Secret::<$name>::from_external_bytes(zeroize::Zeroizing::new($bytes))
+        };
+        (DerivedKind, $name:ident, $bytes:expr) => {
+            super::Secret::<$name>::from_derived_bytes($bytes)
+        };
+    }
+
     macro_rules! brand {
         ($(#[doc = $doc:literal] $name:ident => $label:literal, $origin:ident, $low_entropy:literal;)+) => {
             $(
@@ -49,6 +60,30 @@ pub mod kind {
                 }
                 impl $origin for $name {}
             )+
+
+            /// Generated per brand, so a new brand cannot miss its redaction check.
+            #[cfg(test)]
+            pub(crate) fn assert_every_brand_redacts_debug() {
+                let plaintext = b"leak-me-if-you-can";
+                $(
+                    {
+                        let rendered = format!(
+                            "{:?}",
+                            construct_for_test!($origin, $name, plaintext.to_vec())
+                        );
+                        assert!(
+                            !rendered.contains("leak-me"),
+                            "Debug leaked key material for brand {}: {rendered}",
+                            <$name as SecretKind>::NAME
+                        );
+                        assert!(
+                            rendered.contains(<$name as SecretKind>::NAME),
+                            "Debug for brand {} does not name the brand: {rendered}",
+                            <$name as SecretKind>::NAME
+                        );
+                    }
+                )+
+            }
         };
     }
 
@@ -187,9 +222,7 @@ fn lock_buffer(buffer: &[u8]) -> LockState {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use zeroize::Zeroizing;
-
-    use super::kind::{AccountPassword, ItemKey, Muk, SrpX};
+    use super::kind::{ItemKey, Muk};
     use super::{LockState, Secret};
 
     #[test]
@@ -238,24 +271,7 @@ mod tests {
 
     #[test]
     fn i1a_debug_of_every_brand_is_redacted() {
-        let plaintext = b"leak-me-if-you-can".to_vec();
-        let rendered = [
-            format!(
-                "{:?}",
-                Secret::<AccountPassword>::from_external_bytes(Zeroizing::new(plaintext.clone()))
-            ),
-            format!(
-                "{:?}",
-                Secret::<ItemKey>::from_derived_bytes(plaintext.clone())
-            ),
-            format!("{:?}", Secret::<SrpX>::from_derived_bytes(plaintext)),
-        ];
-        for line in &rendered {
-            assert!(
-                !line.contains("leak-me"),
-                "Debug leaked key material: {line}"
-            );
-        }
+        super::kind::assert_every_brand_redacts_debug();
     }
 
     #[test]

@@ -482,6 +482,7 @@ impl Entry {
         self.current_version
     }
 
+    /// SHA-256 over the payload record only, excluding the wrapped Item Keys (§2.5).
     #[must_use]
     pub const fn ciphertext_digest(&self) -> &[u8; 32] {
         &self.ciphertext_digest
@@ -1124,5 +1125,86 @@ impl ManifestRoot {
         )?;
         root.check_tiles()?;
         Ok(root)
+    }
+}
+
+const CONFLICT_DOMAIN: &[u8] = b"chiavora-conflict|";
+
+/// Derived rather than random, so two devices resolving the same conflict create one
+/// copy, not two.
+#[must_use]
+pub fn conflict_item_id(losing_item_id: &[u8], losing_digest: &[u8; 32]) -> [u8; 16] {
+    let mut hasher = Sha256::new();
+    hasher.update(CONFLICT_DOMAIN);
+    hasher.update(losing_item_id);
+    hasher.update(losing_digest);
+    let digest: [u8; 32] = hasher.finalize().into();
+    // Destructured rather than sliced, so there is no fallible step.
+    let [b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, ..] = digest;
+    [
+        b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15,
+    ]
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictingVersion {
+    item_id: Vec<u8>,
+    version: u64,
+    ciphertext_digest: [u8; 32],
+}
+
+impl ConflictingVersion {
+    #[must_use]
+    pub const fn new(item_id: Vec<u8>, version: u64, ciphertext_digest: [u8; 32]) -> Self {
+        Self {
+            item_id,
+            version,
+            ciphertext_digest,
+        }
+    }
+
+    #[must_use]
+    pub fn item_id(&self) -> &[u8] {
+        &self.item_id
+    }
+
+    #[must_use]
+    pub const fn version(&self) -> u64 {
+        self.version
+    }
+
+    #[must_use]
+    pub const fn ciphertext_digest(&self) -> &[u8; 32] {
+        &self.ciphertext_digest
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Resolution {
+    SameEdit,
+    Conflict {
+        primary: ConflictingVersion,
+        copy: ConflictingVersion,
+        copy_item_id: [u8; 16],
+    },
+}
+
+/// The §2.5 tiebreak. Symmetric in its arguments, so every device reaches the same
+/// answer without coordination.
+#[must_use]
+pub fn resolve(a: &ConflictingVersion, b: &ConflictingVersion) -> Resolution {
+    if a.ciphertext_digest() == b.ciphertext_digest() {
+        return Resolution::SameEdit;
+    }
+    // `[u8; 32]`'s `Ord` is lexicographic, most-significant byte first.
+    let (primary, copy) = if a.ciphertext_digest() < b.ciphertext_digest() {
+        (a, b)
+    } else {
+        (b, a)
+    };
+    Resolution::Conflict {
+        primary: primary.clone(),
+        copy: copy.clone(),
+        copy_item_id: conflict_item_id(copy.item_id(), copy.ciphertext_digest()),
     }
 }

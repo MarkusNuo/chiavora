@@ -368,7 +368,17 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 94] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 96] = [
+    (
+        "core/src/manifest.rs",
+        "conflict_item_id",
+        "SAFE BY CONSTRUCTION: SHA-256 over a domain separator, an identifier          and a fixed-size digest, returning its top sixteen bytes. It parses          nothing and is total over its inputs. Both inputs come from a manifest          this build already decoded and authenticated -- ManifestSegment::decode          is in PARSERS -- and a hostile losing digest yields a copy id that          hashes into whichever segment it hashes into, which is where it          belongs. What must not be wrong is the DOMAIN SEPARATION, and that is          vectored and asserted against the bare hash in          conflicts_converge_without_a_clock.rs rather than left to this row",
+    ),
+    (
+        "core/src/manifest.rs",
+        "ConflictingVersion::new",
+        "NOT A BOUNDARY: names one side of a conflict from values this build          already holds -- an itemId from a decoded segment and a digest this          process computed with StoredRecord::ciphertext_digest. It parses          nothing and stores three fields",
+    ),
     (
         "core/src/manifest.rs",
         "hash_item_id",

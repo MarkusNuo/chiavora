@@ -29,6 +29,7 @@ pub mod onepif;
 pub mod onepux;
 pub mod passphrase;
 pub mod provision;
+pub mod rotation;
 #[cfg(test)]
 pub(crate) mod scan;
 pub mod seal;

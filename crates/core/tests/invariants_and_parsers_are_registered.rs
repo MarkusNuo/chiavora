@@ -368,7 +368,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 97] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 98] = [
     (
         "core/src/manifest.rs",
         "conflict_item_id",
@@ -503,6 +503,11 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 97] = [
         "core/src/sync.rs",
         "upload_resolving",
         "COVERED ELSEWHERE: upload's path exactly -- every server byte reaches          it through StoredManifest::decode, ManifestRoot::decode and          ManifestSegment::decode, all three in PARSERS. The one thing it adds          is the [u8; 32] a caller's ConflictCopySealer returns, which is a          digest this device computed over a record it just sealed itself, and          which the next read checks under I6d",
+    ),
+    (
+        "core/src/rotation.rs",
+        "rotate",
+        "COVERED ELSEWHERE: upload's path exactly -- every server byte reaches          it through StoredManifest::decode, ManifestRoot::decode and          ManifestSegment::decode, all three in PARSERS, and the read path          refuses before a re-wrap is ordered. The vaultId is an opaque key, the          epoch is a u32 this device chose and the engine refuses any value but          current + 1, and the WrapRotator is this build's own code holding this          device's own keys",
     ),
     (
         "core/src/manifest.rs",

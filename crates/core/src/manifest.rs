@@ -95,6 +95,9 @@ pub enum ManifestError {
     SegmentNotInRoot {
         prefix_len: u8,
     },
+    SegmentListedNotDelivered {
+        prefix_len: u8,
+    },
     SegmentDigestMismatch,
     ItemVersionRollback {
         delivered: u64,
@@ -105,6 +108,12 @@ pub enum ManifestError {
     ItemDeliveredNotListed,
     HighWaterMarkRewound,
     ConflictNeedsResolution,
+    NoManifestToRotate,
+    EpochNotSuccessive {
+        current: u32,
+        offered: u32,
+    },
+    RotationChangedAnEntry,
     NonceUnavailable,
     TransportFailed,
 }
@@ -154,6 +163,10 @@ impl fmt::Display for ManifestError {
                 f,
                 "the root vouches for no segment at prefix length {prefix_len}"
             ),
+            Self::SegmentListedNotDelivered { prefix_len } => write!(
+                f,
+                "the root names a segment at prefix length {prefix_len} that the server did not deliver"
+            ),
             Self::SegmentDigestMismatch => {
                 f.write_str("the segment's digest is not the one the root vouches for")
             }
@@ -172,6 +185,16 @@ impl fmt::Display for ManifestError {
             Self::ItemDeliveredNotListed => {
                 f.write_str("the server delivered an item no segment lists")
             }
+            Self::NoManifestToRotate => {
+                f.write_str("this vault has no manifest to rotate")
+            }
+            Self::EpochNotSuccessive { current, offered } => write!(
+                f,
+                "a rotation offered vaultKeyEpoch {offered}, which is not one above {current}"
+            ),
+            Self::RotationChangedAnEntry => f.write_str(
+                "a rotation's re-sealed manifest did not open to what it was built from",
+            ),
             Self::ConflictNeedsResolution => f.write_str(
                 "two devices advanced the same item to the same version with different                  contents: both are kept and the conflict is resolved, never discarded",
             ),

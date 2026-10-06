@@ -65,6 +65,18 @@ export interface ItemDetail {
   readonly fields: readonly ItemField[];
 }
 
+export interface LockPolicy {
+  readonly idleTimeoutSeconds: number;
+  readonly minIdleTimeoutSeconds: number;
+  readonly maxIdleTimeoutSeconds: number;
+  readonly clipboardTtlSeconds: number;
+  readonly maxFailedAttempts: number;
+  /** True while these numbers are placeholders rather than decisions. */
+  readonly provisional: boolean;
+}
+
+export type LockReason = 'manual' | 'backgrounded' | 'idle';
+
 export interface KeystoreReport {
   readonly mukBacking: string;
   /** Must be true: a new fingerprint destroys the MUK's wrapping key. */
@@ -80,6 +92,10 @@ export type UnlockOutcome = {
 };
 
 interface ChiavoraCoreNativeModule {
+  addListener(
+    event: 'onLock',
+    listener: (payload: { reason: LockReason }) => void,
+  ): { remove: () => void };
 
   ffiSmoke(): Promise<string>;
   hasHarness(): boolean;
@@ -122,6 +138,8 @@ interface ChiavoraCoreNativeModule {
   keystoreReport(): Promise<KeystoreReport>;
   forgetDevice(): Promise<boolean>;
 
+  lockPolicy(): Promise<LockPolicy>;
+
   isProvisioned(): Promise<boolean>;
   /** Rejects `AlreadyProvisioned` on a second run: a new Vault Key would orphan every item. */
   provisionAccount(): Promise<boolean>;
@@ -153,6 +171,13 @@ interface ChiavoraCoreNativeModule {
 const ChiavoraCore = requireNativeModule<ChiavoraCoreNativeModule>('ChiavoraCore');
 
 export default ChiavoraCore;
+
+/** The session is already gone when `listener` runs, so a screen should drop what it shows. */
+export function onLock(listener: (reason: LockReason) => void): { remove: () => void } {
+  return ChiavoraCore.addListener('onLock', (event: { reason: LockReason }) => {
+    listener(event.reason);
+  });
+}
 
 export async function harnessDeriveOnce(
   memoryKib: number,

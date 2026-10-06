@@ -14,6 +14,8 @@ import {
 import ChiavoraCore, {
   harnessDeriveOnce,
   keystoreProviderReport,
+  onLock,
+  type LockReason,
   type GeneratedValue,
   type GeneratorLimits,
   type KeystoreReport,
@@ -41,6 +43,7 @@ export default function App() {
   const [passphraseMode, setPassphraseMode] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
   const [screen, setScreen] = useState<Screen>({ at: 'list' });
+  const [lockedBecause, setLockedBecause] = useState<LockReason | null>(null);
 
   const say = useCallback((line: string) => {
     console.log(`CHIAVORA-APP ${line}`);
@@ -241,6 +244,19 @@ export default function App() {
     }
   }, [passphraseMode, say]);
 
+  // Subscribed once, not per screen, so a lock during navigation is not missed.
+  useEffect(() => {
+    const subscription = onLock((reason) => {
+      setUnlocked(false);
+      setScreen({ at: 'list' });
+      setLockedBecause(reason);
+      say(`locked (${reason}): the session is dropped and core has wiped the MUK`);
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [say]);
+
   const invalidated = state?.mukKeyInvalidated ?? false;
 
   if (unlocked) {
@@ -290,6 +306,16 @@ export default function App() {
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>Chiavora — unlock</Text>
+
+        {lockedBecause !== null ? (
+          <Text style={styles.warning}>
+            {lockedBecause === 'idle'
+              ? 'Locked because the app was idle. Your vault is unchanged.'
+              : lockedBecause === 'backgrounded'
+                ? 'Locked because the app went to the background. Your vault is unchanged.'
+                : 'Locked. Your vault is unchanged.'}
+          </Text>
+        ) : null}
 
         {invalidated ? (
           <Text style={styles.warning}>

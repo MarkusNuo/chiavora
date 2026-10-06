@@ -5,6 +5,7 @@ import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import uniffi.chiavora_ffi_mobile.ItemField
+import uniffi.chiavora_ffi_mobile.lockPolicy
 import uniffi.chiavora_ffi_mobile.KeystoreReport
 import uniffi.chiavora_ffi_mobile.MobileVault
 import uniffi.chiavora_ffi_mobile.checkKeystoreArrangement
@@ -24,8 +25,12 @@ class ChiavoraCoreModule : Module() {
     @Volatile
     private var sessionAccountId: ByteArray? = null
 
+    private val lockController = LockController { reason -> dropSession(reason) }
+
     override fun definition() = ModuleDefinition {
         Name("ChiavoraCore")
+
+        Events("onLock")
 
         AsyncFunction("ffiSmoke") {
             ffiSmoke()
@@ -95,6 +100,7 @@ class ChiavoraCoreModule : Module() {
                 // Kept only once nothing above can throw, so a failed unlock leaves no session.
                 session = vault
                 sessionAccountId = accountId
+                armAutoLock()
                 mapOf(
                     "mukLen" to vault.mukLen().toInt(),
                     "rollbackProtection" to protection,
@@ -121,6 +127,7 @@ class ChiavoraCoreModule : Module() {
             session = vault
             sessionAccountId = VaultKeys.readAccountId(files)
                 ?: throw IllegalStateException("this device is enrolled without an account identifier")
+            armAutoLock()
             mapOf(
                 "mukLen" to vault.mukLen().toInt(),
                 "rollbackProtection" to protection,
@@ -128,8 +135,8 @@ class ChiavoraCoreModule : Module() {
         }
 
         AsyncFunction("lock") {
-            session = null
-            sessionAccountId = null
+            // Through the controller, so manual and automatic locks take one path.
+            lockController.lockNow()
             true
         }
 
@@ -179,10 +186,21 @@ class ChiavoraCoreModule : Module() {
         }
 
         AsyncFunction("forgetDevice") {
-            session = null
-            sessionAccountId = null
+            dropSession(LockController.LockReason.MANUAL)
             VaultKeys.forget(androidContext().filesDir)
             true
+        }
+
+        AsyncFunction("lockPolicy") {
+            val policy = lockPolicy()
+            mapOf(
+                "idleTimeoutSeconds" to policy.idleTimeoutSeconds.toInt(),
+                "minIdleTimeoutSeconds" to policy.minIdleTimeoutSeconds.toInt(),
+                "maxIdleTimeoutSeconds" to policy.maxIdleTimeoutSeconds.toInt(),
+                "clipboardTtlSeconds" to policy.clipboardTtlSeconds.toInt(),
+                "maxFailedAttempts" to policy.maxFailedAttempts.toInt(),
+                "provisional" to policy.provisional,
+            )
         }
 
         AsyncFunction("isProvisioned") {
@@ -291,9 +309,25 @@ class ChiavoraCoreModule : Module() {
         harnessDefinition()
     }
 
+    private fun armAutoLock() {
+        lockController.arm(lockPolicy().idleTimeoutSeconds.toLong() * 1000L)
+        (appContext.currentActivity)?.let { lockController.watchTouches(it) }
+    }
+
     /** Kept out of backups by `with-chiavora-backup.js`. */
     private fun storePath(files: java.io.File): String =
         java.io.File(files, "vault.db").absolutePath
+
+    /** The event goes after the state is cleared, so a screen calling back finds it locked. */
+    private fun dropSession(reason: LockController.LockReason) {
+        session = null
+        sessionAccountId = null
+        lockController.disarm()
+        sendEvent(
+            "onLock",
+            mapOf("reason" to reason.name.lowercase()),
+        )
+    }
 
     private fun requireSession(): MobileVault =
         session ?: throw IllegalStateException("no vault is open: unlock first")

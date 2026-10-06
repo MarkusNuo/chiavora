@@ -1190,6 +1190,70 @@ const y = 2;
     );
 }
 
+fn module_session_fields(source: &str) -> Vec<String> {
+    let code = without_comments(source);
+    let mut out = Vec::new();
+    let mut rest = code.as_str();
+    while let Some(at) = rest.find("@Volatile") {
+        let Some(after) = rest.get(at..) else { break };
+        let name = after
+            .split("var ")
+            .nth(1)
+            .and_then(|tail| tail.split([':', ' ', '=']).next())
+            .map(str::trim)
+            .filter(|n| !n.is_empty());
+        if let Some(name) = name {
+            out.push(name.to_owned());
+        }
+        rest = after.get("@Volatile".len()..).unwrap_or_default();
+    }
+    out
+}
+
+#[test]
+fn the_lock_clears_every_field_the_module_holds() {
+    let source = read(
+        "apps/mobile/modules/chiavora-core/android/src/main/java/ch/chiavora/core/ChiavoraCoreModule.kt",
+    );
+    let fields = module_session_fields(&source);
+    assert!(
+        fields.len() >= 2,
+        "the scan found {} `@Volatile` fields in ChiavoraCoreModule, which \
+         means it has stopped reading the class rather than that the class has \
+         stopped holding state: {fields:?}",
+        fields.len()
+    );
+
+    let body = kotlin_fn_body(&without_comments(&source), "dropSession")
+        .expect("ChiavoraCoreModule has no findable `dropSession` body");
+
+    let missed: Vec<&String> = fields
+        .iter()
+        .filter(|f| !body.contains(f.as_str()))
+        .collect();
+    assert!(
+        missed.is_empty(),
+        "`dropSession` does not mention {missed:?}. A lock that leaves one \
+         field set is a vault that reports itself locked while something it \
+         holds is still live, which is the one disagreement this path must not \
+         have"
+    );
+}
+
+#[test]
+fn the_session_field_reader_reads_the_class() {
+    let synthetic = "class M {\n    @Volatile\n    private var a: Foo? = null\n\n    @Volatile\n    private var b: ByteArray? = null\n}";
+    assert_eq!(
+        module_session_fields(synthetic),
+        vec!["a".to_owned(), "b".to_owned()]
+    );
+    assert!(
+        module_session_fields("class M { private var notVolatile: Foo? = null }").is_empty(),
+        "a field with no `@Volatile` was read as session state, which would \
+         make the scan fire on every ordinary variable in the class"
+    );
+}
+
 fn kotlin_fn_body(source: &str, name: &str) -> Option<String> {
     let at = source.find(&format!("fun {name}"))?;
     let after = source.get(at..)?;

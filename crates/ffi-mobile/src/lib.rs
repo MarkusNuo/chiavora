@@ -8,6 +8,7 @@ uniffi::setup_scaffolding!();
 pub mod anchor;
 pub mod generator;
 pub mod items;
+pub mod lock;
 pub mod vault;
 
 #[cfg(feature = "measurement-harness")]

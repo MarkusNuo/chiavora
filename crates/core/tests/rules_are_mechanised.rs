@@ -2633,6 +2633,136 @@ fn plan_mds_record_table_and_the_encoder_define_the_same_set() {
     );
 }
 
+/// A bare `>` in the salt argument would truncate it, which still fails the check.
+fn hkdf_salt_arguments(sources: &[(String, String)]) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (name, source) in sources {
+        let code = production(source);
+        let mut rest = code.as_str();
+        while let Some(at) = rest.find("Hkdf::") {
+            let after = rest.get(at..).unwrap_or("");
+            // `Hkdf::<Sha256>::new(` and `Hkdf::new(` both reach the same call.
+            let Some(open) = after.find("new(") else {
+                break;
+            };
+            let args = after.get(open + "new(".len()..).unwrap_or("");
+            let mut depth = 0_i32;
+            let mut end = args.len();
+            for (index, ch) in args.char_indices() {
+                match ch {
+                    '(' | '[' | '<' => depth += 1,
+                    ')' | ']' | '>' if depth > 0 => depth -= 1,
+                    ')' | ']' | '>' | ',' if depth == 0 => {
+                        end = index;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            out.push((
+                name.clone(),
+                args.get(..end).unwrap_or("").trim().to_owned(),
+            ));
+            rest = after.get(open + "new(".len()..).unwrap_or("");
+        }
+    }
+    out
+}
+
+fn workspace_src() -> Vec<(String, String)> {
+    let crates = root().join("crates");
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&crates) else {
+        return out;
+    };
+    let mut dirs: Vec<PathBuf> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
+    dirs.sort();
+    for dir in dirs {
+        let src = dir.join("src");
+        if !src.is_dir() {
+            continue;
+        }
+        let mut files = Vec::new();
+        rs_files_under(&src, &mut files);
+        for path in files {
+            let name = path
+                .strip_prefix(&crates)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            out.push((name, std::fs::read_to_string(&path).expect("a module")));
+        }
+    }
+    out
+}
+
+#[test]
+fn no_hkdf_call_site_passes_a_salt() {
+    let sources = workspace_src();
+    let sites = hkdf_salt_arguments(&sources);
+
+    assert!(
+        !sites.is_empty(),
+        "no `Hkdf::new` call site found in any crate's src. Either the \
+         derivations moved, or this walk reads nothing -- which is the failure \
+         mode that makes a scan green for the one reason that is not evidence"
+    );
+
+    let salted: Vec<String> = sites
+        .iter()
+        .filter(|(_, salt)| salt != "None")
+        .map(|(name, salt)| format!("{name}: Hkdf::new({salt}, ..)"))
+        .collect();
+
+    assert!(
+        salted.is_empty(),
+        "`docs/crypto.md` says no HKDF salt is used and that separation is \
+         carried entirely by `info`. These call sites pass one:\n  {}",
+        salted.join("\n  ")
+    );
+}
+
+#[test]
+fn the_hkdf_salt_scan_would_notice_a_salt() {
+    let compliant = [(
+        "x/src/a.rs".to_owned(),
+        "let hk = Hkdf::<Sha256>::new(None, ikm);".to_owned(),
+    )];
+    let salted = [(
+        "x/src/b.rs".to_owned(),
+        "let hk = Hkdf::<Sha256>::new(Some(salt), ikm);".to_owned(),
+    )];
+    let turbofish_free = [(
+        "x/src/c.rs".to_owned(),
+        "let hk = Hkdf::new(&self.salt, ikm);".to_owned(),
+    )];
+
+    assert_eq!(
+        hkdf_salt_arguments(&compliant),
+        vec![("x/src/a.rs".to_owned(), "None".to_owned())],
+        "a compliant call must be seen and its argument read as `None`; a scan \
+         that silently reads the wrong argument is green for the wrong reason"
+    );
+    assert_eq!(
+        hkdf_salt_arguments(&salted),
+        vec![("x/src/b.rs".to_owned(), "Some(salt)".to_owned())],
+        "a salted call must be caught, with the salt in the message"
+    );
+    assert_eq!(
+        hkdf_salt_arguments(&turbofish_free),
+        vec![("x/src/c.rs".to_owned(), "&self.salt".to_owned())],
+        "`Hkdf::new` without a turbofish reaches the same call and must not be \
+         a hole in the scan"
+    );
+
+    let real = hkdf_salt_arguments(&workspace_src());
+    assert!(
+        real.iter().any(|(name, _)| name.contains("derive.rs")),
+        "the walk must reach core/src/derive.rs, which has held the only HKDF \
+         call site since §2.1 was built"
+    );
+}
+
 /// Keeps `Path` in use on every platform without a `cfg`.
 #[allow(dead_code)]
 fn _unused(_: &Path) {}

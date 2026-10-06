@@ -814,6 +814,22 @@ fn r7_the_fuzz_workflow_is_not_the_standing_arrangement() {
 }
 
 #[test]
+fn the_gate_sets_its_own_exit_code() {
+    let gate = read("scripts/gate.ps1");
+    let after_verdict = gate
+        .split("Write-Verdict 'EXIT 0'")
+        .nth(1)
+        .expect("gate.ps1 no longer writes `EXIT 0` to the verdict file");
+    assert!(
+        after_verdict.lines().any(|line| line.trim() == "exit 0"),
+        "gate.ps1 writes `EXIT 0` to the verdict file and then does not set \
+         its own exit code, so the process exits with whatever the last \
+         command left in `$LASTEXITCODE`. On a machine with no Android SDK \
+         that is 2, and the verdict file and the process then disagree"
+    );
+}
+
+#[test]
 fn every_rule_in_the_index_is_either_mechanised_here_or_says_why_not() {
     let crypto = read("docs/crypto.md");
     let index = crypto

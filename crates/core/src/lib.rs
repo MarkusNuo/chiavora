@@ -24,6 +24,7 @@ pub mod lastpass;
 pub mod lock_policy;
 pub mod manifest;
 pub mod model;
+pub mod n3;
 pub mod nonce;
 pub mod onepif;
 pub mod onepux;

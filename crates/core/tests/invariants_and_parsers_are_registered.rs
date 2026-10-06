@@ -1508,7 +1508,15 @@ fn every_fuzz_target_is_registered() {
     );
 }
 
-const DERIVED_FIELDS: [(&str, &str, &str); 5] = [
+/// Every `[u8; 32]` field on a record type, as `(type::field, computed_by,
+/// falsified_by)`: the function that derives it (or `CARRIED`, naming where it
+/// is derived) and a test that fails when it is wrong.
+const DERIVED_FIELDS: [(&str, &str, &str); 6] = [
+    (
+        "DeviceMark::root_digest",
+        "CARRIED: StoredManifest::digest derives it over the sealed root's own          bytes, and DeviceMark::of calls that rather than taking a digest from          a caller -- which is the point, because a mark pairing one device's          sequence with another's digest reads as a fork at every comparison          thereafter",
+        "the_same_sequence_with_different_roots_is_a_fork, and          a_mark_takes_both_halves_from_one_root -- the second is the one that          fails if the digest stops covering the root it is paired with",
+    ),
     (
         "RootEntry::digest",
         "StoredManifest::digest, over the sealed segment's own bytes",

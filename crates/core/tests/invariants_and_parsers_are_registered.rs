@@ -171,6 +171,7 @@ fn every_core_invariant_has_at_least_one_test_named_for_it() {
             missing.push(invariant);
         }
     }
+
     assert!(
         missing.is_empty(),
         ": these core invariants have no test named for them, so a failure \
@@ -1474,5 +1475,123 @@ fn every_fuzz_target_is_registered() {
     assert!(
         unregistered.is_empty(),
         ": these fuzz targets are in no registry: {unregistered:?}"
+    );
+}
+
+const DERIVED_FIELDS: [(&str, &str, &str); 5] = [
+    (
+        "RootEntry::digest",
+        "StoredManifest::digest, over the sealed segment's own bytes",
+        "i6b_a_segment_the_root_does_not_vouch_for_is_refused -- the root vouches          for different bytes, and the digest is what says so",
+    ),
+    (
+        "AttachmentEntry::chunk_digest_root",
+        "manifest::chunk_digest_root, SHA-256 over the ordered concatenation          of the per-chunk digests",
+        "the_order_of_the_chunks_changes_the_root, and a_replayed_chunk_is_refused_by_the_root -- the second is the one the field exists for, and neither existed",
+    ),
+    (
+        "Entry::ciphertext_digest",
+        "CARRIED: StoredRecord::ciphertext_digest in stored_record.rs derives          it over the sealed item payload. The manifest records what that          produced and compares it; it does not compute it",
+        "i6d_a_substituted_ciphertext_at_the_same_version_is_refused",
+    ),
+    (
+        "ConflictingVersion::ciphertext_digest",
+        "CARRIED: the same value, read off an Entry or a StagedEdit. tiebreak compares it and derives nothing",
+        "the_comparison_is_unsigned_and_most_significant_byte_first -- the          tiebreak is what the carried value is *for*, so a wrong comparison is          how a wrong value shows up here",
+    ),
+    (
+        "StagedEdit::ciphertext_digest",
+        "CARRIED: computed by this process when it sealed the payload, before          anything was staged. Nothing in sync.rs derives it",
+        "the_copys_entry_carries_the_resealed_digest_and_not_the_losers -- a          conflict copy must name the re-sealed record, not the one its identity          was derived from",
+    ),
+];
+
+#[test]
+fn every_digest_field_in_a_record_is_registered() {
+    let mut unregistered: Vec<String> = Vec::new();
+    for (name, source) in test_sources() {
+        if !name.contains("/src/") {
+            continue;
+        }
+        let mut current_type: Option<String> = None;
+        for line in source.lines() {
+            let t = line.trim();
+            if let Some(rest) = t.strip_prefix("pub struct ") {
+                current_type = Some(
+                    rest.split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .next()
+                        .unwrap_or_default()
+                        .to_string(),
+                );
+                continue;
+            }
+            // Fields sit at one level of indentation; `new`'s parameters at two.
+            if t.ends_with(": [u8; 32],")
+                && line.starts_with("    ")
+                && !line.starts_with("        ")
+            {
+                let field = t.trim_end_matches(": [u8; 32],");
+                let Some(ty) = current_type.as_deref() else {
+                    continue;
+                };
+                let key = format!("{ty}::{field}");
+                if !DERIVED_FIELDS.iter().any(|(k, _, _)| *k == key) {
+                    unregistered.push(format!("\n  {name}: {key}"));
+                }
+            }
+        }
+    }
+    assert!(
+        unregistered.is_empty(),
+        "R9's fifth instance: these digest fields on record types are \
+         registered nowhere. Add each to DERIVED_FIELDS with the function that \
+         computes it (or CARRIED naming the module that does) and a test that \
+         fails when it is wrong:{}",
+        unregistered.join("")
+    );
+}
+
+#[test]
+fn a_constructor_parameter_is_not_mistaken_for_a_field() {
+    let source = "pub struct Thing {\n    real: [u8; 32],\n}\n\
+                  impl Thing {\n    pub const fn new(\n        param: [u8; 32],\n    ) -> Self {}\n}";
+    let mut seen = Vec::new();
+    for line in source.lines() {
+        let t = line.trim();
+        if t.ends_with(": [u8; 32],") && line.starts_with("    ") && !line.starts_with("        ") {
+            seen.push(t.trim_end_matches(": [u8; 32],").to_string());
+        }
+    }
+    assert_eq!(
+        seen,
+        vec!["real".to_string()],
+        "the scan cannot tell a field from a constructor parameter"
+    );
+}
+
+#[test]
+fn every_registered_field_names_a_test_that_exists() {
+    let suite: String = test_sources()
+        .into_iter()
+        .filter(|(name, _)| name.contains("/tests/"))
+        .map(|(_, source)| source)
+        .collect();
+
+    let mut missing = Vec::new();
+    for (key, _, falsified_by) in DERIVED_FIELDS {
+        // A cell may name several tests; at least one must exist.
+        let named: Vec<&str> = falsified_by
+            .split(|c: char| !c.is_alphanumeric() && c != '_')
+            .filter(|w| w.len() > 12 && w.contains('_'))
+            .collect();
+        assert!(!named.is_empty(), "{key} names no test at all");
+        if !named.iter().any(|t| suite.contains(&format!("fn {t}"))) {
+            missing.push(format!("\n  {key}: none of {named:?} exists"));
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "DERIVED_FIELDS names tests that are not in the suite:{}",
+        missing.join("")
     );
 }

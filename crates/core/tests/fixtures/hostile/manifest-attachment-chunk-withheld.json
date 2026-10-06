@@ -1,0 +1,7 @@
+{
+  "attacks": "I6e",
+  "why": "The server returns two genuine chunks of the three the entry declares, and without the count check the client would hand the user a truncated file.",
+  "expect": "refused",
+  "kind": "manifest-read",
+  "mutation": "withheld-attachment-chunk"
+}

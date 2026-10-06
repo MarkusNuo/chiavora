@@ -99,6 +99,13 @@ pub enum ManifestError {
         prefix_len: u8,
     },
     SegmentDigestMismatch,
+    AttachmentListedNotDelivered,
+    AttachmentDeliveredNotListed,
+    AttachmentChunkCountDisagrees {
+        declared: u32,
+        delivered: u32,
+    },
+    ChunkDigestRootMismatch,
     ItemVersionRollback {
         delivered: u64,
         current: u64,
@@ -119,6 +126,8 @@ pub enum ManifestError {
 }
 
 impl fmt::Display for ManifestError {
+    // One arm per variant, kept in one place.
+    #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::Aad(e) => write!(f, "manifest AAD: {e}"),
@@ -166,6 +175,22 @@ impl fmt::Display for ManifestError {
             Self::SegmentListedNotDelivered { prefix_len } => write!(
                 f,
                 "the root names a segment at prefix length {prefix_len} that the server did not deliver"
+            ),
+            Self::AttachmentListedNotDelivered => {
+                f.write_str("the entry names an attachment the server did not deliver")
+            }
+            Self::AttachmentDeliveredNotListed => {
+                f.write_str("the server delivered an attachment this entry does not name")
+            }
+            Self::AttachmentChunkCountDisagrees {
+                declared,
+                delivered,
+            } => write!(
+                f,
+                "the entry declares {declared} chunks and {delivered} were delivered"
+            ),
+            Self::ChunkDigestRootMismatch => f.write_str(
+                "the chunks delivered are not the ones this entry vouches for",
             ),
             Self::SegmentDigestMismatch => {
                 f.write_str("the segment's digest is not the one the root vouches for")
@@ -1229,5 +1254,69 @@ pub fn resolve(a: &ConflictingVersion, b: &ConflictingVersion) -> Resolution {
         primary: primary.clone(),
         copy: copy.clone(),
         copy_item_id: conflict_item_id(copy.item_id(), copy.ciphertext_digest()),
+    }
+}
+
+/// Every input is 32 bytes, so no length prefix is needed.
+#[must_use]
+pub fn chunk_digest_root(chunk_digests: &[[u8; 32]]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    for digest in chunk_digests {
+        hasher.update(digest);
+    }
+    hasher.finalize().into()
+}
+
+impl AttachmentEntry {
+    pub fn accept_chunks(&self, delivered: &[[u8; 32]]) -> Result<(), ManifestError> {
+        // The count first, so a truncated delivery is reported as truncated.
+        let delivered_count = u32::try_from(delivered.len()).map_err(|_| {
+            ManifestError::AttachmentChunkCountDisagrees {
+                declared: self.chunk_count(),
+                delivered: u32::MAX,
+            }
+        })?;
+        if delivered_count != self.chunk_count() {
+            return Err(ManifestError::AttachmentChunkCountDisagrees {
+                declared: self.chunk_count(),
+                delivered: delivered_count,
+            });
+        }
+        if &chunk_digest_root(delivered) != self.chunk_digest_root() {
+            return Err(ManifestError::ChunkDigestRootMismatch);
+        }
+        Ok(())
+    }
+}
+
+impl Entry {
+    /// A client requests only these chunks (§2.5).
+    #[must_use]
+    pub fn referenced_attachments(&self) -> Vec<(&[u8], u32)> {
+        self.attachments()
+            .iter()
+            .map(|a| (a.attachment_id(), a.chunk_count()))
+            .collect()
+    }
+
+    pub fn accept_attachments(
+        &self,
+        delivered: &[(&[u8], Vec<[u8; 32]>)],
+    ) -> Result<(), ManifestError> {
+        for attachment in self.attachments() {
+            let Some((_, digests)) = delivered
+                .iter()
+                .find(|(id, _)| *id == attachment.attachment_id())
+            else {
+                return Err(ManifestError::AttachmentListedNotDelivered);
+            };
+            attachment.accept_chunks(digests)?;
+        }
+        for (id, _) in delivered {
+            if !self.attachments().iter().any(|a| a.attachment_id() == *id) {
+                return Err(ManifestError::AttachmentDeliveredNotListed);
+            }
+        }
+        Ok(())
     }
 }

@@ -368,7 +368,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 101] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 102] = [
     (
         "core/src/manifest.rs",
         "conflict_item_id",
@@ -508,6 +508,11 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 101] = [
         "core/src/rotation.rs",
         "rotate",
         "COVERED ELSEWHERE: upload's path exactly -- every server byte reaches          it through StoredManifest::decode, ManifestRoot::decode and          ManifestSegment::decode, all three in PARSERS, and the read path          refuses before a re-wrap is ordered. The vaultId is an opaque key, the          epoch is a u32 this device chose and the engine refuses any value but          current + 1, and the WrapRotator is this build's own code holding this          device's own keys",
+    ),
+    (
+        "core/src/manifest.rs",
+        "Entry::accept_attachments",
+        "SAFE BY CONSTRUCTION: set comparison over attachmentIds used as opaque          keys, then a SHA-256 over fixed-width digests the caller computed with          StoredChunk::digest. It parses nothing -- every byte that reached it          came through StoredChunk::decode, which is in PARSERS. This is I6e's          attachment half: the thing that refuses attacker input, not a thing          that reads it",
     ),
     (
         "core/src/manifest.rs",

@@ -1,0 +1,7 @@
+{
+  "attacks": "I6e",
+  "why": "A genuine chunk from an earlier version of the attachment has the right count and authenticates, so only chunkDigestRoot can refuse it.",
+  "expect": "refused",
+  "kind": "manifest-read",
+  "mutation": "replayed-attachment-chunk"
+}

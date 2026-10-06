@@ -298,6 +298,11 @@ fn apply_manifest_read(f: &Fixture) -> Outcome {
             .and_then(|stale| root.accept_segment(&stale))
         }
 
+        // In its own function to stay under clippy's line bound.
+        "withheld-attachment-chunk" | "replayed-attachment-chunk" => {
+            return apply_attachment_chunk(f.mutation.as_deref().unwrap_or_default())
+        }
+
         "replayed-item-version" => current.accept_item(1, &[0xB1; 32]),
 
         "substituted-ciphertext" => current.accept_item(2, &[0x99; 32]),
@@ -321,6 +326,30 @@ fn apply_manifest_read(f: &Fixture) -> Outcome {
         other => panic!("unknown manifest-read mutation {other:?}"),
     };
 
+    match outcome {
+        Ok(()) => Outcome::Accepted,
+        Err(e) => Outcome::Refused(e.to_string()),
+    }
+}
+
+fn apply_attachment_chunk(mutation: &str) -> Outcome {
+    use chiavora_core::manifest::{chunk_digest_root, AttachmentEntry};
+
+    let current = [[0xA1_u8; 32], [0xA2; 32], [0xA3; 32]];
+    let entry = AttachmentEntry::new(
+        b"receipt.pdf".to_vec(),
+        3,
+        chunk_digest_root(&current),
+        1024,
+    );
+
+    let outcome = match mutation {
+        "withheld-attachment-chunk" => entry.accept_chunks(&current[..2]),
+        "replayed-attachment-chunk" => {
+            entry.accept_chunks(&[[0xA1_u8; 32], [0x5E; 32], [0xA3; 32]])
+        }
+        other => panic!("unknown attachment mutation {other:?}"),
+    };
     match outcome {
         Ok(()) => Outcome::Accepted,
         Err(e) => Outcome::Refused(e.to_string()),
@@ -430,6 +459,11 @@ fn the_corpus_covers_every_invariant_the_core_can_reach() {
             "no hostile fixture attacks {invariant}; corpus covers: {joined}"
         );
     }
+
+    assert!(
+        joined.contains("I6e"),
+        "no fixture attacks I6e; corpus covers: {joined}"
+    );
 
     assert!(
         joined.contains("I6b"),

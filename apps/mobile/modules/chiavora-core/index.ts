@@ -139,6 +139,8 @@ interface ChiavoraCoreNativeModule {
   forgetDevice(): Promise<boolean>;
 
   lockPolicy(): Promise<LockPolicy>;
+  holdSecureForGeneratedValue(holding: boolean): Promise<boolean>;
+  reapplyWindowFlags(): Promise<boolean>;
 
   isProvisioned(): Promise<boolean>;
   /** Rejects `AlreadyProvisioned` on a second run: a new Vault Key would orphan every item. */

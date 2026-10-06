@@ -257,6 +257,26 @@ export default function App() {
     };
   }, [say]);
 
+  // A generated value is shown while locked, so it holds its own `FLAG_SECURE` reason.
+  useEffect(() => {
+    void ChiavoraCore.holdSecureForGeneratedValue(generated !== null);
+    return () => {
+      void ChiavoraCore.holdSecureForGeneratedValue(false);
+    };
+  }, [generated]);
+
+  // A recreated activity loses its window flags, so they are re-applied on every foregrounding.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'active') {
+        void ChiavoraCore.reapplyWindowFlags();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   const invalidated = state?.mukKeyInvalidated ?? false;
 
   if (unlocked) {

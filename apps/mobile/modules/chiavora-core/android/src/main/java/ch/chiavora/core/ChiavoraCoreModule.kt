@@ -192,6 +192,21 @@ class ChiavoraCoreModule : Module() {
             true
         }
 
+        AsyncFunction("holdSecureForGeneratedValue") { holding: Boolean ->
+            val activity = appContext.currentActivity
+            if (holding) {
+                SecureWindow.hold(activity, SecureWindow.Reason.GENERATED_VALUE)
+            } else {
+                SecureWindow.release(activity, SecureWindow.Reason.GENERATED_VALUE)
+            }
+            SecureWindow.isSecure()
+        }
+
+        AsyncFunction("reapplyWindowFlags") {
+            SecureWindow.reapply(appContext.currentActivity)
+            SecureWindow.isSecure()
+        }
+
         AsyncFunction("lockPolicy") {
             val policy = lockPolicy()
             mapOf(
@@ -324,6 +339,7 @@ class ChiavoraCoreModule : Module() {
         session = null
         sessionAccountId = null
         lockController.disarm()
+        SecureWindow.release(appContext.currentActivity, SecureWindow.Reason.SESSION)
         sendEvent(
             "onLock",
             mapOf("reason" to reason.name.lowercase()),

@@ -2554,7 +2554,7 @@ fn every_enumerable_set_is_derived_rather_than_listed_by_hand() {
 fn the_enumerable_set_reader_reads_each_definition() {
     let cases = [
         ("crates/core/src/aad.rs", "pub const ALL_RECORD_TYPES", 8),
-        ("crates/core/src/secret.rs", "brand! {", 13),
+        ("crates/core/src/secret.rs", "brand! {", 16),
     ];
     for (file, opener, expected) in cases {
         let members = set_members(&read(file), opener);

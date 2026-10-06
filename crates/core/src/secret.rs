@@ -114,6 +114,12 @@ pub mod kind {
         SrpEphemeralSecret => "SrpEphemeralSecret", DerivedKind, false;
         #[doc = "The SRP-6a premaster secret `S`, never used as a key directly (§2.3)."]
         SrpPremasterSecret => "SrpPremasterSecret", DerivedKind, false;
+        #[doc = "The SRP-6a session key `K`, derived from `S`, over which the proofs `M1` and `M2` are computed (§2.3)."]
+        SrpSessionKey => "SrpSessionKey", DerivedKind, false;
+        #[doc = "The request-MAC key for client-to-server messages, an HKDF child of the session key."]
+        SrpMacKeyClientToServer => "SrpMacKeyC2S", DerivedKind, false;
+        #[doc = "The request-MAC key for server-to-client messages, the sibling of [`SrpMacKeyClientToServer`]."]
+        SrpMacKeyServerToClient => "SrpMacKeyS2C", DerivedKind, false;
     }
 }
 

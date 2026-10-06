@@ -1190,6 +1190,156 @@ const y = 2;
     );
 }
 
+fn kotlin_registered_functions(source: &str) -> Vec<String> {
+    let code = without_comments(source);
+    let mut out = Vec::new();
+    for marker in ["AsyncFunction(\"", "Function(\""] {
+        let mut rest = code.as_str();
+        while let Some(at) = rest.find(marker) {
+            let after = rest.get(at + marker.len()..).unwrap_or_default();
+            if let Some(name) = after.split('"').next() {
+                if !name.is_empty() {
+                    out.push(name.to_owned());
+                }
+            }
+            rest = after;
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+fn typescript_module_methods(source: &str) -> Vec<(String, bool)> {
+    let Some(start) = source.find("interface ChiavoraCoreNativeModule {") else {
+        return Vec::new();
+    };
+    let body = source
+        .get(start..)
+        .and_then(|r| r.split("\n}").next())
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for line in body.lines() {
+        let trimmed = line.trim_start();
+        // Two spaces of indent is a member; more is a parameter continuation.
+        if line.starts_with("    ") || trimmed.starts_with("//") || trimmed.starts_with('*') {
+            continue;
+        }
+        let optional = trimmed.contains("?(");
+        let Some(name) = trimmed.split(['(', '?']).next() else {
+            continue;
+        };
+        let name = name.trim();
+        if name.is_empty()
+            || !trimmed.contains('(')
+            || !name.chars().all(|c| c.is_alphanumeric() || c == '_')
+            || !name.starts_with(|c: char| c.is_ascii_lowercase())
+        {
+            continue;
+        }
+        out.push((name.to_owned(), optional));
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+#[test]
+fn the_typescript_surface_and_the_kotlin_module_agree() {
+    let main_kt = kotlin_registered_functions(&read(
+        "apps/mobile/modules/chiavora-core/android/src/main/java/ch/chiavora/core/ChiavoraCoreModule.kt",
+    ));
+    let debug_kt = kotlin_registered_functions(&read(
+        "apps/mobile/modules/chiavora-core/android/src/debug/java/ch/chiavora/core/HarnessDefinition.kt",
+    ));
+    let ts = typescript_module_methods(&read("apps/mobile/modules/chiavora-core/index.ts"));
+
+    assert!(
+        main_kt.len() > 10 && !ts.is_empty(),
+        "the reader found {} Kotlin functions and {} TypeScript methods, which \
+         means it has stopped reading one of the files rather than that the \
+         surface has shrunk",
+        main_kt.len(),
+        ts.len()
+    );
+
+    let emits_events = read(
+        "apps/mobile/modules/chiavora-core/android/src/main/java/ch/chiavora/core/ChiavoraCoreModule.kt",
+    )
+    .contains("Events(");
+    let framework_provided: &[&str] = if emits_events {
+        &["addListener", "removeListeners"]
+    } else {
+        &[]
+    };
+
+    let mut problems = Vec::new();
+    for (name, optional) in &ts {
+        let registered = main_kt.contains(name)
+            || debug_kt.contains(name)
+            || framework_provided.contains(&name.as_str());
+        if !registered {
+            problems.push(format!(
+                "TypeScript declares `{name}` and no Kotlin registers it: it \
+                 typechecks, passes CI, and throws on the phone"
+            ));
+        }
+        if *optional && main_kt.contains(name) {
+            problems.push(format!(
+                "`{name}` is optional in TypeScript — which says it is absent \
+                 from a release build — but it is registered in the MAIN \
+                 source set, which every build has"
+            ));
+        }
+    }
+    let ts_names: Vec<&String> = ts.iter().map(|(n, _)| n).collect();
+    for name in &main_kt {
+        if !ts_names.contains(&name) {
+            problems.push(format!(
+                "Kotlin registers `{name}` and TypeScript does not declare it: \
+                 a caller reaches it untyped, or nothing reaches it at all"
+            ));
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "the two halves of the binding disagree, and nothing else in this \
+         repository would notice:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+#[test]
+fn the_binding_surface_reader_reads_both_halves() {
+    let kt = "class M {\n  override fun definition() = ModuleDefinition {\n    AsyncFunction(\"alpha\") { }\n    Function(\"beta\") { }\n  }\n}";
+    assert_eq!(
+        kotlin_registered_functions(kt),
+        vec!["alpha".to_owned(), "beta".to_owned()]
+    );
+
+    let commented = "class M {\n  // AsyncFunction(\"ghost\") was removed\n}";
+    assert!(
+        kotlin_registered_functions(commented).is_empty(),
+        "a commented-out registration was read as a live one"
+    );
+
+    let ts = "interface ChiavoraCoreNativeModule {\n  alpha(): Promise<void>;\n  beta?(x: number): Promise<void>;\n}";
+    assert_eq!(
+        typescript_module_methods(ts),
+        vec![("alpha".to_owned(), false), ("beta".to_owned(), true)]
+    );
+
+    let with_listener = concat!(
+        "interface ChiavoraCoreNativeModule {\n",
+        "  addListener(e: 'x', l: () => void): { remove: () => void };\n}"
+    );
+    assert_eq!(
+        typescript_module_methods(with_listener),
+        vec![("addListener".to_owned(), false)]
+    );
+}
+
 const TEXT_LEAVING_THE_WINDOW: [(&str, &str); 6] = [
     ("a notification", "NotificationCompat"),
     ("a notification", "Notification.Builder"),

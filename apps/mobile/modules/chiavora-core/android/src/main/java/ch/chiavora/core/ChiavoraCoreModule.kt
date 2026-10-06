@@ -119,6 +119,7 @@ class ChiavoraCoreModule : Module() {
                 activity,
                 files,
                 java.util.concurrent.Executors.newSingleThreadExecutor(),
+                lockPolicy().maxFailedAttempts.toInt(),
             )
             val protection = vault.rollbackProtection(
                 storePath(files),

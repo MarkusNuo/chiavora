@@ -20,6 +20,7 @@ internal object VaultKeys {
     private const val WRAPPED_MUK_FILE = "muk.wrapped"
     private const val SECRET_KEY_FILE = "secret-key.wrapped"
     private const val ACCOUNT_ID_FILE = "account-id"
+    private const val FAILED_ATTEMPTS_FILE = "biometric-failures"
 
     suspend fun storeWrappedMukAuthenticated(
         activity: FragmentActivity,
@@ -58,15 +59,30 @@ internal object VaultKeys {
         }
     }
 
-    suspend fun unlock(activity: FragmentActivity, filesDir: File, executor: Executor): MobileVault {
+    suspend fun unlock(
+        activity: FragmentActivity,
+        filesDir: File,
+        executor: Executor,
+        maxFailedAttempts: Int,
+    ): MobileVault {
         val cipher = DeviceKeys.unlockCipherForMuk(readIv(filesDir))
-        val authenticated =
-            authenticate(activity, executor, cipher, "Your fingerprint releases the key that opens the vault")
+        val authenticated = authenticate(
+            activity,
+            executor,
+            cipher,
+            "Your fingerprint releases the key that opens the vault",
+        ) {
+            // At each rejected finger, since the prompt stays up for more tries.
+            if (recordBiometricFailure(filesDir) >= maxFailedAttempts) {
+                wipeBiometricUnlock(filesDir)
+            }
+        }
         val sealed = readCiphertext(filesDir)
 
         var plaintext: ByteArray? = null
         try {
             plaintext = authenticated.doFinal(sealed)
+            clearFailedAttempts(filesDir)
             return MobileVault.fromStoredMuk(plaintext)
         } finally {
             plaintext?.fill(0)
@@ -108,7 +124,35 @@ internal object VaultKeys {
         return if (file.exists()) file.readBytes() else null
     }
 
+    /** A file, so killing the app does not reset it; only a rejected finger counts. */
+    fun recordBiometricFailure(filesDir: File): Int {
+        val next = readFailedAttempts(filesDir) + 1
+        File(filesDir, FAILED_ATTEMPTS_FILE).writeText(next.toString())
+        return next
+    }
+
+    fun readFailedAttempts(filesDir: File): Int {
+        val file = File(filesDir, FAILED_ATTEMPTS_FILE)
+        if (!file.exists()) return 0
+        // Unparseable reads as zero, so a corrupt file cannot wipe the biometric unlock.
+        return file.readText().trim().toIntOrNull() ?: 0
+    }
+
+    fun clearFailedAttempts(filesDir: File) {
+        File(filesDir, FAILED_ATTEMPTS_FILE).delete()
+    }
+
+    /** Keeps the Secret Key (I8), so the account password still opens the vault (§2.4). */
+    fun wipeBiometricUnlock(filesDir: File) {
+        File(filesDir, WRAPPED_MUK_FILE).delete()
+        if (DeviceKeys.exists(DeviceKeys.MUK_WRAPPING_KEY_ALIAS)) {
+            DeviceKeys.delete(DeviceKeys.MUK_WRAPPING_KEY_ALIAS)
+        }
+        clearFailedAttempts(filesDir)
+    }
+
     fun forget(filesDir: File) {
+        File(filesDir, FAILED_ATTEMPTS_FILE).delete()
         File(filesDir, ACCOUNT_ID_FILE).delete()
         File(filesDir, WRAPPED_MUK_FILE).delete()
         File(filesDir, SECRET_KEY_FILE).delete()
@@ -135,6 +179,7 @@ internal object VaultKeys {
         executor: Executor,
         cipher: Cipher,
         reason: String,
+        onFailedAttempt: () -> Unit = {},
     ): Cipher =
         // UI-THREAD: the biometric prompt must be shown on the main thread; nothing else is.
         withContext(Dispatchers.Main) {
@@ -157,6 +202,10 @@ internal object VaultKeys {
                     override fun onAuthenticationError(code: Int, message: CharSequence) {
                         // Not counted: a cancel, a hardware error or the platform's lockout.
                         continuation.resumeWithException(IllegalStateException("biometric error $code: $message"))
+                    }
+
+                    override fun onAuthenticationFailed() {
+                        onFailedAttempt()
                     }
                 },
             )

@@ -369,7 +369,10 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 108] = [
+/// Each reason starts with one of `REASON_KINDS`: covered elsewhere (reached only through a
+/// fuzzed function), safe by construction (nothing to parse or mis-trust), or
+/// not a boundary (the bytes come from this crate).
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 111] = [
     (
         "core/src/manifest.rs",
         "conflict_item_id",
@@ -948,6 +951,21 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 108] = [
         "core/src/srp.rs",
         "server_proof",
         "SAFE BY CONSTRUCTION: the same argument as client_proof. `M1`          arrives at a fixed width or is refused with TranscriptFieldLength,          and the width is the hash's own associated constant rather than a          literal, so SHA-1 and SHA-256 cannot disagree about it",
+    ),
+    (
+        "core/src/request_mac.rs",
+        "decode",
+        "NOT A BOUNDARY: **nothing transmits this encoding.** Only the tag goes          on the wire; the MAC input is built on both sides from values they          already hold, so `decode`'s only inputs are what `encode` produced in          this crate's own tests. It exists so the format version is a value          somebody consumes rather than a constant nobody reads, and so that          `decode(encode(x)) == x` can stand as an injectivity proof stronger          than a sampled collision hunt. It is also safe by construction --          `split_at_checked` and `try_into` throughout, no indexing, and no          allocation sized by an unvalidated length -- but that is the second          reason, not the first. **If anything ever feeds it bytes from          outside this crate, this row is wrong and it belongs in PARSERS with          a target.**",
+    ),
+    (
+        "core/src/request_mac.rs",
+        "tags_match",
+        "NOT A BOUNDARY: it parses nothing and allocates nothing. It compares          two slices and decides on their lengths first, which is safe because          a tag's length is public. What it is *for* is a property no fuzzer          can observe -- that the comparison does not return early -- and that          claim is `subtle`'s. The same classification and the same reasoning          as `srp::proofs_match`, which it is a copy of for a different key",
+    ),
+    (
+        "core/src/request_mac.rs",
+        "body_hash",
+        "SAFE BY CONSTRUCTION: it is one `Sha256::digest` call over whatever          slice it is handed, and returns 32 bytes for every input. There is no          parse, no branch on contents and no allocation sized by the body          beyond the digest. It exists so the body's hash function is one          decision in one place rather than one per call site",
     ),
     (
         "core/src/srp.rs",

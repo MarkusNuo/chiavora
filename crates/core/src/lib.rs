@@ -30,6 +30,7 @@ pub mod onepif;
 pub mod onepux;
 pub mod passphrase;
 pub mod provision;
+pub mod request_mac;
 pub mod rotation;
 #[cfg(test)]
 pub(crate) mod scan;

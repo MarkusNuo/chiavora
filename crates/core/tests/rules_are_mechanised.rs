@@ -2915,6 +2915,185 @@ fn the_toolchain_pin_parser_distinguishes_a_version_from_a_channel() {
     );
 }
 
+/// `crates/core`'s dependencies that are cryptographic constructions, which no
+/// crate above `core` may depend on (§3.2).
+const CRYPTOGRAPHIC_CRATES: [(&str, &str); 10] = [
+    ("argon2", "the password KDF (§2.1)"),
+    ("hkdf", "every derivation from a high-entropy secret (§2.1)"),
+    ("sha2", "HKDF's hash, and SRP's H_x and H_proto"),
+    ("hmac", "the store and export MACs, and the request MAC"),
+    ("subtle", "constant-time comparison"),
+    ("chacha20poly1305", "the AEAD (§2.2)"),
+    ("x25519-dalek", "the account key agreement (§2.4)"),
+    ("hpke", "the sealed Vault Key (0x06)"),
+    ("crypto-bigint", "SRP-6a's modular arithmetic (§2.3)"),
+    (
+        "getrandom",
+        "the CSPRNG. R3: one call site, and it is in `core`",
+    ),
+];
+
+const NOT_CRYPTOGRAPHIC: [(&str, &str); 9] = [
+    (
+        "zeroize",
+        "hygiene, not a construction. `ffi-mobile` uses it directly and says why",
+    ),
+    ("region", "mlock. A memory syscall"),
+    ("rusqlite", "the local store's file format"),
+    (
+        "serde",
+        "serialisation. What it must never serialise is I1's problem",
+    ),
+    (
+        "serde_json",
+        "the vector files and the native export container",
+    ),
+    ("unicode-normalization", "NFKD for passphrase input (§2.1)"),
+    (
+        "unicode-general-category",
+        "the category lookup NFKD normalisation needs",
+    ),
+    ("miniz_oxide", "compression"),
+    ("chiavora-protocol", "this workspace's wire types"),
+];
+
+fn manifest_dependencies(manifest: &str) -> Vec<String> {
+    let Some(after) = manifest.split("[dependencies]").nth(1) else {
+        return Vec::new();
+    };
+    let body = after.split("\n[").next().unwrap_or("");
+    let mut out = Vec::new();
+    for line in body.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some(name) = line.split_whitespace().next() else {
+            continue;
+        };
+        let name = name.trim_end_matches('=').trim();
+        if !name.is_empty() {
+            out.push(name.to_owned());
+        }
+    }
+    out
+}
+
+#[test]
+fn every_dependency_of_core_is_classified_as_cryptographic_or_not() {
+    let mut actual = manifest_dependencies(&read("crates/core/Cargo.toml"));
+    actual.sort_unstable();
+    actual.dedup();
+
+    let mut classified: Vec<String> = CRYPTOGRAPHIC_CRATES
+        .iter()
+        .chain(NOT_CRYPTOGRAPHIC.iter())
+        .map(|(name, _)| (*name).to_owned())
+        .collect();
+    classified.sort_unstable();
+    classified.dedup();
+
+    assert_eq!(
+        actual, classified,
+        "the two classification lists must equal `crates/core`'s dependencies. \
+         A crate in `core` and in neither list is one the scan below will not \
+         look for; a crate in a list and not in `core` is a name nobody checks \
+         any more"
+    );
+
+    for (name, reason) in CRYPTOGRAPHIC_CRATES.iter().chain(NOT_CRYPTOGRAPHIC.iter()) {
+        assert!(
+            reason.len() > 10,
+            "{name}'s classification must say what it is for, not merely which \
+             list it is on"
+        );
+    }
+}
+
+#[test]
+fn no_crate_above_core_depends_on_a_cryptographic_crate() {
+    let mut problems: Vec<String> = Vec::new();
+
+    for dir in CRATES_ABOVE_CORE {
+        let crate_dir = dir.trim_end_matches("/src");
+        let manifest_path = root().join(crate_dir).join("Cargo.toml");
+        let Ok(manifest) = std::fs::read_to_string(&manifest_path) else {
+            continue;
+        };
+        for dep in manifest_dependencies(&manifest) {
+            if let Some((name, purpose)) =
+                CRYPTOGRAPHIC_CRATES.iter().find(|(name, _)| *name == dep)
+            {
+                problems.push(format!(
+                    "{crate_dir} depends on `{name}` ({purpose}). Crates above \
+                     `core` do not do cryptography of their own -- §3.2 is one \
+                     implementation, and hard rule 1's primitive list is about \
+                     this workspace, not about one crate in it. Route it through \
+                     `chiavora-core`, or if there is genuinely no way, that is an \
+                     ADR before it is a dependency"
+                ));
+            }
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "a crate above `core` has taken a cryptographic dependency:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+#[test]
+fn the_cryptographic_dependency_scan_would_notice_one() {
+    let planted = "[package]\nname = \"x\"\n\n[dependencies]\n\
+                   chiavora-core = { workspace = true }\n\
+                   hmac = \"0.12\"\n\n[dev-dependencies]\nhex = \"0.4\"\n";
+    let deps = manifest_dependencies(planted);
+    assert!(
+        deps.contains(&"hmac".to_owned()),
+        "a cryptographic dependency must be seen"
+    );
+    assert!(
+        deps.contains(&"chiavora-core".to_owned()),
+        "and an ordinary one must be too, or the parser is reading one line"
+    );
+    assert!(
+        !deps.contains(&"hex".to_owned()),
+        "`[dev-dependencies]` must not be read as `[dependencies]`: test \
+         machinery is not the shipping dependency graph, which is the same \
+         distinction `r4_every_dependency_of_core_appears_in_adr_0002` makes \
+         for x25519-dalek"
+    );
+    assert!(
+        CRYPTOGRAPHIC_CRATES.iter().any(|(name, _)| *name == "hmac"),
+        "`hmac` must be on the list, or the planted case proves nothing"
+    );
+
+    let reached = CRATES_ABOVE_CORE
+        .iter()
+        .filter(|dir| {
+            root()
+                .join(dir.trim_end_matches("/src"))
+                .join("Cargo.toml")
+                .is_file()
+        })
+        .count();
+    assert_eq!(
+        reached,
+        CRATES_ABOVE_CORE.len(),
+        "every crate above `core` must have a manifest this scan can read; \
+         {reached} of {} were found",
+        CRATES_ABOVE_CORE.len()
+    );
+
+    let server = read("crates/server/Cargo.toml");
+    assert!(
+        manifest_dependencies(&server).contains(&"chiavora-core".to_owned()),
+        "crates/server must depend on chiavora-core; without it this change's \
+         premise -- one SRP implementation, shared -- is not true"
+    );
+}
+
 /// Keeps `Path` in use on every platform without a `cfg`.
 #[allow(dead_code)]
 fn _unused(_: &Path) {}

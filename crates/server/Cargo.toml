@@ -9,3 +9,5 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+# The only cryptographic dependency: one SRP implementation, shared with the client.
+chiavora-core = { workspace = true }

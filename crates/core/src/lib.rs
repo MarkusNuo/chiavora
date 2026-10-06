@@ -21,6 +21,7 @@ pub mod import;
 pub mod item;
 pub(crate) mod keywrap;
 pub mod lastpass;
+pub mod lock_policy;
 pub mod manifest;
 pub mod model;
 pub mod nonce;

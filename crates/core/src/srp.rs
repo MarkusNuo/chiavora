@@ -464,6 +464,94 @@ pub fn proofs_match(left: &[u8], right: &[u8]) -> bool {
     left.ct_eq(right).into()
 }
 
+pub const SRP_SEED_KEY_LEN: usize = 32;
+
+const INFO_FAKE_SALT: &[u8] = b"chiavora-srp-fake-salt";
+const INFO_FAKE_X: &[u8] = b"chiavora-srp-fake-x";
+/// Its own label, so that no bytes of `x'` reach the wire.
+const INFO_FAKE_ACCOUNT: &[u8] = b"chiavora-srp-fake-account";
+/// Matches `emergency_kit::ACCOUNT_ID_LEN`.
+const FAKE_ACCOUNT_ID_LEN: usize = 16;
+
+/// Public values; only the seed key they come from is secret.
+#[derive(Debug, Clone)]
+pub struct FakeCredentials {
+    pub account_id: Vec<u8>,
+    pub srp_salt: Vec<u8>,
+    pub verifier: Vec<u8>,
+}
+
+/// Fabricates `(srpSalt', v')` for an identifier with no account, as RFC 5054 §2.5.1.3 suggests.
+/// `identifier` must be normalised exactly as the real lookup normalises it. Rotating the seed
+/// changes every fabricated answer, which anyone probing can see.
+pub fn fake_credentials(
+    group: Group,
+    seed: &[u8],
+    identifier: &[u8],
+) -> Result<FakeCredentials, SrpError> {
+    if seed.len() != SRP_SEED_KEY_LEN {
+        return Err(SrpError::TranscriptFieldLength);
+    }
+    let salt = hmac_sha256(seed, INFO_FAKE_SALT, identifier)?;
+    let x = Secret::from_derived_bytes(hmac_sha256(seed, INFO_FAKE_X, identifier)?);
+    let v = verifier(group, &x)?;
+    let account = hmac_sha256(seed, INFO_FAKE_ACCOUNT, identifier)?;
+    Ok(FakeCredentials {
+        // Cannot fail for a 32-byte HMAC; propagated rather than absorbed.
+        account_id: account
+            .get(..FAKE_ACCOUNT_ID_LEN)
+            .ok_or(SrpError::Precision)?
+            .to_vec(),
+        srp_salt: salt,
+        verifier: pad(&v, group),
+    })
+}
+
+fn hmac_sha256(key: &[u8], label: &[u8], message: &[u8]) -> Result<Vec<u8>, SrpError> {
+    use hmac::Mac as _;
+    let mut mac = <hmac::Hmac<Sha256> as hmac::Mac>::new_from_slice(key)
+        .map_err(|_| SrpError::TranscriptFieldLength)?;
+    mac.update(label);
+    mac.update(message);
+    Ok(mac.finalize().into_bytes().to_vec())
+}
+
+/// Chooses between a stored pair and a fabricated one without branching on which.
+/// The caller must compute the fabricated pair on every attempt, so both paths do the same work;
+/// only the lookup that produced the `Option` is outside this function's constant-time claim.
+pub fn select_credentials(
+    stored: Option<(&[u8], &[u8])>,
+    fake: &FakeCredentials,
+) -> Result<(Vec<u8>, Vec<u8>), SrpError> {
+    use subtle::{Choice, ConditionallySelectable as _};
+
+    if let Some((salt, verifier_bytes)) = stored {
+        if salt.len() != SRP_SALT_LEN || verifier_bytes.len() != SRP_VERIFIER_LEN {
+            return Err(SrpError::TranscriptFieldLength);
+        }
+    }
+    if fake.srp_salt.len() != SRP_SALT_LEN || fake.verifier.len() != SRP_VERIFIER_LEN {
+        return Err(SrpError::TranscriptFieldLength);
+    }
+
+    // R1: `None` means no account, and the fabricated pair is the answer, not a fallback.
+    let (salt_src, verifier_src) =
+        stored.unwrap_or((fake.srp_salt.as_slice(), fake.verifier.as_slice()));
+    let exists = Choice::from(u8::from(stored.is_some()));
+
+    let pick = |left: &[u8], right: &[u8]| -> Vec<u8> {
+        left.iter()
+            .zip(right.iter())
+            .map(|(a, b)| u8::conditional_select(b, a, exists))
+            .collect()
+    };
+
+    Ok((
+        pick(salt_src, &fake.srp_salt),
+        pick(verifier_src, &fake.verifier),
+    ))
+}
+
 /// What a completed server-side exchange yields; `M2` goes on the wire, the keys do not.
 #[derive(Debug)]
 pub struct ServerExchange {

@@ -13,6 +13,7 @@ pub enum AuthRecordError {
     SaltLength,
     VerifierLength,
     ClientPublicLength,
+    SeedKeyLength,
     /// What the caller is told is the endpoint's decision.
     Srp(SrpError),
 }
@@ -24,6 +25,9 @@ impl core::fmt::Display for AuthRecordError {
             Self::SaltLength => f.write_str("srpSalt is not 32 bytes; refusing"),
             Self::VerifierLength => f.write_str("the verifier is not 512 bytes; refusing"),
             Self::ClientPublicLength => f.write_str("A is not 512 bytes; refusing"),
+            Self::SeedKeyLength => {
+                f.write_str("the pre-auth seed key is not 32 bytes; refusing to start")
+            }
             Self::Srp(inner) => write!(f, "the SRP exchange was refused: {inner}"),
         }
     }

@@ -369,7 +369,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 106] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 108] = [
     (
         "core/src/manifest.rs",
         "conflict_item_id",
@@ -948,6 +948,16 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 106] = [
         "core/src/srp.rs",
         "server_proof",
         "SAFE BY CONSTRUCTION: the same argument as client_proof. `M1`          arrives at a fixed width or is refused with TranscriptFieldLength,          and the width is the hash's own associated constant rather than a          literal, so SHA-1 and SHA-256 cannot disagree about it",
+    ),
+    (
+        "core/src/srp.rs",
+        "fake_credentials",
+        "SAFE BY CONSTRUCTION: `seed` is refused at any width but 32 -- the one          check in this module that R10 is about, because an empty seed raises          no error anywhere and makes every unknown identifier share a          fabricated salt. `identifier` is genuinely attacker-chosen and          genuinely free-length, and it reaches two HMAC updates and nothing          else: no parse, no branch on contents, no allocation sized by it.          `Mac::update` takes any slice, so the panic a fuzzer would look for          cannot happen",
+    ),
+    (
+        "core/src/srp.rs",
+        "select_credentials",
+        "SAFE BY CONSTRUCTION: both slices are refused at any width but their          fixed ones, and what follows is a byte-wise conditional select over          two equal-length buffers. The interesting property here is not          memory safety but that it does not branch on which side it picks,          which no fuzzer can observe -- that claim is `subtle`'s and is          asserted structurally by the operation trace in          `crates/server/tests/both_doors_are_closed.rs`",
     ),
     (
         "core/src/srp.rs",

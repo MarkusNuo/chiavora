@@ -408,6 +408,7 @@ dependencies = [
  "chiavora-core",
  "crypto-bigint",
  "trybuild",
+ "zeroize",
 ]
 
 [[package]]

@@ -11,6 +11,8 @@ workspace = true
 [dependencies]
 # The only cryptographic dependency: one SRP implementation, shared with the client.
 chiavora-core = { workspace = true }
+# Hygiene, not cryptography: the seed key is zeroized on drop.
+zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
 [dev-dependencies]
 # Tests only: they play the client's half, which needs big integers.

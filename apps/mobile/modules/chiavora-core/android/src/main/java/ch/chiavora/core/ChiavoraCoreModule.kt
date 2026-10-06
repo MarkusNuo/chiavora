@@ -212,6 +212,19 @@ class ChiavoraCoreModule : Module() {
             true
         }
 
+        AsyncFunction("copySecret") { label: String, secret: String ->
+            val applied = SecretClipboard.copy(
+                androidContext(),
+                label,
+                secret,
+                lockPolicy().clipboardTtlSeconds.toInt(),
+            )
+            mapOf(
+                "ttlSeconds" to lockPolicy().clipboardTtlSeconds.toInt(),
+                "sensitiveFlag" to applied.sensitiveFlag,
+            )
+        }
+
         AsyncFunction("lockPolicy") {
             val policy = lockPolicy()
             mapOf(

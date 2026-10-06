@@ -18,6 +18,7 @@ export function ItemDetail({
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set());
+  const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -50,6 +51,17 @@ export function ItemDetail({
     };
   }, []);
 
+  const copy = useCallback((name: string, value: string) => {
+    void (async () => {
+      const outcome = await ChiavoraCore.copySecret(name, value);
+      setCopied(
+        outcome.sensitiveFlag
+          ? `${name} copied — cleared in ${outcome.ttlSeconds}s, hidden from clipboard previews`
+          : `${name} copied — cleared in ${outcome.ttlSeconds}s. This Android version has no sensitive-clipboard flag, so the timer is the only protection.`,
+      );
+    })();
+  }, []);
+
   const toggle = useCallback((name: string) => {
     setRevealed((current) => {
       const next = new Set(current);
@@ -76,6 +88,12 @@ export function ItemDetail({
           </View>
         ) : null}
 
+        {copied !== null ? (
+          <View style={s.notice}>
+            <Text style={s.noticeText}>{copied}</Text>
+          </View>
+        ) : null}
+
         {(detail?.fields ?? []).map((field) => {
           const shown = !field.concealed || revealed.has(field.name);
           return (
@@ -93,16 +111,28 @@ export function ItemDetail({
                 <Text style={s.fieldConcealed}>{'•'.repeat(12)}</Text>
               )}
               {field.concealed ? (
-                <Pressable
-                  style={s.reveal}
-                  onPress={() => {
-                    toggle(field.name);
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${shown ? 'Hide' : 'Reveal'} ${field.name}`}
-                >
-                  <Text style={s.revealLabel}>{shown ? 'Hide' : 'Reveal'}</Text>
-                </Pressable>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Pressable
+                    style={s.reveal}
+                    onPress={() => {
+                      toggle(field.name);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${shown ? 'Hide' : 'Reveal'} ${field.name}`}
+                  >
+                    <Text style={s.revealLabel}>{shown ? 'Hide' : 'Reveal'}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={s.reveal}
+                    onPress={() => {
+                      copy(field.name, field.value);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Copy ${field.name}`}
+                  >
+                    <Text style={s.revealLabel}>Copy</Text>
+                  </Pressable>
+                </View>
               ) : null}
             </View>
           );

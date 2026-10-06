@@ -75,6 +75,11 @@ export interface LockPolicy {
   readonly provisional: boolean;
 }
 
+export interface CopyOutcome {
+  readonly ttlSeconds: number;
+  readonly sensitiveFlag: boolean;
+}
+
 export type LockReason = 'manual' | 'backgrounded' | 'idle';
 
 export interface KeystoreReport {
@@ -139,6 +144,8 @@ interface ChiavoraCoreNativeModule {
   forgetDevice(): Promise<boolean>;
 
   lockPolicy(): Promise<LockPolicy>;
+  /** `label` may be shown by the OS, so it is a field name, never a value. */
+  copySecret(label: string, secret: string): Promise<CopyOutcome>;
   holdSecureForGeneratedValue(holding: boolean): Promise<boolean>;
   filterObscuredTouches(filtering: boolean): Promise<boolean>;
   reapplyWindowFlags(): Promise<boolean>;

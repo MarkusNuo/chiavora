@@ -1248,7 +1248,6 @@ fn no_secret_leaves_the_apps_own_window() {
             problems.push(format!("{file}: {problem}"));
         }
     }
-
     assert!(
         problems.is_empty(),
         "LEAVES-WINDOW: text reaches a surface outside the app's own window, where a \
@@ -1452,6 +1451,9 @@ const CRATES_ABOVE_CORE: [&str; 4] = [
     "apps/cli/src",
 ];
 
+/// Empty: the keystore MUK re-enters through `device::muk_from_keystore`.
+const PERMITTED_DERIVED_DOORS: [(&str, &str); 0] = [];
+
 #[test]
 fn the_muk_has_one_door_back_into_core() {
     let mut problems: Vec<String> = Vec::new();
@@ -1462,8 +1464,12 @@ fn the_muk_has_one_door_back_into_core() {
         for path in files {
             let source = production(&std::fs::read_to_string(&path).expect("a source file"));
             if source.contains("from_derived_bytes") {
-                let name = path.to_string_lossy().replace('\\', "/");
-                let short = name.rsplit("chiavora/").next().unwrap_or(&name).to_owned();
+                // Repo-relative, so a `PERMITTED_DERIVED_DOORS` row matches in any checkout.
+                let short = path
+                    .strip_prefix(root())
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
                 problems.push(format!(
                     "{short} calls `Secret::from_derived_bytes`. The one door for key \
                      material re-entering `core` from a platform keystore is \
@@ -1473,11 +1479,40 @@ fn the_muk_has_one_door_back_into_core() {
             }
         }
     }
+
+    let unlisted: Vec<&String> = problems
+        .iter()
+        .filter(|problem| {
+            !PERMITTED_DERIVED_DOORS
+                .iter()
+                .any(|(path, _)| problem.starts_with(path))
+        })
+        .collect();
     assert!(
-        problems.is_empty(),
-        "the MUK's door is no longer single:\n  {}",
-        problems.join("\n  ")
+        unlisted.is_empty(),
+        "a new door for key material re-entering `core` exists and is not in \
+         PERMITTED_DERIVED_DOORS. **Adding the row is the point**: it takes a \
+         path and a sentence saying why that caller holds real key material, \
+         and the diff then reads as what it is rather than as a test fix:\n  {}",
+        unlisted
+            .iter()
+            .map(|problem| problem.as_str())
+            .collect::<Vec<_>>()
+            .join("\n  ")
     );
+
+    for (path, why) in PERMITTED_DERIVED_DOORS {
+        assert!(
+            root().join(path).is_file(),
+            "PERMITTED_DERIVED_DOORS names {path}, which does not exist. A stale \
+             permission is a hole nobody is looking at"
+        );
+        assert!(
+            why.len() > 40,
+            "{path}'s row must say what key material that caller legitimately \
+             holds, not merely that it is allowed"
+        );
+    }
 
     let device = production(&read("crates/core/src/device.rs"));
     assert!(
@@ -3186,6 +3221,42 @@ fn the_cryptographic_dependency_scan_would_notice_one() {
         manifest_dependencies(&server).contains(&"chiavora-core".to_owned()),
         "crates/server must depend on chiavora-core; without it this change's \
          premise -- one SRP implementation, shared -- is not true"
+    );
+}
+
+#[test]
+fn the_door_list_permits_only_what_it_names() {
+    let permits = |listed: &[(&str, &str)], problem: &str| {
+        !listed.iter().any(|(path, _)| problem.starts_with(path))
+    };
+
+    let problem = "crates/ffi-mobile/src/lib.rs calls `Secret::from_derived_bytes`. ...";
+
+    assert!(
+        permits(&[], problem),
+        "with nothing listed, every caller must be reported"
+    );
+    assert!(
+        !permits(&[("crates/ffi-mobile/src/lib.rs", "the MUK, from the keystore")], problem),
+        "a listed path must be permitted, or adding a row would not be a way          to record a door -- it would be a row that changes nothing"
+    );
+    assert!(
+        permits(&[("crates/ffi-node/src/lib.rs", "something else")], problem),
+        "a different listed path must not permit this one"
+    );
+
+    let sample = root().join("crates").join("server").join("src");
+    let mut files = Vec::new();
+    rs_files_under(&sample, &mut files);
+    let first = files.first().expect("crates/server/src has sources");
+    let short = first
+        .strip_prefix(root())
+        .unwrap_or(first)
+        .to_string_lossy()
+        .replace('\\', "/");
+    assert!(
+        short.starts_with("crates/server/src/"),
+        "the scan must produce repo-relative paths; got `{short}`. Until it produced an absolute path in any checkout not named `chiavora`, which was harmless while nothing matched on it"
     );
 }
 

@@ -368,7 +368,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 96] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 97] = [
     (
         "core/src/manifest.rs",
         "conflict_item_id",
@@ -498,6 +498,11 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 96] = [
         "core/src/sync.rs",
         "upload",
         "COVERED ELSEWHERE: the vaultId is an opaque key, and every byte the          server returns reaches it through StoredManifest::decode,          ManifestRoot::decode and ManifestSegment::decode -- all three in          PARSERS and all three fed by manifest_decode. What upload itself does          with those bytes is apply the read path, which is I6a-I6f and has          eighteen named tests",
+    ),
+    (
+        "core/src/sync.rs",
+        "upload_resolving",
+        "COVERED ELSEWHERE: upload's path exactly -- every server byte reaches          it through StoredManifest::decode, ManifestRoot::decode and          ManifestSegment::decode, all three in PARSERS. The one thing it adds          is the [u8; 32] a caller's ConflictCopySealer returns, which is a          digest this device computed over a record it just sealed itself, and          which the next read checks under I6d",
     ),
     (
         "core/src/manifest.rs",

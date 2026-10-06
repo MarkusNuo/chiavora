@@ -1,6 +1,6 @@
 use crate::manifest::{
-    seal_root, seal_segment, CanonicalPrefix, Entry, ManifestError, ManifestRoot, ManifestSegment,
-    RootEntry, StoredManifest,
+    seal_root, seal_segment, CanonicalPrefix, ConflictingVersion, Entry, ManifestError,
+    ManifestRoot, ManifestSegment, Resolution, RootEntry, StoredManifest,
 };
 use crate::nonce::FreshNonce;
 use crate::secret::{kind::VaultKey, Secret};
@@ -80,26 +80,115 @@ pub enum Uploaded {
     },
 }
 
-fn merge_edit(entries: &mut Vec<Entry>, edit: &StagedEdit) -> Result<(), ManifestError> {
-    let existing = entries.iter().position(|e| e.item_id() == edit.item_id());
-    match existing {
-        None => entries.push(edit.as_entry()),
-        Some(at) => {
-            let Some(theirs) = entries.get(at) else {
-                return Err(ManifestError::ItemDeliveredNotListed);
-            };
-            if edit.version() > theirs.current_version() {
+/// Re-seals the losing side of a conflict under the copy's own `itemId`. The
+/// item identity is in the payload's AAD, so the old record will not open under
+/// the new id, and the sync engine holds no Item Key to seal a new one.
+pub trait ConflictCopySealer {
+    /// Seals and stores the losing version's plaintext under `copy_item_id`, and
+    /// returns the new record's `ciphertextDigest`, not `losing`'s.
+    fn seal_conflict_copy(
+        &mut self,
+        losing: &ConflictingVersion,
+        copy_item_id: &[u8; 16],
+    ) -> Result<[u8; 32], ManifestError>;
+}
+
+struct PendingCopy {
+    losing: ConflictingVersion,
+    copy_item_id: [u8; 16],
+    /// The losing side's flag, so a losing deletion becomes a deleted copy.
+    tombstone: bool,
+}
+
+fn merge_edit(
+    entries: &mut Vec<Entry>,
+    edit: &StagedEdit,
+) -> Result<Option<PendingCopy>, ManifestError> {
+    let Some(at) = entries.iter().position(|e| e.item_id() == edit.item_id()) else {
+        entries.push(edit.as_entry());
+        return Ok(None);
+    };
+    let Some(theirs) = entries.get(at) else {
+        return Err(ManifestError::ItemDeliveredNotListed);
+    };
+    let their_version = theirs.current_version();
+    let their_tombstone = theirs.tombstone();
+    let theirs = ConflictingVersion::new(
+        theirs.item_id().to_vec(),
+        their_version,
+        *theirs.ciphertext_digest(),
+    );
+
+    if edit.version() > their_version {
+        let replacement = edit.as_entry();
+        if let Some(slot) = entries.get_mut(at) {
+            *slot = replacement;
+        }
+        return Ok(None);
+    }
+    if edit.version() < their_version {
+        return Ok(None);
+    }
+
+    let mine = ConflictingVersion::new(
+        edit.item_id().to_vec(),
+        edit.version(),
+        edit.ciphertext_digest,
+    );
+    match crate::manifest::resolve(&mine, &theirs) {
+        Resolution::SameEdit => Ok(None),
+        Resolution::Conflict {
+            primary,
+            copy,
+            copy_item_id,
+        } => {
+            // The digests differ in a conflict, so this names one side.
+            let mine_won = primary.ciphertext_digest() == &edit.ciphertext_digest;
+            if mine_won {
                 let replacement = edit.as_entry();
                 if let Some(slot) = entries.get_mut(at) {
                     *slot = replacement;
                 }
-            } else if edit.version() < theirs.current_version() {
-            } else if theirs.ciphertext_digest() != &edit.ciphertext_digest {
-                return Err(ManifestError::ConflictNeedsResolution);
             }
+            let tombstone = if mine_won {
+                their_tombstone
+            } else {
+                edit.tombstone
+            };
+            Ok(Some(PendingCopy {
+                losing: copy,
+                copy_item_id,
+                tombstone,
+            }))
         }
     }
-    Ok(())
+}
+
+fn fetch_and_verify(
+    transport: &mut impl ManifestTransport,
+    vault_key: &Secret<VaultKey>,
+    store: &Store,
+    vault_id: &[u8],
+    whole: CanonicalPrefix,
+) -> Result<(u64, Vec<Entry>), ManifestError> {
+    let Some(bytes) = transport.fetch_root()? else {
+        return Ok((0, Vec::new()));
+    };
+    let stored_root = StoredManifest::decode(&bytes)?;
+    let root = crate::manifest::open_root(vault_key, &stored_root)?;
+    root.accept(store.high_water_mark(vault_id))?;
+
+    let entries = match transport.fetch_segment(whole)? {
+        None => Vec::new(),
+        Some(segment_bytes) => {
+            let stored_segment = StoredManifest::decode(&segment_bytes)?;
+            root.accept_segment(&stored_segment)?;
+            crate::manifest::open_segment(vault_key, &stored_segment)?
+                .entries()
+                .to_vec()
+        }
+    };
+    Ok((root.manifest_seq(), entries))
 }
 
 /// Uploads staged edits by §2.5. Conflicts are refused; [`upload_resolving`] resolves them.
@@ -110,36 +199,56 @@ pub fn upload(
     vault_id: &[u8],
     staged: &[StagedEdit],
 ) -> Result<Uploaded, ManifestError> {
+    upload_inner(transport, vault_key, store, vault_id, staged, None)
+}
+
+/// As [`upload`], but a conflict's loser becomes a copy that lands in the same CAS write,
+/// so the losing edit is never absent from the manifest.
+pub fn upload_resolving(
+    transport: &mut impl ManifestTransport,
+    vault_key: &Secret<VaultKey>,
+    store: &mut Store,
+    vault_id: &[u8],
+    staged: &[StagedEdit],
+    sealer: &mut impl ConflictCopySealer,
+) -> Result<Uploaded, ManifestError> {
+    upload_inner(transport, vault_key, store, vault_id, staged, Some(sealer))
+}
+
+fn upload_inner(
+    transport: &mut impl ManifestTransport,
+    vault_key: &Secret<VaultKey>,
+    store: &mut Store,
+    vault_id: &[u8],
+    staged: &[StagedEdit],
+    mut sealer: Option<&mut dyn ConflictCopySealer>,
+) -> Result<Uploaded, ManifestError> {
     let whole = CanonicalPrefix::new(0, 0)?;
 
-    let latest_seq;
-    let mut entries: Vec<Entry>;
-    match transport.fetch_root()? {
-        None => {
-            latest_seq = 0;
-            entries = Vec::new();
-        }
-        Some(bytes) => {
-            let stored_root = StoredManifest::decode(&bytes)?;
-            let root = crate::manifest::open_root(vault_key, &stored_root)?;
-            root.accept(store.high_water_mark(vault_id))?;
-            latest_seq = root.manifest_seq();
+    let (latest_seq, mut entries) = fetch_and_verify(transport, vault_key, store, vault_id, whole)?;
 
-            entries = match transport.fetch_segment(whole)? {
-                None => Vec::new(),
-                Some(segment_bytes) => {
-                    let stored_segment = StoredManifest::decode(&segment_bytes)?;
-                    root.accept_segment(&stored_segment)?;
-                    crate::manifest::open_segment(vault_key, &stored_segment)?
-                        .entries()
-                        .to_vec()
-                }
-            };
+    let mut pending: Vec<PendingCopy> = Vec::new();
+    for edit in staged {
+        if let Some(copy) = merge_edit(&mut entries, edit)? {
+            pending.push(copy);
         }
     }
 
-    for edit in staged {
-        merge_edit(&mut entries, edit)?;
+    for copy in pending {
+        let Some(sealer) = sealer.as_deref_mut() else {
+            return Err(ManifestError::ConflictNeedsResolution);
+        };
+        if entries.iter().any(|e| e.item_id() == copy.copy_item_id) {
+            continue;
+        }
+        let digest = sealer.seal_conflict_copy(&copy.losing, &copy.copy_item_id)?;
+        entries.push(Entry::new(
+            copy.copy_item_id.to_vec(),
+            1,
+            digest,
+            copy.tombstone,
+            Vec::new(),
+        ));
     }
     let next = latest_seq.saturating_add(1);
     let segment = ManifestSegment::new(

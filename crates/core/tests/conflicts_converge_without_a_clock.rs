@@ -1,8 +1,22 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
+use chiavora_core::aad::AadFields;
 use chiavora_core::manifest::{
-    conflict_item_id, hash_item_id, resolve, ConflictingVersion, Resolution,
+    conflict_item_id, hash_item_id, open_segment, resolve, CanonicalPrefix, ConflictingVersion,
+    Entry, ManifestError, Resolution, StoredManifest,
+};
+use chiavora_core::secret::{
+    kind::{Muk, VaultKey},
+    Secret,
+};
+use chiavora_core::store::{Store, Unanchored};
+use chiavora_core::sync::{
+    upload, upload_resolving, CasRefused, ConflictCopySealer, ManifestTransport, StagedEdit,
+    Uploaded,
 };
 use sha2::{Digest, Sha256};
+
+const VAULT: &[u8] = b"vault-1";
 
 fn digest(fill: u8) -> [u8; 32] {
     [fill; 32]
@@ -220,4 +234,440 @@ fn a_conflict_copy_hashes_independently_of_its_primary() {
         "over 64 conflicts, no copy landed on the other side of a one-bit \
          split — the derived id is not hashing independently"
     );
+}
+
+struct OneServer {
+    root: Option<Vec<u8>>,
+    segment: Option<Vec<u8>>,
+    current_seq: u64,
+    writes_accepted: usize,
+}
+
+impl OneServer {
+    const fn empty() -> Self {
+        Self {
+            root: None,
+            segment: None,
+            current_seq: 0,
+            writes_accepted: 0,
+        }
+    }
+
+    fn seq_of(bytes: &[u8]) -> u64 {
+        let stored = StoredManifest::decode(bytes).expect("well-formed");
+        match stored.fields() {
+            AadFields::ManifestRoot { manifest_seq, .. } => *manifest_seq,
+            _ => panic!("not a root"),
+        }
+    }
+
+    fn entries(&self, key: &Secret<VaultKey>) -> Vec<Entry> {
+        let Some(bytes) = self.segment.as_ref() else {
+            return Vec::new();
+        };
+        let stored = StoredManifest::decode(bytes).expect("well-formed");
+        open_segment(key, &stored)
+            .expect("opens")
+            .entries()
+            .to_vec()
+    }
+
+    fn entry(&self, key: &Secret<VaultKey>, id: &[u8]) -> Option<Entry> {
+        self.entries(key).into_iter().find(|e| e.item_id() == id)
+    }
+}
+
+impl ManifestTransport for OneServer {
+    fn fetch_root(&mut self) -> Result<Option<Vec<u8>>, ManifestError> {
+        Ok(self.root.clone())
+    }
+
+    fn fetch_segment(
+        &mut self,
+        _prefix: CanonicalPrefix,
+    ) -> Result<Option<Vec<u8>>, ManifestError> {
+        Ok(self.segment.clone())
+    }
+
+    fn compare_and_swap(&mut self, root: &[u8], segments: &[Vec<u8>]) -> Result<(), CasRefused> {
+        let offered = Self::seq_of(root);
+        if offered != self.current_seq + 1 {
+            return Err(CasRefused {
+                current_manifest_seq: self.current_seq,
+            });
+        }
+        self.root = Some(root.to_vec());
+        self.segment = segments.first().cloned();
+        self.current_seq = offered;
+        self.writes_accepted += 1;
+        Ok(())
+    }
+}
+
+fn vault_key() -> Secret<VaultKey> {
+    Secret::<VaultKey>::from_derived_bytes(vec![0x22; 32])
+}
+
+fn store() -> Store {
+    Store::open_in_memory(
+        &Secret::<Muk>::from_derived_bytes(vec![0x4D; 32]),
+        Box::new(Unanchored),
+    )
+    .expect("store")
+}
+
+fn edit(id: &[u8], version: u64, fill: u8) -> StagedEdit {
+    StagedEdit::new(id.to_vec(), version, digest(fill), false)
+}
+
+/// Stands in for re-sealing the loser under the copy's `itemId`; a flipped byte
+/// models the fresh nonce, so the copy's digest is never the loser's.
+#[derive(Default)]
+struct RecordingSealer {
+    calls: Vec<(Vec<u8>, [u8; 16])>,
+    refuses: bool,
+}
+
+impl RecordingSealer {
+    fn refusing() -> Self {
+        Self {
+            calls: Vec::new(),
+            refuses: true,
+        }
+    }
+}
+
+impl ConflictCopySealer for RecordingSealer {
+    fn seal_conflict_copy(
+        &mut self,
+        losing: &ConflictingVersion,
+        copy_item_id: &[u8; 16],
+    ) -> Result<[u8; 32], ManifestError> {
+        if self.refuses {
+            return Err(ManifestError::TransportFailed);
+        }
+        self.calls.push((losing.item_id().to_vec(), *copy_item_id));
+        let mut resealed = *losing.ciphertext_digest();
+        if let Some(b) = resealed.first_mut() {
+            *b ^= 0xFF;
+        }
+        Ok(resealed)
+    }
+}
+
+fn vault_holding(server: &mut OneServer, key: &Secret<VaultKey>, id: &[u8], fill: u8) {
+    let mut other_device = store();
+    upload(server, key, &mut other_device, VAULT, &[edit(id, 4, fill)]).expect("the other device");
+}
+
+#[test]
+fn a_resolved_conflict_lands_as_one_cas_write_carrying_both_versions() {
+    let key = vault_key();
+    let mut server = OneServer::empty();
+    vault_holding(&mut server, &key, b"login-bank", 0x5C);
+    let before = server.writes_accepted;
+
+    let mut me = store();
+    let mut sealer = RecordingSealer::default();
+    let out = upload_resolving(
+        &mut server,
+        &key,
+        &mut me,
+        VAULT,
+        &[edit(b"login-bank", 4, 0xA1)],
+        &mut sealer,
+    )
+    .expect("resolves and uploads");
+
+    assert_eq!(out, Uploaded::Written { manifest_seq: 2 });
+    assert_eq!(
+        server.writes_accepted - before,
+        1,
+        "two writes leave a window in which one of the two passwords is in no \
+         manifest at all"
+    );
+
+    let copy_id = conflict_item_id(b"login-bank", &digest(0xA1));
+    assert!(
+        server.entry(&key, b"login-bank").is_some(),
+        "the primary is gone"
+    );
+    assert!(
+        server.entry(&key, &copy_id).is_some(),
+        "the copy is not in the manifest the single write produced"
+    );
+}
+
+#[test]
+fn the_smaller_digest_keeps_the_original_item_id() {
+    let key = vault_key();
+    let mut server = OneServer::empty();
+    vault_holding(&mut server, &key, b"login-bank", 0x5C);
+
+    let mut me = store();
+    let mut sealer = RecordingSealer::default();
+    upload_resolving(
+        &mut server,
+        &key,
+        &mut me,
+        VAULT,
+        &[edit(b"login-bank", 4, 0xA1)],
+        &mut sealer,
+    )
+    .expect("resolves");
+
+    let primary = server.entry(&key, b"login-bank").expect("primary");
+    assert_eq!(
+        primary.ciphertext_digest(),
+        &digest(0x5C),
+        "0xA1 displaced the smaller digest from the original id"
+    );
+    assert_eq!(
+        sealer.calls.len(),
+        1,
+        "the sealer is asked for exactly the losing side"
+    );
+}
+
+#[test]
+fn the_copys_entry_carries_the_resealed_digest_and_not_the_losers() {
+    let key = vault_key();
+    let mut server = OneServer::empty();
+    vault_holding(&mut server, &key, b"login-bank", 0x5C);
+
+    let mut me = store();
+    let mut sealer = RecordingSealer::default();
+    upload_resolving(
+        &mut server,
+        &key,
+        &mut me,
+        VAULT,
+        &[edit(b"login-bank", 4, 0xA1)],
+        &mut sealer,
+    )
+    .expect("resolves");
+
+    let copy_id = conflict_item_id(b"login-bank", &digest(0xA1));
+    let copy = server.entry(&key, &copy_id).expect("copy");
+    assert_ne!(
+        copy.ciphertext_digest(),
+        &digest(0xA1),
+        "the copy names the loser's record, which will not open under the \
+         copy's own itemId"
+    );
+    assert_eq!(
+        sealer.calls,
+        vec![(b"login-bank".to_vec(), copy_id)],
+        "the sealer must be told the id to seal under, not just the loser"
+    );
+    assert_eq!(
+        copy.current_version(),
+        1,
+        "a copy is a new item's first version"
+    );
+}
+
+#[test]
+fn a_copy_is_placed_by_its_own_hash_which_can_differ_from_its_primarys() {
+    let key = vault_key();
+
+    // Find an item whose copy falls on the other side of a one-bit split.
+    let (id, copy_id) = (0..64_u32)
+        .map(|n| {
+            let id = format!("item-{n}").into_bytes();
+            let copy_id = conflict_item_id(&id, &digest(0xA1));
+            (id, copy_id)
+        })
+        .find(|(id, copy_id)| hash_item_id(id) >> 63 != hash_item_id(copy_id) >> 63)
+        .expect("some item conflicts across a one-bit split");
+
+    let mut server = OneServer::empty();
+    vault_holding(&mut server, &key, &id, 0x5C);
+    let mut me = store();
+    let mut sealer = RecordingSealer::default();
+    upload_resolving(
+        &mut server,
+        &key,
+        &mut me,
+        VAULT,
+        &[StagedEdit::new(id.clone(), 4, digest(0xA1), false)],
+        &mut sealer,
+    )
+    .expect("resolves");
+
+    assert!(server.entry(&key, &id).is_some());
+    assert!(server.entry(&key, &copy_id).is_some());
+    assert_ne!(
+        hash_item_id(&id) >> 63,
+        hash_item_id(&copy_id) >> 63,
+        "the copy would follow its primary into the wrong half of a split"
+    );
+}
+
+#[test]
+fn resolving_a_conflict_whose_copy_already_exists_adds_nothing() {
+    let key = vault_key();
+    let mut server = OneServer::empty();
+    vault_holding(&mut server, &key, b"login-bank", 0x5C);
+
+    let mut me = store();
+    let mut sealer = RecordingSealer::default();
+    let staged = [edit(b"login-bank", 4, 0xA1)];
+    upload_resolving(&mut server, &key, &mut me, VAULT, &staged, &mut sealer).expect("first");
+    let after_first = server.entries(&key).len();
+
+    upload_resolving(&mut server, &key, &mut me, VAULT, &staged, &mut sealer).expect("second");
+
+    assert_eq!(
+        server.entries(&key).len(),
+        after_first,
+        "a second copy of the same losing version"
+    );
+    assert_eq!(
+        sealer.calls.len(),
+        1,
+        "the sealer was asked to re-seal a copy that already exists"
+    );
+}
+
+#[test]
+fn an_upload_that_cannot_reseal_still_refuses_rather_than_choosing() {
+    let key = vault_key();
+    let mut server = OneServer::empty();
+    vault_holding(&mut server, &key, b"login-bank", 0x5C);
+    let before = server.writes_accepted;
+
+    let mut me = store();
+    let refused = upload(
+        &mut server,
+        &key,
+        &mut me,
+        VAULT,
+        &[edit(b"login-bank", 4, 0xA1)],
+    );
+
+    assert!(
+        matches!(refused, Err(ManifestError::ConflictNeedsResolution)),
+        "got {refused:?}"
+    );
+    assert_eq!(server.writes_accepted, before, "it wrote anyway");
+}
+
+#[test]
+fn a_reseal_that_fails_writes_nothing_at_all() {
+    let key = vault_key();
+    let mut server = OneServer::empty();
+    vault_holding(&mut server, &key, b"login-bank", 0x5C);
+    let before = server.writes_accepted;
+
+    let mut me = store();
+    let mut sealer = RecordingSealer::refusing();
+    let out = upload_resolving(
+        &mut server,
+        &key,
+        &mut me,
+        VAULT,
+        &[edit(b"login-bank", 4, 0xA1)],
+        &mut sealer,
+    );
+
+    assert!(out.is_err(), "got {out:?}");
+    assert_eq!(
+        server.writes_accepted, before,
+        "the primary landed without its copy"
+    );
+}
+
+#[test]
+fn a_losing_deletion_survives_as_a_deleted_copy() {
+    let key = vault_key();
+    let mut server = OneServer::empty();
+    vault_holding(&mut server, &key, b"login-bank", 0x5C);
+
+    let mut me = store();
+    let mut sealer = RecordingSealer::default();
+    upload_resolving(
+        &mut server,
+        &key,
+        &mut me,
+        VAULT,
+        // A delete at the same version, with the larger digest, so it loses.
+        &[StagedEdit::new(
+            b"login-bank".to_vec(),
+            4,
+            digest(0xA1),
+            true,
+        )],
+        &mut sealer,
+    )
+    .expect("resolves");
+
+    let copy = server
+        .entry(&key, &conflict_item_id(b"login-bank", &digest(0xA1)))
+        .expect("copy");
+    assert!(copy.tombstone(), "the deletion was dropped, not copied");
+    assert!(
+        !server
+            .entry(&key, b"login-bank")
+            .expect("primary")
+            .tombstone(),
+        "the surviving edit was deleted by the losing side's flag"
+    );
+}
+
+#[test]
+fn two_devices_editing_offline_converge_on_one_vault_holding_both() {
+    let key = vault_key();
+    let mut server = OneServer::empty();
+
+    let mut device_a = store();
+    upload(
+        &mut server,
+        &key,
+        &mut device_a,
+        VAULT,
+        &[edit(b"login-bank", 3, 0x01)],
+    )
+    .expect("base");
+
+    upload(
+        &mut server,
+        &key,
+        &mut device_a,
+        VAULT,
+        &[edit(b"login-bank", 4, 0x5C)],
+    )
+    .expect("device A");
+
+    let mut device_b = store();
+    let mut sealer = RecordingSealer::default();
+    upload_resolving(
+        &mut server,
+        &key,
+        &mut device_b,
+        VAULT,
+        &[edit(b"login-bank", 4, 0xA1)],
+        &mut sealer,
+    )
+    .expect("device B");
+
+    let entries = server.entries(&key);
+    assert_eq!(entries.len(), 2, "one conflict, two items: {entries:?}");
+    assert_eq!(
+        server
+            .entry(&key, b"login-bank")
+            .expect("primary")
+            .ciphertext_digest(),
+        &digest(0x5C),
+    );
+    assert!(
+        server
+            .entry(&key, &conflict_item_id(b"login-bank", &digest(0xA1)))
+            .is_some(),
+        "device B's edit is in no item"
+    );
+
+    let settled = server.entries(&key);
+    upload(&mut server, &key, &mut device_a, VAULT, &[]).expect("device A resyncs");
+    assert_eq!(server.entries(&key), settled, "A re-decided the conflict");
 }

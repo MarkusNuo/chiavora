@@ -11,3 +11,8 @@ workspace = true
 [dependencies]
 # The only cryptographic dependency: one SRP implementation, shared with the client.
 chiavora-core = { workspace = true }
+
+[dev-dependencies]
+# Tests only: they play the client's half, which needs big integers.
+crypto-bigint = { version = "0.7.5", default-features = false, features = ["alloc", "zeroize"] }
+trybuild = "1.0"

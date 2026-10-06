@@ -406,6 +406,8 @@ name = "chiavora-server"
 version = "0.1.0"
 dependencies = [
  "chiavora-core",
+ "crypto-bigint",
+ "trybuild",
 ]
 
 [[package]]

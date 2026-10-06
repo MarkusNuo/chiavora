@@ -132,6 +132,8 @@ pub enum SrpError {
     Precision,
     Hkdf,
     TranscriptFieldLength,
+    /// What an unauthenticated caller is told is decided in `crates/server`.
+    ProofMismatch,
 }
 
 impl core::fmt::Display for SrpError {
@@ -150,6 +152,7 @@ impl core::fmt::Display for SrpError {
             Self::TranscriptFieldLength => {
                 f.write_str("an SRP proof-transcript field is not its fixed width; refusing")
             }
+            Self::ProofMismatch => f.write_str("the SRP client proof did not verify; refusing"),
         }
     }
 }
@@ -459,6 +462,68 @@ pub fn proofs_match(left: &[u8], right: &[u8]) -> bool {
         return false;
     }
     left.ct_eq(right).into()
+}
+
+/// What a completed server-side exchange yields; `M2` goes on the wire, the keys do not.
+#[derive(Debug)]
+pub struct ServerExchange {
+    pub server_proof: Vec<u8>,
+    pub keys: SessionKeys,
+}
+
+fn uint_at_group(bytes: &[u8], group: Group) -> Result<BoxedUint, SrpError> {
+    if bytes.len() != group.padded_len() {
+        return Err(SrpError::TranscriptFieldLength);
+    }
+    BoxedUint::from_be_slice(bytes, group.bits).map_err(|_| SrpError::Precision)
+}
+
+/// Refuses a wire public value of the wrong width or zero mod `N`, before the server does any
+/// expensive work.
+pub fn check_public_value(group: Group, bytes: &[u8]) -> Result<(), SrpError> {
+    let value = uint_at_group(bytes, group)?;
+    let nonzero = Option::from(NonZero::new(group.modulus()?)).ok_or(SrpError::EvenModulus)?;
+    if bool::from(value.rem_vartime(&nonzero).is_zero()) {
+        return Err(SrpError::PublicValueOutOfRange);
+    }
+    Ok(())
+}
+
+pub fn server_public_bytes<H: SrpHash>(
+    group: Group,
+    ephemeral: &Secret<SrpEphemeralSecret>,
+    verifier: &[u8],
+) -> Result<Vec<u8>, SrpError> {
+    let v = uint_at_group(verifier, group)?;
+    Ok(pad(&server_public::<H>(group, ephemeral, &v)?, group))
+}
+
+/// Takes `ephemeral` by reference; using it only once is the caller's job.
+pub fn server_finish<H: SrpHash>(
+    group: Group,
+    ephemeral: &Secret<SrpEphemeralSecret>,
+    verifier: &[u8],
+    client_public: &[u8],
+    identity: &[u8],
+    srp_salt: &[u8],
+    client_proof_bytes: &[u8],
+) -> Result<ServerExchange, SrpError> {
+    let v = uint_at_group(verifier, group)?;
+    let a_pub = uint_at_group(client_public, group)?;
+
+    let premaster = server_premaster::<H>(group, ephemeral, &v, &a_pub)?;
+    let keys = session_keys(&premaster)?;
+    let b_pub = server_public::<H>(group, ephemeral, &v)?;
+
+    let expected = client_proof::<H>(group, identity, srp_salt, &a_pub, &b_pub, &keys.session_key)?;
+    if !proofs_match(&expected, client_proof_bytes) {
+        return Err(SrpError::ProofMismatch);
+    }
+
+    Ok(ServerExchange {
+        server_proof: server_proof::<H>(group, &a_pub, &expected, &keys.session_key)?,
+        keys,
+    })
 }
 
 const _: () = assert!(SRP_VERIFIER_LEN == Group::RFC5054_4096.bits as usize / 8);

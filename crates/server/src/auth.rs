@@ -1,13 +1,20 @@
 //! Stores `(srpSalt, v)` and nothing a password could be recovered from; it checks only widths.
 
 use chiavora_core::emergency_kit::ACCOUNT_ID_LEN;
-use chiavora_core::srp::{SRP_SALT_LEN, SRP_VERIFIER_LEN};
+use chiavora_core::secret::{kind::SrpEphemeralSecret, Secret};
+use chiavora_core::srp::{
+    check_public_value, generate_ephemeral, server_public_bytes, Group, ServerExchange, Sha256Hash,
+    SrpError, SRP_SALT_LEN, SRP_VERIFIER_LEN,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthRecordError {
     AccountIdLength,
     SaltLength,
     VerifierLength,
+    ClientPublicLength,
+    /// What the caller is told is the endpoint's decision.
+    Srp(SrpError),
 }
 
 impl core::fmt::Display for AuthRecordError {
@@ -16,6 +23,8 @@ impl core::fmt::Display for AuthRecordError {
             Self::AccountIdLength => f.write_str("accountId is not 16 bytes; refusing"),
             Self::SaltLength => f.write_str("srpSalt is not 32 bytes; refusing"),
             Self::VerifierLength => f.write_str("the verifier is not 512 bytes; refusing"),
+            Self::ClientPublicLength => f.write_str("A is not 512 bytes; refusing"),
+            Self::Srp(inner) => write!(f, "the SRP exchange was refused: {inner}"),
         }
     }
 }
@@ -78,5 +87,57 @@ impl AuthRecord {
         out.extend_from_slice(&self.srp_salt);
         out.extend_from_slice(&self.verifier);
         out
+    }
+}
+
+/// Replay resistance rests on each `b` being used once, so [`PendingExchange::finish`] takes
+/// `self` by value. The exchange is never stored or persisted.
+#[derive(Debug)]
+pub struct PendingExchange {
+    account_id: Vec<u8>,
+    srp_salt: Vec<u8>,
+    verifier: Vec<u8>,
+    client_public: Vec<u8>,
+    ephemeral: Secret<SrpEphemeralSecret>,
+    server_public: Vec<u8>,
+}
+
+impl PendingExchange {
+    pub fn begin(record: &AuthRecord, client_public: &[u8]) -> Result<Self, AuthRecordError> {
+        if client_public.len() != SRP_VERIFIER_LEN {
+            return Err(AuthRecordError::ClientPublicLength);
+        }
+        // Refused before any exponentiation, so one packet cannot cost a modexp.
+        check_public_value(Group::RFC5054_4096, client_public).map_err(AuthRecordError::Srp)?;
+        let ephemeral = generate_ephemeral().map_err(AuthRecordError::Srp)?;
+        let server_public =
+            server_public_bytes::<Sha256Hash>(Group::RFC5054_4096, &ephemeral, record.verifier())
+                .map_err(AuthRecordError::Srp)?;
+        Ok(Self {
+            account_id: record.account_id().to_vec(),
+            srp_salt: record.srp_salt().to_vec(),
+            verifier: record.verifier().to_vec(),
+            client_public: client_public.to_vec(),
+            ephemeral,
+            server_public,
+        })
+    }
+
+    #[must_use]
+    pub fn server_public(&self) -> &[u8] {
+        &self.server_public
+    }
+
+    pub fn finish(self, client_proof: &[u8]) -> Result<ServerExchange, AuthRecordError> {
+        chiavora_core::srp::server_finish::<Sha256Hash>(
+            Group::RFC5054_4096,
+            &self.ephemeral,
+            &self.verifier,
+            &self.client_public,
+            &self.account_id,
+            &self.srp_salt,
+            client_proof,
+        )
+        .map_err(AuthRecordError::Srp)
     }
 }

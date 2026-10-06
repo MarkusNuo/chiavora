@@ -369,7 +369,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 102] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 105] = [
     (
         "core/src/manifest.rs",
         "conflict_item_id",
@@ -943,6 +943,21 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 102] = [
         "core/src/srp.rs",
         "server_proof",
         "SAFE BY CONSTRUCTION: the same argument as client_proof. `M1`          arrives at a fixed width or is refused with TranscriptFieldLength,          and the width is the hash's own associated constant rather than a          literal, so SHA-1 and SHA-256 cannot disagree about it",
+    ),
+    (
+        "core/src/srp.rs",
+        "check_public_value",
+        "SAFE BY CONSTRUCTION: it is itself one of the checks this registry          exists to encourage. The slice reaches a width comparison and a          modular reduction; there is no parse, no branch on contents beyond          zero-or-not, and no allocation sized by the input. A fuzzer over it          would be looking for a panic on an odd length, which the width check          makes unreachable before any arithmetic runs",
+    ),
+    (
+        "core/src/srp.rs",
+        "server_public_bytes",
+        "SAFE BY CONSTRUCTION: `verifier` is refused unless it is exactly the          group's width, and then read as a big integer at that precision.          Everything after is modular arithmetic on a fixed-width value. The          verifier is chosen by whoever registered the account -- but by then          they have an account, and any 512 bytes are as valid as any other: a          hostile verifier authenticates nobody, because it is the thing being          authenticated against",
+    ),
+    (
+        "core/src/srp.rs",
+        "server_finish",
+        "SAFE BY CONSTRUCTION: four slices, and the three with a fixed width          are refused at any other. `client_proof_bytes` is the one that is          genuinely hostile and genuinely free-length -- it is whatever a          client sent -- and it reaches exactly one operation, a constant-time          comparison that decides on length first. There is no parse and no          allocation sized by it. What a fuzzer would add here is coverage of          `proofs_match`, which is classified beside this",
     ),
     (
         "core/src/srp.rs",

@@ -1,0 +1,15 @@
+error[E0382]: use of moved value: `exchange`
+ --> tests/compile-fail/a_pending_exchange_cannot_be_finished_twice.rs:7:19
+  |
+5 |     let exchange = chiavora_server::auth::PendingExchange::begin(&record, &[2; 512]).unwrap();
+  |         -------- move occurs because `exchange` has type `PendingExchange`, which does not implement the `Copy` trait
+6 |     let _first = exchange.finish(&[0; 32]);
+  |                           ---------------- `exchange` moved due to this method call
+7 |     let _second = exchange.finish(&[0; 32]);
+  |                   ^^^^^^^^ value used here after move
+  |
+note: `chiavora_server::auth::PendingExchange::finish` takes ownership of the receiver `self`, which moves `exchange`
+ --> src/auth.rs
+  |
+  |     pub fn finish(self, client_proof: &[u8]) -> Result<ServerExchange, AuthRecordError> {
+  |                   ^^^^

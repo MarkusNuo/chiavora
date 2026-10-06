@@ -22,6 +22,17 @@ export function ItemEditor({
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(creating);
 
+  // Delete is on this screen, so touches through an overlay are discarded while it is up.
+  useEffect(() => {
+    if (creating) {
+      return undefined;
+    }
+    void ChiavoraCore.filterObscuredTouches(true);
+    return () => {
+      void ChiavoraCore.filterObscuredTouches(false);
+    };
+  }, [creating]);
+
   useEffect(() => {
     if (itemId === null) {
       return;

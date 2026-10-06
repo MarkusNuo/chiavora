@@ -207,6 +207,11 @@ class ChiavoraCoreModule : Module() {
             SecureWindow.isSecure()
         }
 
+        AsyncFunction("filterObscuredTouches") { filtering: Boolean ->
+            SecureWindow.filterObscuredTouches(appContext.currentActivity, filtering)
+            true
+        }
+
         AsyncFunction("lockPolicy") {
             val policy = lockPolicy()
             mapOf(

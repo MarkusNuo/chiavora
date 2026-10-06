@@ -27,6 +27,16 @@ object SecureWindow {
     @Synchronized
     fun isSecure(): Boolean = reasons.isNotEmpty()
 
+    /** Against tapjacking; filtered at delivery, so no gap between a check and the tap. */
+    @Synchronized
+    fun filterObscuredTouches(activity: Activity?, filtering: Boolean) {
+        val decor = activity?.window?.decorView ?: return
+        // UI-THREAD: a view property belongs to the view's thread; nothing here calls into `core`.
+        activity.runOnUiThread {
+            decor.filterTouchesWhenObscured = filtering
+        }
+    }
+
     @Synchronized
     fun reapply(activity: Activity?) {
         apply(activity)

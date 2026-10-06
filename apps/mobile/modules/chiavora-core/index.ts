@@ -140,6 +140,7 @@ interface ChiavoraCoreNativeModule {
 
   lockPolicy(): Promise<LockPolicy>;
   holdSecureForGeneratedValue(holding: boolean): Promise<boolean>;
+  filterObscuredTouches(filtering: boolean): Promise<boolean>;
   reapplyWindowFlags(): Promise<boolean>;
 
   isProvisioned(): Promise<boolean>;

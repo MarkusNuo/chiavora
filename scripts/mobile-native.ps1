@@ -28,6 +28,14 @@ if (-not $env:ANDROID_NDK_HOME) { $env:ANDROID_NDK_HOME = "$env:ANDROID_HOME\ndk
 
 $features = if ($Variant -eq 'debug') { @('--features', 'measurement-harness') } else { @() }
 
+# A pinned toolchain does not inherit `stable`'s targets, so add Android here.
+$toolchain = (rustup show active-toolchain) -split ' ' | Select-Object -First 1
+if ((rustup target list --installed --toolchain $toolchain) -notcontains $target) {
+    Write-Host "==> 0/3  adding $target to $toolchain" -ForegroundColor Cyan
+    rustup target add $target --toolchain $toolchain
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
 Write-Host "==> 1/3  cross-compiling the cdylib for $abi ($Variant)" -ForegroundColor Cyan
 # `-P 26` is the module's minSdk. `--release` in both variants: the variant only
 # selects features, and a debug-optimised Argon2id would measure the wrong thing.

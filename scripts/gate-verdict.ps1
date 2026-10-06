@@ -40,6 +40,22 @@ if ($lines | Where-Object { $_ -eq 'dirty   True' }) {
     Fail 'the gate ran against a dirty tree; commit first, then re-run'
 }
 
+# Only as fresh as the last fetch: this script does no network I/O.
+$originMain = (& git rev-parse --verify --quiet 'refs/remotes/origin/main')
+if ($LASTEXITCODE -eq 0 -and $originMain) {
+    & git merge-base --is-ancestor 'refs/remotes/origin/main' HEAD
+    if ($LASTEXITCODE -ne 0) {
+        $behind = (& git rev-list --count 'HEAD..refs/remotes/origin/main').Trim()
+        Fail ("HEAD is behind origin/main by $behind commit(s) as of the last " +
+            'fetch, so this verdict is for a tree that is not what would merge. ' +
+            'git fetch, rebase, re-run the gate')
+    }
+}
+else {
+    # Not a failure: a clone that never fetched has nothing to be behind.
+    Write-Host '  (no origin/main known locally — behind not checked)' -ForegroundColor DarkGray
+}
+
 foreach ($marker in $required) {
     if (-not ($lines -contains $marker)) {
         Fail "the verdict has no $marker — the run did not finish"

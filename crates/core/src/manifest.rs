@@ -114,6 +114,11 @@ pub enum ManifestError {
     ItemListedNotDelivered,
     ItemDeliveredNotListed,
     HighWaterMarkRewound,
+    UnusableRetryPolicy,
+    ServerReportedImpossibleSequence {
+        served: u64,
+        reported: u64,
+    },
     ConflictNeedsResolution,
     NoManifestToRotate,
     EpochNotSuccessive {
@@ -219,6 +224,13 @@ impl fmt::Display for ManifestError {
             ),
             Self::RotationChangedAnEntry => f.write_str(
                 "a rotation's re-sealed manifest did not open to what it was built from",
+            ),
+            Self::UnusableRetryPolicy => {
+                f.write_str("a retry policy with no attempts, no backoff or an unbounded cap")
+            }
+            Self::ServerReportedImpossibleSequence { served, reported } => write!(
+                f,
+                "the server served a root at manifestSeq {served} and claimed {reported}"
             ),
             Self::ConflictNeedsResolution => f.write_str(
                 "two devices advanced the same item to the same version with different                  contents: both are kept and the conflict is resolved, never discarded",

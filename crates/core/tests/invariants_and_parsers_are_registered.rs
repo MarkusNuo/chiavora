@@ -369,7 +369,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 105] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 106] = [
     (
         "core/src/manifest.rs",
         "conflict_item_id",
@@ -504,6 +504,11 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 105] = [
         "core/src/sync.rs",
         "upload_resolving",
         "COVERED ELSEWHERE: upload's path exactly -- every server byte reaches          it through StoredManifest::decode, ManifestRoot::decode and          ManifestSegment::decode, all three in PARSERS. The one thing it adds          is the [u8; 32] a caller's ConflictCopySealer returns, which is a          digest this device computed over a record it just sealed itself, and          which the next read checks under I6d",
+    ),
+    (
+        "core/src/sync.rs",
+        "upload_with_retry",
+        "COVERED ELSEWHERE: upload's path, repeated. The one value it reads          that upload does not is CasRefused::current_manifest_seq, which is a          number the server chooses and which R10 says had no defence -- so          this function is where the defence was written, not a place that          needs one. It parses nothing: every server byte reaches it through          StoredManifest::decode, ManifestRoot::decode and          ManifestSegment::decode, all three in PARSERS",
     ),
     (
         "core/src/rotation.rs",

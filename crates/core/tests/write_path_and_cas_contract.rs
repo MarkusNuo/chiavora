@@ -525,7 +525,11 @@ fn c3_a_refused_write_reports_where_the_vault_is() {
     .expect("a refusal is an outcome, not an error");
     assert_eq!(
         out,
-        Uploaded::LostRace { observed: 7 },
+        // `served: 0` because this fixture holds no root; `served` is the witness for `observed`.
+        Uploaded::LostRace {
+            observed: 7,
+            served: 0
+        },
         "the client is told where the vault is, or it cannot distinguish \
          contention from a refusing server"
     );

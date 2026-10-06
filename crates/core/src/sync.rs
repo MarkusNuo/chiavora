@@ -1,3 +1,8 @@
+//! The write path (§2.5): a client never writes from a stale base. Ordering comes from
+//! `manifestSeq`, not the wall clock: `SystemTime` is not used here.
+
+use std::time::Duration;
+
 use crate::manifest::{
     seal_root, seal_segment, CanonicalPrefix, ConflictingVersion, Entry, ManifestError,
     ManifestRoot, ManifestSegment, Resolution, RootEntry, StoredManifest,
@@ -77,6 +82,7 @@ pub enum Uploaded {
     /// Someone else wrote first; the caller refetches, rebases and retries.
     LostRace {
         observed: u64,
+        served: u64,
     },
 }
 
@@ -280,8 +286,171 @@ fn upload_inner(
         }
         Err(CasRefused {
             current_manifest_seq,
-        }) => Ok(Uploaded::LostRace {
-            observed: current_manifest_seq,
-        }),
+        }) => {
+            // The server cannot be below the root it just served.
+            if current_manifest_seq < latest_seq {
+                return Err(ManifestError::ServerReportedImpossibleSequence {
+                    served: latest_seq,
+                    reported: current_manifest_seq,
+                });
+            }
+            Ok(Uploaded::LostRace {
+                observed: current_manifest_seq,
+                served: latest_seq,
+            })
+        }
+    }
+}
+
+/// Equal jitter (half the backoff fixed, half drawn) keeps a floor under every wait,
+/// so a refusing server is not hammered (§2.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetryPolicy {
+    attempts: u32,
+    // Milliseconds as `u32`, so the arithmetic in `wait_before` is total.
+    base_millis: u32,
+    cap_millis: u32,
+}
+
+impl RetryPolicy {
+    const MAX_CAP_MILLIS: u32 = 60 * 60 * 1000;
+
+    #[must_use]
+    pub const fn standard() -> Self {
+        Self {
+            attempts: 5,
+            base_millis: 200,
+            cap_millis: 5_000,
+        }
+    }
+
+    pub fn new(attempts: u32, base: Duration, cap: Duration) -> Result<Self, ManifestError> {
+        let base_millis =
+            u32::try_from(base.as_millis()).map_err(|_| ManifestError::UnusableRetryPolicy)?;
+        let cap_millis =
+            u32::try_from(cap.as_millis()).map_err(|_| ManifestError::UnusableRetryPolicy)?;
+        if attempts == 0
+            || base_millis == 0
+            || cap_millis < base_millis
+            || cap_millis > Self::MAX_CAP_MILLIS
+        {
+            return Err(ManifestError::UnusableRetryPolicy);
+        }
+        Ok(Self {
+            attempts,
+            base_millis,
+            cap_millis,
+        })
+    }
+
+    #[must_use]
+    pub const fn attempts(&self) -> u32 {
+        self.attempts
+    }
+
+    fn wait_before(&self, retry: u32) -> Result<Duration, ManifestError> {
+        // Capped at 31 so the shift is defined.
+        let shift = retry.saturating_sub(1).min(31);
+        let factor = 1_u32 << shift;
+        let backoff = self.base_millis.saturating_mul(factor).min(self.cap_millis);
+        let half = backoff / 2;
+        if half == 0 {
+            return Ok(Duration::from_millis(u64::from(backoff)));
+        }
+        let drawn =
+            crate::csprng::uniform_below(half).map_err(|_| ManifestError::NonceUnavailable)?;
+        Ok(Duration::from_millis(u64::from(half) + u64::from(drawn)))
+    }
+}
+
+pub trait Backoff {
+    fn wait(&mut self, d: Duration);
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SleepingBackoff;
+
+impl Backoff for SleepingBackoff {
+    fn wait(&mut self, d: Duration) {
+        std::thread::sleep(d);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SyncOutcome {
+    Written {
+        manifest_seq: u64,
+        attempts: u32,
+    },
+    /// Someone else is winning: the reported sequence advanced at least once.
+    Contended {
+        attempts: u32,
+        observed: u64,
+    },
+    /// Nobody is winning: the reported sequence never moved, so the writes are
+    /// refused rather than beaten.
+    ServerRefusing {
+        attempts: u32,
+        observed: u64,
+    },
+}
+
+/// [`upload`] with §2.5's bounded retry. Tells contention from a refusing
+/// server by whether the reported sequence advances, and refuses a server that
+/// reports a sequence higher than the root it serves next.
+pub fn upload_with_retry(
+    transport: &mut impl ManifestTransport,
+    vault_key: &Secret<VaultKey>,
+    store: &mut Store,
+    vault_id: &[u8],
+    staged: &[StagedEdit],
+    policy: RetryPolicy,
+    backoff: &mut impl Backoff,
+) -> Result<SyncOutcome, ManifestError> {
+    let mut last_observed = 0_u64;
+    let mut advanced = false;
+    let mut previous: Option<u64> = None;
+
+    for attempt in 1..=policy.attempts() {
+        match upload(transport, vault_key, store, vault_id, staged)? {
+            Uploaded::Written { manifest_seq } => {
+                return Ok(SyncOutcome::Written {
+                    manifest_seq,
+                    attempts: attempt,
+                })
+            }
+            Uploaded::LostRace { observed, served } => {
+                // The server cannot serve a root below a sequence it already reported.
+                if let Some(before) = previous {
+                    if served < before {
+                        return Err(ManifestError::ServerReportedImpossibleSequence {
+                            served,
+                            reported: before,
+                        });
+                    }
+                    if observed > before {
+                        advanced = true;
+                    }
+                }
+                previous = Some(observed);
+                last_observed = observed;
+            }
+        }
+
+        if attempt < policy.attempts() {
+            backoff.wait(policy.wait_before(attempt)?);
+        }
+    }
+
+    if advanced {
+        Ok(SyncOutcome::Contended {
+            attempts: policy.attempts(),
+            observed: last_observed,
+        })
+    } else {
+        Ok(SyncOutcome::ServerRefusing {
+            attempts: policy.attempts(),
+            observed: last_observed,
+        })
     }
 }

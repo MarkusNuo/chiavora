@@ -2827,6 +2827,94 @@ fn the_hkdf_salt_scan_would_notice_a_salt() {
     );
 }
 
+fn pinned_channel() -> Option<String> {
+    let text = read("rust-toolchain.toml");
+    let line = text
+        .lines()
+        .map(|line| line.split('#').next().unwrap_or("").trim())
+        .find(|line| line.starts_with("channel"))?;
+    let value = line.split('=').nth(1)?.trim().trim_matches('"').to_owned();
+    let numeric = value.split('.').count() == 3
+        && value
+            .split('.')
+            .all(|part| part.chars().all(|c| c.is_ascii_digit()));
+    numeric.then_some(value)
+}
+
+#[test]
+fn the_pinned_toolchain_is_the_one_actually_running() {
+    let pinned = pinned_channel().unwrap_or_else(|| {
+        panic!(
+            "rust-toolchain.toml does not pin an exact version. The user \
+             decided that it must: a floating channel makes the \
+             first dispatch after every Rust release a known-red, and a \
+             known-red is a signal people learn to ignore"
+        )
+    });
+
+    let output = std::process::Command::new("rustc")
+        .arg("--version")
+        .output()
+        .expect(
+            "rustc must be invokable from a test; if it is not, this check \
+                 is reporting nothing rather than passing",
+        );
+    let reported = String::from_utf8_lossy(&output.stdout).into_owned();
+
+    assert!(
+        reported.contains(&pinned),
+        "rust-toolchain.toml pins {pinned} but the compiler running this test \
+         reports `{}`. Either this worktree has not picked up a bump, or \
+         something is overriding the toolchain file -- which is the silent \
+         failure this check exists for, because every document in the \
+         repository would go on saying the build is pinned",
+        reported.trim()
+    );
+}
+
+#[test]
+fn the_toolchain_pin_parser_distinguishes_a_version_from_a_channel() {
+    let parse = |text: &str| -> Option<String> {
+        let line = text
+            .lines()
+            .map(|line| line.split('#').next().unwrap_or("").trim())
+            .find(|line| line.starts_with("channel"))?;
+        let value = line.split('=').nth(1)?.trim().trim_matches('"').to_owned();
+        let numeric = value.split('.').count() == 3
+            && value
+                .split('.')
+                .all(|p| p.chars().all(|c| c.is_ascii_digit()));
+        numeric.then_some(value)
+    };
+
+    assert_eq!(
+        parse("[toolchain]\nchannel = \"1.99.0\"\n"),
+        Some("1.99.0".to_owned()),
+        "an exact version must be read as pinned"
+    );
+    assert_eq!(
+        parse("[toolchain]\nchannel = \"stable\"\n"),
+        None,
+        "`stable` is floating and must not read as a pin"
+    );
+    assert_eq!(
+        parse("[toolchain]\nchannel = \"nightly-2026-10-01\"\n"),
+        None,
+        "a dated nightly is still a channel, not a version"
+    );
+    assert_eq!(
+        parse("# channel = \"1.0.0\"\n[toolchain]\nchannel = \"1.99.0\"\n"),
+        Some("1.99.0".to_owned()),
+        "a commented-out channel must not be read as the pin; this file's \
+         header discusses `channel = \"stable\"` in prose"
+    );
+    assert_eq!(
+        parse("[toolchain]\n"),
+        None,
+        "no channel line at all must read as unpinned rather than as anything"
+    );
+}
+
 /// Keeps `Path` in use on every platform without a `cfg`.
 #[allow(dead_code)]
 fn _unused(_: &Path) {}

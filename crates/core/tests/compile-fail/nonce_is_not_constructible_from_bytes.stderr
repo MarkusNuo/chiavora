@@ -7,6 +7,8 @@ error[E0423]: cannot initialize a tuple struct which contains private fields
  --> $RUST/core/src/option.rs
   |
   = note: similarly named unit variant `None` defined here
+  |
+  = note: a struct named `Nonce` exists in another namespace
 note: constructor is not visible here due to private fields
  --> src/nonce.rs
   |

@@ -2,7 +2,9 @@
 
 use core::time::Duration;
 
-pub const PROVISIONAL: bool = true;
+/// Set while any value here is a placeholder rather than a decision. The FFI
+/// reports it so a screen can say so.
+pub const PROVISIONAL: bool = false;
 
 pub const MIN_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -120,17 +122,42 @@ mod tests {
     }
 
     #[test]
-    fn the_provisional_marker_is_still_set() {
-        let still_the_recommended_values = DEFAULT_IDLE_TIMEOUT == Duration::from_secs(120)
-            && MIN_IDLE_TIMEOUT == Duration::from_secs(30)
-            && MAX_IDLE_TIMEOUT == Duration::from_secs(900)
-            && CLIPBOARD_TTL == Duration::from_secs(30)
-            && MAX_FAILED_ATTEMPTS == 5;
-        assert!(
-            !still_the_recommended_values || PROVISIONAL,
-            "the values are the ones - proposed and PROVISIONAL is \
-             clear, so a build now reports that somebody decided these numbers \
-             when nobody has"
+    fn the_decided_numbers_are_pinned() {
+        for (name, actual, decided) in [
+            (
+                " default idle timeout",
+                DEFAULT_IDLE_TIMEOUT,
+                Duration::from_secs(120),
+            ),
+            (
+                " idle floor",
+                MIN_IDLE_TIMEOUT,
+                Duration::from_secs(30),
+            ),
+            (
+                " idle ceiling",
+                MAX_IDLE_TIMEOUT,
+                Duration::from_secs(900),
+            ),
+            (
+                " clipboard TTL",
+                CLIPBOARD_TTL,
+                Duration::from_secs(30),
+            ),
+        ] {
+            assert_eq!(
+                actual,
+                decided,
+                "{name} was decided and is now {}s. That is a \
+                 decision to take back to whoever made it, not a constant to \
+                 edit",
+                actual.as_secs()
+            );
+        }
+        assert_eq!(
+            MAX_FAILED_ATTEMPTS, 5,
+            " N was decided and is now {MAX_FAILED_ATTEMPTS}. \
+             That is a decision to take back to whoever made it"
         );
     }
 

@@ -199,6 +199,9 @@ fn generator(group: Group) -> Result<BoxedUint, SrpError> {
     widen(BoxedUint::from(u64::from(group.generator)), group.bits)
 }
 
+/// Published so that `crates/server`, which has no big-integer crate, can check it.
+pub const SRP_VERIFIER_LEN: usize = 512;
+
 pub const SRP_SALT_LEN: usize = 32;
 
 pub fn generate_srp_salt() -> Result<Vec<u8>, SrpError> {
@@ -457,6 +460,8 @@ pub fn proofs_match(left: &[u8], right: &[u8]) -> bool {
     }
     left.ct_eq(right).into()
 }
+
+const _: () = assert!(SRP_VERIFIER_LEN == Group::RFC5054_4096.bits as usize / 8);
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]

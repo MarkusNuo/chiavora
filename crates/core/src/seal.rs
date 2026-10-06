@@ -423,7 +423,11 @@ mod tests {
             SealError::NotAVaultKey,
         ] {
             let text = e.to_string();
-            assert!(!text.is_empty());
+            assert!(
+                !text.is_empty(),
+                "{e:?} renders as nothing: a log line for this refusal would \
+                 say that something failed and not what"
+            );
             assert!(!text.contains("0x"), "{text}");
         }
     }

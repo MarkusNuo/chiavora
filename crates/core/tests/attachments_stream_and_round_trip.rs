@@ -163,10 +163,14 @@ fn the_policy_limit_is_refused_before_a_byte_is_read() {
         watcher.largest_request, 0,
         "the source was read before the limit was applied"
     );
-    assert!(store
-        .list_chunks(AT.vault_id, AT.item_id, AT.attachment_id)
-        .unwrap()
-        .is_empty());
+    assert!(
+        store
+            .list_chunks(AT.vault_id, AT.item_id, AT.attachment_id)
+            .unwrap()
+            .is_empty(),
+        "a refused attachment left chunks behind, so the refusal is not \
+         all-or-nothing"
+    );
 
     let err = seal_attachment(
         &mut store,
@@ -204,6 +208,7 @@ fn a_length_mismatch_is_refused_and_leaves_no_chunks_behind() {
             .is_empty(),
         "partial chunks were left in the store"
     );
+    // Declares 1 chunk, delivers more.
     let err = seal_attachment(
         &mut store,
         &item_key(),
@@ -217,10 +222,13 @@ fn a_length_mismatch_is_refused_and_leaves_no_chunks_behind() {
         matches!(err, AttachmentError::LengthMismatch { .. }),
         "{err:?}"
     );
-    assert!(store
-        .list_chunks(AT.vault_id, AT.item_id, AT.attachment_id)
-        .unwrap()
-        .is_empty());
+    assert!(
+        store
+            .list_chunks(AT.vault_id, AT.item_id, AT.attachment_id)
+            .unwrap()
+            .is_empty(),
+        "a length-mismatched attachment left chunks behind, so the refusal is          not all-or-nothing"
+    );
 }
 
 #[test]
@@ -373,7 +381,10 @@ fn chunk_bytes_the_build_cannot_decode_round_trip_identically() {
     );
     assert_eq!(store.list_chunks(b"v", b"i", b"a").unwrap(), [5]);
     assert!(store.delete_attachment(b"v", b"i", b"a").unwrap() > 0);
-    assert!(store.list_chunks(b"v", b"i", b"a").unwrap().is_empty());
+    assert!(
+        store.list_chunks(b"v", b"i", b"a").unwrap().is_empty(),
+        "delete_attachment reported a count and left chunks behind"
+    );
 }
 
 #[test]

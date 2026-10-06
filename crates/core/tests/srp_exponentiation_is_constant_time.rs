@@ -121,7 +121,10 @@ fn the_vartime_scan_fires_on_each_violation_planted_in_the_real_module() {
 
 #[test]
 fn every_permitted_vartime_call_states_what_it_operates_on() {
-    assert!(!ALLOWED_VARTIME.is_empty());
+    assert!(
+        !ALLOWED_VARTIME.is_empty(),
+        "ALLOWED_VARTIME is empty, so the per-entry checks below ran over          nothing; an allowance list that has been emptied makes this whole test          vacuous rather than satisfied"
+    );
     for (name, reason) in ALLOWED_VARTIME {
         assert!(name.ends_with("_vartime"), "{name} is not a vartime call");
         assert!(

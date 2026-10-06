@@ -245,7 +245,11 @@ mod tests {
             KeystoreBacking::SoftwareOnly,
         ] {
             let label = backing.label();
-            assert!(!label.is_empty());
+            assert!(
+                !label.is_empty(),
+                "{backing:?} renders as nothing, so the security screen would \
+                 show a blank where the device's protection should be"
+            );
             for judgement in ["secure enough", "weak", "less secure", "insecure"] {
                 assert!(
                     !label.contains(judgement),

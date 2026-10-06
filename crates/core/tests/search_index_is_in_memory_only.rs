@@ -49,7 +49,10 @@ fn the_query_is_case_insensitive_substring_over_the_three_fields() {
     assert_eq!(ids(&index.search("mail.example")), [&b"b"[..]]);
     assert_eq!(ids(&index.search("example.test")), [&b"a"[..], &b"b"[..]]);
     assert_eq!(ids(&index.search("passport")), [&b"c"[..]]);
-    assert!(index.search("zzz").is_empty());
+    assert!(
+        index.search("zzz").is_empty(),
+        "a term that is a substring of nothing must match nothing"
+    );
 }
 
 #[test]
@@ -69,13 +72,22 @@ fn the_matched_field_is_the_first_of_the_three_in_search_order() {
 
 #[test]
 fn an_empty_query_matches_nothing() {
-    assert!(fixture().search("").is_empty());
+    // Listing everything is `Store::list`'s job, not the index's.
+    assert!(
+        fixture().search("").is_empty(),
+        "the empty query matched something, which makes the index an \
+         enumeration API"
+    );
 }
 
 #[test]
 fn only_the_three_searched_fields_are_searched() {
     let index = fixture();
-    assert!(index.search("correct-horse").is_empty());
+    assert!(
+        index.search("correct-horse").is_empty(),
+        "a password was reachable through the index, which is the property \
+         that makes the index unsafe to hold"
+    );
     assert!(
         index.search("work").is_empty(),
         "tags are not searched either"
@@ -116,12 +128,19 @@ fn insert_replaces_by_identifier_and_remove_is_honest() {
         3,
         "insert by an existing id replaces, not appends"
     );
-    assert!(index.search("example bank").is_empty());
+    assert!(
+        index.search("example bank").is_empty(),
+        "the replaced title is still searchable, so insert appended instead \
+         of replacing"
+    );
     assert_eq!(ids(&index.search("renamed")), [&b"a"[..]]);
     assert!(index.remove(b"a"));
     assert!(!index.remove(b"a"));
     assert_eq!(index.len(), 2);
-    assert!(index.search("renamed").is_empty());
+    assert!(
+        index.search("renamed").is_empty(),
+        "a removed item is still searchable"
+    );
 }
 
 #[test]

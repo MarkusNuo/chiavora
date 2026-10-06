@@ -128,7 +128,10 @@ fn an_empty_vault_exports_and_restores_as_empty() {
     let mut target = fresh();
     let summary = export::restore(Cursor::new(&file), &muk(), &mut target).unwrap();
     assert_eq!((summary.records, summary.chunks), (0, 0));
-    assert!(target.list(VAULT).unwrap().is_empty());
+    assert!(
+        target.list(VAULT).unwrap().is_empty(),
+        "restoring an empty export put records into the target"
+    );
 }
 
 fn refused(file: &[u8]) -> ExportError {

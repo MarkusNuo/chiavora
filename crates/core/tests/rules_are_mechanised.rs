@@ -508,7 +508,12 @@ fn the_reservation_scan_would_notice_an_unbounded_size() {
         reservation_sizes("let b = Zeroizing::new(vec![0_u8; CHUNK_LEN]);"),
         vec!["CHUNK_LEN".to_owned()]
     );
-    assert!(reservation_sizes("let f = vec![Slot::SchemaVersion, Slot::Kind];").is_empty());
+    assert!(
+        reservation_sizes("let f = vec![Slot::SchemaVersion, Slot::Kind];").is_empty(),
+        "`vec![a, b]` was read as a reservation: it lists elements and \
+         reserves nothing, and counting it would make the scan noisy enough \
+         to stop being read"
+    );
 }
 
 fn reservation_sizes(code: &str) -> Vec<String> {
@@ -1986,7 +1991,11 @@ fn the_biometric_scan_would_notice_a_flag_and_a_missing_crypto_object() {
         "the missing CryptoObject was not reported: {problems:?}"
     );
 
-    assert!(biometric_callback_problems("class Unrelated { }").is_empty());
+    assert!(
+        biometric_callback_problems("class Unrelated { }").is_empty(),
+        "a class with no biometric callbacks was reported as having a \
+         problem, so the scan fires on files it does not apply to"
+    );
 }
 
 fn keystore_precondition_problems(source: &str) -> Vec<String> {
@@ -2119,7 +2128,11 @@ fn the_usability_scan_would_notice_the_incident_it_was_written_for() {
         "delete-then-create-unconditionally must be accepted: {fixed_problems:?}"
     );
 
-    assert!(keystore_precondition_problems("class Unrelated {}").is_empty());
+    assert!(
+        keystore_precondition_problems("class Unrelated {}").is_empty(),
+        "a class that touches no keystore entry was reported, so the scan \
+         fires on files it does not apply to"
+    );
 }
 
 /// The nine domains Android's `data-extraction-rules` defines, listed here
@@ -2414,7 +2427,11 @@ fn the_generator_knob_registry_would_notice_an_unregistered_knob() {
         "the synthetic knob must not be registered, or this proves nothing"
     );
 
-    assert!(struct_fields(synthetic, "NoSuchStruct").is_empty());
+    assert!(
+        struct_fields(synthetic, "NoSuchStruct").is_empty(),
+        "a struct that is not there returned fields, so the reader invents \
+         members rather than finding them"
+    );
 }
 
 /// Enumerable sets in `core`, as (label, defining file, opener of the member
@@ -2565,7 +2582,11 @@ fn the_enumerable_set_reader_reads_each_definition() {
         );
     }
 
-    assert!(set_members("fn nothing() {}", "pub enum Absent").is_empty());
+    assert!(
+        set_members("fn nothing() {}", "pub enum Absent").is_empty(),
+        "a shape that is not there returned members, which is the vacuous \
+         pass this whole pattern exists to prevent"
+    );
 }
 
 #[test]

@@ -141,10 +141,31 @@ impl ManifestTransport for Server {
             });
         }
         self.root = Some(root.to_vec());
-        self.segments = segments.to_vec();
+        merge_segments(&mut self.segments, segments);
         self.current_seq = Self::seq_of(root);
         self.writes_accepted += 1;
         Ok(())
+    }
+}
+
+/// Segments a split retires stay behind but are never served: the server cannot read the root.
+fn merge_segments(store: &mut Vec<Vec<u8>>, written: &[Vec<u8>]) {
+    for bytes in written {
+        let key = prefix_key(bytes);
+        store.retain(|existing| prefix_key(existing) != key);
+        store.push(bytes.clone());
+    }
+}
+
+/// `(prefixLen, prefixBits)` out of a stored segment's AAD.
+fn prefix_key(bytes: &[u8]) -> (u8, u64) {
+    match StoredManifest::decode(bytes).expect("well-formed").fields() {
+        AadFields::ManifestSegment {
+            prefix_len,
+            prefix_bits,
+            ..
+        } => (*prefix_len, *prefix_bits),
+        _ => panic!("not a segment"),
     }
 }
 

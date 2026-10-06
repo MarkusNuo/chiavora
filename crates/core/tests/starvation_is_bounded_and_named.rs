@@ -15,6 +15,27 @@ use chiavora_core::sync::{
 
 const VAULT: &[u8] = b"vault-1";
 
+/// Segments a split retires stay behind but are never served: the server cannot read the root.
+fn merge_segments(store: &mut Vec<Vec<u8>>, written: &[Vec<u8>]) {
+    for bytes in written {
+        let key = prefix_key(bytes);
+        store.retain(|existing| prefix_key(existing) != key);
+        store.push(bytes.clone());
+    }
+}
+
+/// `(prefixLen, prefixBits)` out of a stored segment's AAD.
+fn prefix_key(bytes: &[u8]) -> (u8, u64) {
+    match StoredManifest::decode(bytes).expect("well-formed").fields() {
+        AadFields::ManifestSegment {
+            prefix_len,
+            prefix_bits,
+            ..
+        } => (*prefix_len, *prefix_bits),
+        _ => panic!("not a segment"),
+    }
+}
+
 fn key() -> Secret<VaultKey> {
     Secret::<VaultKey>::from_derived_bytes(vec![0x22; 32])
 }
@@ -52,7 +73,7 @@ enum Reporting {
 
 struct Server {
     root: Option<Vec<u8>>,
-    segment: Option<Vec<u8>>,
+    segments: Vec<Vec<u8>>,
     current_seq: u64,
     reporting: Reporting,
     claimed: u64,
@@ -64,7 +85,7 @@ impl Server {
     const fn new(reporting: Reporting) -> Self {
         Self {
             root: None,
-            segment: None,
+            segments: Vec::new(),
             current_seq: 0,
             reporting,
             claimed: 0,
@@ -97,11 +118,9 @@ impl ManifestTransport for Server {
         Ok(self.root.clone())
     }
 
-    fn fetch_segment(
-        &mut self,
-        _prefix: CanonicalPrefix,
-    ) -> Result<Option<Vec<u8>>, ManifestError> {
-        Ok(self.segment.clone())
+    fn fetch_segment(&mut self, prefix: CanonicalPrefix) -> Result<Option<Vec<u8>>, ManifestError> {
+        let key = (prefix.bit_len(), prefix.bits());
+        Ok(self.segments.iter().find(|b| prefix_key(b) == key).cloned())
     }
 
     fn compare_and_swap(&mut self, root: &[u8], segments: &[Vec<u8>]) -> Result<(), CasRefused> {
@@ -110,7 +129,7 @@ impl ManifestTransport for Server {
             && offered == self.current_seq + 1;
         if accept {
             self.root = Some(root.to_vec());
-            self.segment = segments.first().cloned();
+            merge_segments(&mut self.segments, segments);
             self.current_seq = offered;
             return Ok(());
         }
@@ -120,7 +139,7 @@ impl ManifestTransport for Server {
             && self.root.is_none()
         {
             self.root = Some(root.to_vec());
-            self.segment = segments.first().cloned();
+            merge_segments(&mut self.segments, segments);
             self.current_seq = offered;
             return Ok(());
         }
@@ -129,8 +148,10 @@ impl ManifestTransport for Server {
         let report = match self.reporting {
             Reporting::Honest => self.current_seq,
             Reporting::Advancing => {
+                // Someone else really wrote: the offered root stands in for the
+                // winner's, so the root served next really moved.
                 self.root = Some(root.to_vec());
-                self.segment = segments.first().cloned();
+                merge_segments(&mut self.segments, segments);
                 self.current_seq = offered;
                 self.current_seq
             }

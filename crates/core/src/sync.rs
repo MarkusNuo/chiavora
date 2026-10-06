@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use crate::manifest::{
-    seal_root, seal_segment, CanonicalPrefix, ConflictingVersion, Entry, ManifestError,
-    ManifestRoot, ManifestSegment, Resolution, RootEntry, StoredManifest,
+    hash_item_id, seal_root, seal_segment, CanonicalPrefix, ConflictingVersion, Entry,
+    ManifestError, ManifestRoot, ManifestSegment, Resolution, RootEntry, StoredManifest,
 };
 use crate::nonce::FreshNonce;
 use crate::secret::{kind::VaultKey, Secret};
@@ -170,33 +170,6 @@ fn merge_edit(
     }
 }
 
-fn fetch_and_verify(
-    transport: &mut impl ManifestTransport,
-    vault_key: &Secret<VaultKey>,
-    store: &Store,
-    vault_id: &[u8],
-    whole: CanonicalPrefix,
-) -> Result<(u64, Vec<Entry>), ManifestError> {
-    let Some(bytes) = transport.fetch_root()? else {
-        return Ok((0, Vec::new()));
-    };
-    let stored_root = StoredManifest::decode(&bytes)?;
-    let root = crate::manifest::open_root(vault_key, &stored_root)?;
-    root.accept(store.high_water_mark(vault_id))?;
-
-    let entries = match transport.fetch_segment(whole)? {
-        None => Vec::new(),
-        Some(segment_bytes) => {
-            let stored_segment = StoredManifest::decode(&segment_bytes)?;
-            root.accept_segment(&stored_segment)?;
-            crate::manifest::open_segment(vault_key, &stored_segment)?
-                .entries()
-                .to_vec()
-        }
-    };
-    Ok((root.manifest_seq(), entries))
-}
-
 /// Uploads staged edits by §2.5. Conflicts are refused; [`upload_resolving`] resolves them.
 pub fn upload(
     transport: &mut impl ManifestTransport,
@@ -221,6 +194,39 @@ pub fn upload_resolving(
     upload_inner(transport, vault_key, store, vault_id, staged, Some(sealer))
 }
 
+struct Working {
+    prefix: CanonicalPrefix,
+    entries: Vec<Entry>,
+}
+
+fn working_segment<'a>(
+    working: &'a mut Vec<Working>,
+    transport: &mut impl ManifestTransport,
+    vault_key: &Secret<VaultKey>,
+    root: &ManifestRoot,
+    prefix: CanonicalPrefix,
+) -> Result<&'a mut Working, ManifestError> {
+    if let Some(at) = working.iter().position(|w| w.prefix == prefix) {
+        return working
+            .get_mut(at)
+            .ok_or(ManifestError::ItemDeliveredNotListed);
+    }
+    let entries = match transport.fetch_segment(prefix)? {
+        None => Vec::new(),
+        Some(bytes) => {
+            let stored = StoredManifest::decode(&bytes)?;
+            root.accept_segment(&stored)?;
+            crate::manifest::open_segment(vault_key, &stored)?
+                .entries()
+                .to_vec()
+        }
+    };
+    working.push(Working { prefix, entries });
+    working
+        .last_mut()
+        .ok_or(ManifestError::ItemDeliveredNotListed)
+}
+
 fn upload_inner(
     transport: &mut impl ManifestTransport,
     vault_key: &Secret<VaultKey>,
@@ -229,17 +235,166 @@ fn upload_inner(
     staged: &[StagedEdit],
     mut sealer: Option<&mut dyn ConflictCopySealer>,
 ) -> Result<Uploaded, ManifestError> {
+    let Some(root_bytes) = transport.fetch_root()? else {
+        return first_write(transport, vault_key, store, vault_id, staged, sealer);
+    };
+    let stored_root = StoredManifest::decode(&root_bytes)?;
+    let root = crate::manifest::open_root(vault_key, &stored_root)?;
+    root.accept(store.high_water_mark(vault_id))?;
+    let latest_seq = root.manifest_seq();
+    let next = latest_seq.saturating_add(1);
+
+    let mut working: Vec<Working> = Vec::new();
+    let mut pending: Vec<PendingCopy> = Vec::new();
+    for edit in staged {
+        let prefix = root
+            .segment_for(hash_item_id(edit.item_id()))
+            .ok_or(ManifestError::PrefixSetHasGap {
+                from: 0,
+                through: u64::MAX,
+            })?
+            .prefix();
+        let slot = working_segment(&mut working, transport, vault_key, &root, prefix)?;
+        if let Some(copy) = merge_edit(&mut slot.entries, edit)? {
+            pending.push(copy);
+        }
+    }
+
+    for copy in pending {
+        let Some(sealer) = sealer.as_deref_mut() else {
+            return Err(ManifestError::ConflictNeedsResolution);
+        };
+        // The copy's own id selects its segment, which no edit may have touched.
+        let prefix = root
+            .segment_for(hash_item_id(&copy.copy_item_id))
+            .ok_or(ManifestError::PrefixSetHasGap {
+                from: 0,
+                through: u64::MAX,
+            })?
+            .prefix();
+        let digest = {
+            let slot = working_segment(&mut working, transport, vault_key, &root, prefix)?;
+            if slot
+                .entries
+                .iter()
+                .any(|e| e.item_id() == copy.copy_item_id)
+            {
+                continue;
+            }
+            sealer.seal_conflict_copy(&copy.losing, &copy.copy_item_id)?
+        };
+        let slot = working_segment(&mut working, transport, vault_key, &root, prefix)?;
+        slot.entries.push(Entry::new(
+            copy.copy_item_id.to_vec(),
+            // A conflict copy is a new item, so its history starts at 1.
+            1,
+            digest,
+            copy.tombstone,
+            Vec::new(),
+        ));
+    }
+
+    let (new_root, bodies) = seal_touched(vault_key, vault_id, &root, working, next)?;
+    let sealed_root = seal_root(vault_key, FreshNonce::generate()?, &new_root)?;
+    finish(
+        transport,
+        store,
+        vault_id,
+        &new_root,
+        &sealed_root.encode()?,
+        &bodies,
+        latest_seq,
+    )
+}
+
+fn seal_touched(
+    vault_key: &Secret<VaultKey>,
+    vault_id: &[u8],
+    root: &ManifestRoot,
+    working: Vec<Working>,
+    next: u64,
+) -> Result<(ManifestRoot, Vec<Vec<u8>>), ManifestError> {
+    // From the root, so an edit after a rotation stays at the current epoch.
+    let vault_key_epoch = root.vault_key_epoch();
+    let mut written: Vec<(CanonicalPrefix, StoredManifest)> = Vec::new();
+    for w in working {
+        let segment = ManifestSegment::new(
+            crate::aad::AadFields::ManifestSegment {
+                vault_id: vault_id.to_vec(),
+                segment_seq: next,
+                vault_key_epoch,
+                prefix_len: w.prefix.bit_len(),
+                prefix_bits: w.prefix.bits(),
+            },
+            w.entries,
+        )?;
+        if segment.is_over_split_bound() {
+            // One split per write; a half still over the bound splits on the next one.
+            let (low, high) = segment.split(next)?;
+            for half in [low, high] {
+                let prefix = half.prefix()?;
+                written.push((
+                    prefix,
+                    seal_segment(vault_key, FreshNonce::generate()?, &half)?,
+                ));
+            }
+        } else {
+            let prefix = w.prefix;
+            written.push((
+                prefix,
+                seal_segment(vault_key, FreshNonce::generate()?, &segment)?,
+            ));
+        }
+    }
+
+    let replaced: Vec<CanonicalPrefix> = written.iter().map(|(p, _)| *p).collect();
+    let mut root_entries: Vec<RootEntry> = root
+        .segments()
+        .iter()
+        .filter(|e| {
+            // A split parent is not in `replaced`, but contains its halves.
+            !replaced.contains(&e.prefix())
+                && !written.iter().any(|(p, _)| e.prefix().contains(p.bits()))
+        })
+        .cloned()
+        .collect();
+    for (prefix, stored) in &written {
+        root_entries.push(RootEntry::new(*prefix, stored.digest()?, next));
+    }
+
+    let count = u32::try_from(root_entries.len()).map_err(|_| ManifestError::TooManySegments)?;
+    let new_root = ManifestRoot::new(
+        crate::aad::AadFields::ManifestRoot {
+            vault_id: vault_id.to_vec(),
+            manifest_seq: next,
+            vault_key_epoch,
+            segment_count: count,
+        },
+        root_entries,
+    )?;
+    // A root that does not tile is a bug here, and would read as an attack on other devices.
+    new_root.check_tiles()?;
+    let bodies: Result<Vec<Vec<u8>>, ManifestError> =
+        written.iter().map(|(_, w)| w.encode()).collect();
+    Ok((new_root, bodies?))
+}
+
+fn first_write(
+    transport: &mut impl ManifestTransport,
+    vault_key: &Secret<VaultKey>,
+    store: &mut Store,
+    vault_id: &[u8],
+    staged: &[StagedEdit],
+    mut sealer: Option<&mut dyn ConflictCopySealer>,
+) -> Result<Uploaded, ManifestError> {
     let whole = CanonicalPrefix::new(0, 0)?;
-
-    let (latest_seq, mut entries) = fetch_and_verify(transport, vault_key, store, vault_id, whole)?;
-
+    let mut entries: Vec<Entry> = Vec::new();
     let mut pending: Vec<PendingCopy> = Vec::new();
     for edit in staged {
         if let Some(copy) = merge_edit(&mut entries, edit)? {
             pending.push(copy);
         }
     }
-
     for copy in pending {
         let Some(sealer) = sealer.as_deref_mut() else {
             return Err(ManifestError::ConflictNeedsResolution);
@@ -256,11 +411,11 @@ fn upload_inner(
             Vec::new(),
         ));
     }
-    let next = latest_seq.saturating_add(1);
+
     let segment = ManifestSegment::new(
         crate::aad::AadFields::ManifestSegment {
             vault_id: vault_id.to_vec(),
-            segment_seq: next,
+            segment_seq: 1,
             vault_key_epoch: 1,
             prefix_len: 0,
             prefix_bits: 0,
@@ -271,17 +426,36 @@ fn upload_inner(
     let root = ManifestRoot::new(
         crate::aad::AadFields::ManifestRoot {
             vault_id: vault_id.to_vec(),
-            manifest_seq: next,
+            manifest_seq: 1,
             vault_key_epoch: 1,
             segment_count: 1,
         },
-        vec![RootEntry::new(whole, sealed_segment.digest()?, next)],
+        vec![RootEntry::new(whole, sealed_segment.digest()?, 1)],
     )?;
-    let sealed_root = seal_root(vault_key, FreshNonce::generate()?, &root)?;
+    finish(
+        transport,
+        store,
+        vault_id,
+        &root,
+        &seal_root(vault_key, FreshNonce::generate()?, &root)?.encode()?,
+        &[sealed_segment.encode()?],
+        0,
+    )
+}
 
-    match transport.compare_and_swap(&sealed_root.encode()?, &[sealed_segment.encode()?]) {
+fn finish(
+    transport: &mut impl ManifestTransport,
+    store: &mut Store,
+    vault_id: &[u8],
+    root: &ManifestRoot,
+    root_bytes: &[u8],
+    segments: &[Vec<u8>],
+    latest_seq: u64,
+) -> Result<Uploaded, ManifestError> {
+    let next = root.manifest_seq();
+    match transport.compare_and_swap(root_bytes, segments) {
         Ok(()) => {
-            crate::manifest::advance_high_water_mark(store, vault_id, &root)?;
+            crate::manifest::advance_high_water_mark(store, vault_id, root)?;
             Ok(Uploaded::Written { manifest_seq: next })
         }
         Err(CasRefused {

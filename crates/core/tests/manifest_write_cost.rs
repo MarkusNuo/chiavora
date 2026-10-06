@@ -1,6 +1,8 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 use std::time::Instant;
+
+use chiavora_core::aad::AadFields;
 use chiavora_core::manifest::{CanonicalPrefix, ManifestError, StoredManifest};
 use chiavora_core::secret::{
     kind::{Muk, VaultKey},
@@ -16,7 +18,7 @@ const BUDGET_BYTES: usize = 64 * 1024;
 
 struct Server {
     root: Option<Vec<u8>>,
-    segment: Option<Vec<u8>>,
+    segments: Vec<Vec<u8>>,
     current_seq: u64,
     last_write_bytes: usize,
 }
@@ -25,7 +27,7 @@ impl Server {
     const fn empty() -> Self {
         Self {
             root: None,
-            segment: None,
+            segments: Vec::new(),
             current_seq: 0,
             last_write_bytes: 0,
         }
@@ -33,7 +35,7 @@ impl Server {
 
     fn seq_of(bytes: &[u8]) -> u64 {
         match StoredManifest::decode(bytes).expect("well-formed").fields() {
-            chiavora_core::aad::AadFields::ManifestRoot { manifest_seq, .. } => *manifest_seq,
+            AadFields::ManifestRoot { manifest_seq, .. } => *manifest_seq,
             _ => panic!("not a root"),
         }
     }
@@ -44,11 +46,9 @@ impl ManifestTransport for Server {
         Ok(self.root.clone())
     }
 
-    fn fetch_segment(
-        &mut self,
-        _prefix: CanonicalPrefix,
-    ) -> Result<Option<Vec<u8>>, ManifestError> {
-        Ok(self.segment.clone())
+    fn fetch_segment(&mut self, prefix: CanonicalPrefix) -> Result<Option<Vec<u8>>, ManifestError> {
+        let key = (prefix.bit_len(), prefix.bits());
+        Ok(self.segments.iter().find(|b| prefix_key(b) == key).cloned())
     }
 
     fn compare_and_swap(&mut self, root: &[u8], segments: &[Vec<u8>]) -> Result<(), CasRefused> {
@@ -60,9 +60,30 @@ impl ManifestTransport for Server {
         }
         self.last_write_bytes = root.len() + segments.iter().map(Vec::len).sum::<usize>();
         self.root = Some(root.to_vec());
-        self.segment = segments.first().cloned();
+        merge_segments(&mut self.segments, segments);
         self.current_seq = offered;
         Ok(())
+    }
+}
+
+/// Segments a split retires stay behind but are never served: the server cannot read the root.
+fn merge_segments(store: &mut Vec<Vec<u8>>, written: &[Vec<u8>]) {
+    for bytes in written {
+        let key = prefix_key(bytes);
+        store.retain(|existing| prefix_key(existing) != key);
+        store.push(bytes.clone());
+    }
+}
+
+/// `(prefixLen, prefixBits)` out of a stored segment's AAD.
+fn prefix_key(bytes: &[u8]) -> (u8, u64) {
+    match StoredManifest::decode(bytes).expect("well-formed").fields() {
+        AadFields::ManifestSegment {
+            prefix_len,
+            prefix_bits,
+            ..
+        } => (*prefix_len, *prefix_bits),
+        _ => panic!("not a segment"),
     }
 }
 

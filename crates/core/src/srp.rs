@@ -207,6 +207,17 @@ pub fn generate_srp_salt() -> Result<Vec<u8>, SrpError> {
     Ok(salt)
 }
 
+/// Length of an SRP ephemeral secret in bytes (256 bits, RFC 5054 §2.5.1's minimum).
+pub const SRP_EPHEMERAL_LEN: usize = 32;
+
+/// Replay resistance rests on `b` being fresh for every exchange; the server enforces that
+/// (`chiavora_server::auth`).
+pub fn generate_ephemeral() -> Result<Secret<SrpEphemeralSecret>, SrpError> {
+    let mut bytes = Zeroizing::new(vec![0_u8; SRP_EPHEMERAL_LEN]);
+    crate::csprng::fill_bytes(bytes.as_mut_slice()).map_err(|_| SrpError::Csprng)?;
+    Ok(Secret::from_derived_bytes(bytes.to_vec()))
+}
+
 /// This replaces RFC 5054's `x = H(s, H(I:p))` (`docs/adr/0008`). `srpSalt` adds no entropy; it
 /// only keeps the construction in SRP's shape.
 pub fn private_exponent(

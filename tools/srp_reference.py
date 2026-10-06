@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import pathlib
 import re
@@ -176,6 +177,131 @@ def derivation_vectors(modulus_hex: str, generator: int) -> list[dict]:
             "x": x.hex().upper(),
             "verifier": f"{chiavora_verifier(modulus, generator, x):0{len(modulus_hex)}X}",
         })
+    return out
+
+
+def hkdf_sha256(ikm: bytes, info: bytes, length: int) -> bytes:
+    """RFC 5869 HKDF-SHA256 with no salt (HashLen zero bytes), written out."""
+    prk = hmac.new(bytes(32), ikm, hashlib.sha256).digest()
+    okm = b""
+    block = b""
+    counter = 1
+    while len(okm) < length:
+        block = hmac.new(prk, block + info + bytes([counter]),
+                         hashlib.sha256).digest()
+        okm += block
+        counter += 1
+    return okm[:length]
+
+
+def chiavora_session_keys(premaster: bytes) -> dict[str, bytes]:
+    """`K`, `macC2S` and `macS2C`, each derived directly from the padded `S`."""
+    return {
+        "K": hkdf_sha256(premaster, b"chiavora-srp-k", 32),
+        "mac_c2s": hkdf_sha256(premaster, b"chiavora-mac-c2s", 32),
+        "mac_s2c": hkdf_sha256(premaster, b"chiavora-mac-s2c", 32),
+    }
+
+
+def chiavora_m1(srp: "Srp", identity: bytes, srp_salt: bytes,
+                public_a: int, public_b: int, session_key: bytes) -> bytes:
+    """`M1 = H(H(N) XOR H(g) | H(I) | s | PAD(A) | PAD(B) | K)`.
+
+    Every field is fixed-width, and `I` is the accountId.
+    """
+    h_n = hashlib.sha256(srp.pad(srp.N)).digest()
+    h_g = hashlib.sha256(srp.pad(srp.g)).digest()
+    group_xor = bytes(left ^ right for left, right in zip(h_n, h_g))
+    return hashlib.sha256(
+        group_xor
+        + hashlib.sha256(identity).digest()
+        + srp_salt
+        + srp.pad(public_a)
+        + srp.pad(public_b)
+        + session_key
+    ).digest()
+
+
+def chiavora_m2(srp: "Srp", public_a: int, m1: bytes,
+                session_key: bytes) -> bytes:
+    """`M2 = H(PAD(A) | M1 | K)` (RFC 5054 section 2.6)."""
+    return hashlib.sha256(srp.pad(public_a) + m1 + session_key).digest()
+
+
+def proof_vectors(modulus_hex: str, generator: int) -> list[dict]:
+    """Full exchanges at 4096-bit SHA-256 through `M1` and `M2`: an ordinary
+    case and searched-for short `A` and `B`, where padding matters."""
+    modulus = int(modulus_hex, 16)
+    srp = Srp(modulus, generator, "sha256")
+    width = len(modulus_hex)
+
+    identity = bytes.fromhex("00112233445566778899AABBCCDDEEFF")  # accountId
+    srp_salt = bytes(range(0x20, 0x40))
+    srp_x = bytes(range(0x40, 0x60))
+    x_bytes = chiavora_x(srp_salt, srp_x)
+    x = int.from_bytes(x_bytes, "big")
+    verifier = srp.verifier(x)
+
+    def exchange(name: str, a_bytes: bytes, b_bytes: bytes) -> dict:
+        a = int.from_bytes(a_bytes, "big")
+        b = int.from_bytes(b_bytes, "big")
+        public_a = srp.public_a(a)
+        public_b = srp.public_b(b, verifier)
+
+        client_s = srp.client_secret(a, x, public_b)
+        server_s = srp.server_secret(b, verifier, public_a)
+        if client_s != server_s:
+            raise RuntimeError(f"{name}: the two sides disagree on S")
+
+        # S is padded before HKDF, as `client_premaster` returns it.
+        premaster = srp.pad(client_s)
+        keys = chiavora_session_keys(premaster)
+        m1 = chiavora_m1(srp, identity, srp_salt, public_a, public_b,
+                         keys["K"])
+        m2 = chiavora_m2(srp, public_a, m1, keys["K"])
+
+        if len({keys["K"], keys["mac_c2s"], keys["mac_s2c"]}) != 3:
+            raise RuntimeError(f"{name}: two of the three keys are equal")
+        if premaster in (keys["K"], keys["mac_c2s"], keys["mac_s2c"]):
+            raise RuntimeError(f"{name}: a derived key equals S itself")
+
+        return {
+            "name": name,
+            "account_id": identity.hex().upper(),
+            "srp_salt": srp_salt.hex().upper(),
+            "srp_x": srp_x.hex().upper(),
+            "x": x_bytes.hex().upper(),
+            "verifier": f"{verifier:0{width}X}",
+            "a": a_bytes.hex().upper(),
+            "b": b_bytes.hex().upper(),
+            "A": f"{public_a:0{width}X}",
+            "B": f"{public_b:0{width}X}",
+            "S": premaster.hex().upper(),
+            "K": keys["K"].hex().upper(),
+            "mac_c2s": keys["mac_c2s"].hex().upper(),
+            "mac_s2c": keys["mac_s2c"].hex().upper(),
+            "M1": m1.hex().upper(),
+            "M2": m2.hex().upper(),
+        }
+
+    ordinary_a = bytes(range(0x60, 0x80))
+    ordinary_b = bytes(range(0x80, 0xA0))
+    out = [exchange("ordinary", ordinary_a, ordinary_b)]
+
+    def search(predicate) -> bytes:
+        for counter in range(1 << 16):
+            candidate = (counter + 1).to_bytes(32, "big")
+            if predicate(candidate):
+                return candidate
+        raise RuntimeError("no short public value found; widen the search")
+
+    short_a = search(lambda c: srp.public_a(int.from_bytes(c, "big"))
+                     .bit_length() <= 4096 - 8)
+    out.append(exchange("a_has_a_leading_zero_byte", short_a, ordinary_b))
+
+    short_b = search(lambda c: srp.public_b(int.from_bytes(c, "big"), verifier)
+                     .bit_length() <= 4096 - 8)
+    out.append(exchange("b_has_a_leading_zero_byte", ordinary_a, short_b))
 
     return out
 
@@ -364,9 +490,50 @@ def main() -> int:
         "vectors": derivation,
     }, indent=1) + "\n", encoding="utf-8")
 
+    proofs = proof_vectors(n4096, g4096)
+    short = [v for v in proofs
+             if v["A"].startswith("00") or v["B"].startswith("00")]
+    if len(short) < 2:
+        print("FAIL: the proof suite needs a short A and a short B; "
+              f"found {len(short)}", file=sys.stderr)
+        return 1
+    print(f"OK: {len(proofs)} proof vectors, {len(short)} with a public value "
+          f"short enough for PAD to matter")
+
+    (args.out / "srp_proofs.json").write_text(json.dumps({
+        "source": (
+            "RFC 5054 section 2.6's M1/M2 formula, with the session-key schedule of "
+            " and the fixed-width transcript encoding."
+        ),
+        "note": provenance,
+        "checked_against": (
+            "NOTHING EXTERNAL. RFC 5054 publishes no M1 or M2 for any group -- "
+            "Appendix B stops at the premaster secret, in the 1024-bit SHA-1 "
+            "instantiation Chiavora does not ship. The evidence here is the same as "
+            "srp_derivation.json's: a second implementation -- this file, written "
+            "from and sharing no code with crates/core -- agrees "
+            "with the Rust. HKDF is written out from RFC 5869 here rather than "
+            "imported, so even the key schedule is not a shared library call."
+        ),
+        "scope": (
+            "The SHIPPING configuration: RFC 5054's 4096-bit group with SHA-256, "
+            "Chiavora's x, flat key schedule and fixed-width "
+            "transcript. Everything these vectors cover reaches what ships."
+        ),
+        "group": "4096",
+        "hash": "sha256",
+        "labels": {
+            "K": "chiavora-srp-k",
+            "mac_c2s": "chiavora-mac-c2s",
+            "mac_s2c": "chiavora-mac-s2c",
+        },
+        "vectors": proofs,
+    }, indent=1) + "\n", encoding="utf-8")
+
     print(f"wrote {args.out / 'srp_groups.json'}")
     print(f"wrote {args.out / 'rfc5054_appendix_b.json'}")
     print(f"wrote {args.out / 'srp_derivation.json'}")
+    print(f"wrote {args.out / 'srp_proofs.json'}")
     return 0
 
 

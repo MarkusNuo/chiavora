@@ -368,7 +368,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
     }
 }
 
-const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 98] = [
+const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 101] = [
     (
         "core/src/manifest.rs",
         "conflict_item_id",
@@ -927,6 +927,21 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 98] = [
         "core/src/srp.rs",
         "private_exponent",
         "SAFE BY CONSTRUCTION: `srpSalt` genuinely is attacker-facing -- the          server hands it to the client in the login exchange, so a hostile          server chooses it. But it reaches SHA-256 and nothing else. There          is no length to trust, no structure to parse, and no branch taken          on its contents; any 32 bytes are as valid as any other. A chosen          salt produces a different `x`, which produces a verifier that does          not match the stored one, and the exchange fails to authenticate --          §2.1's self-detecting downgrade wearing different clothes. The one          thing a fuzzer could look for here, a panic on an odd length, cannot          happen: `update` takes any slice",
+    ),
+    (
+        "core/src/srp.rs",
+        "client_proof",
+        "SAFE BY CONSTRUCTION: both slices reach a hash and nothing else -- no parse, no branch on contents, no allocation sized by either. The one shape that would matter is a variable-length `srpSalt`, because transcript is injective only while every field is a constant width, and a hostile server does choose that value. So it is refused rather than reasoned about: a salt that is not SRP_SALT_LEN returns TranscriptFieldLength. `identity` needs no such check because it enters as H(I), one hash wide whatever it was. A fuzzer over these arguments would be looking for a panic on an odd length, which `update` does not have",
+    ),
+    (
+        "core/src/srp.rs",
+        "server_proof",
+        "SAFE BY CONSTRUCTION: the same argument as client_proof. `M1`          arrives at a fixed width or is refused with TranscriptFieldLength,          and the width is the hash's own associated constant rather than a          literal, so SHA-1 and SHA-256 cannot disagree about it",
+    ),
+    (
+        "core/src/srp.rs",
+        "proofs_match",
+        "NOT A BOUNDARY: it parses nothing and allocates nothing. It          compares two slices and decides on their lengths first, which is          safe because both lengths are public -- one hash width. What it is          *for* is a property no fuzzer can observe, that the comparison does          not return early; that claim is `subtle`'s and is asserted by          proofs_match_accepts_only_an_exact_equal_length_match only in the          weaker form that the answer is correct",
     ),
 ];
 

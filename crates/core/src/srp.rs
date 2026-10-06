@@ -2,11 +2,16 @@
 
 use crypto_bigint::modular::{BoxedMontyForm, BoxedMontyParams};
 use crypto_bigint::{BoxedUint, ConcatenatingMul as _, NonZero, Odd, Resize as _};
+use hkdf::Hkdf;
 use sha2::{Digest as _, Sha256};
+use subtle::ConstantTimeEq as _;
 use zeroize::Zeroizing;
 
 use crate::secret::{
-    kind::{SrpEphemeralSecret, SrpExponent, SrpPremasterSecret, SrpX},
+    kind::{
+        SrpEphemeralSecret, SrpExponent, SrpMacKeyClientToServer, SrpMacKeyServerToClient,
+        SrpPremasterSecret, SrpSessionKey, SrpX,
+    },
     Secret,
 };
 
@@ -71,6 +76,7 @@ impl Group {
 
 /// A type parameter, never a wire value, so a server has nothing to negotiate.
 pub trait SrpHash: sealed::Sealed {
+    const LEN: usize;
 
     fn digest(parts: &[&[u8]]) -> Vec<u8>;
 }
@@ -84,6 +90,7 @@ pub struct Sha256Hash;
 
 impl sealed::Sealed for Sha256Hash {}
 impl SrpHash for Sha256Hash {
+    const LEN: usize = 32;
 
     fn digest(parts: &[&[u8]]) -> Vec<u8> {
         let mut hasher = Sha256::new();
@@ -104,6 +111,7 @@ impl sealed::Sealed for Sha1Hash {}
 
 #[cfg(test)]
 impl SrpHash for Sha1Hash {
+    const LEN: usize = 20;
 
     fn digest(parts: &[&[u8]]) -> Vec<u8> {
         use sha1::Digest as _;
@@ -122,6 +130,8 @@ pub enum SrpError {
     PublicValueOutOfRange,
     Csprng,
     Precision,
+    Hkdf,
+    TranscriptFieldLength,
 }
 
 impl core::fmt::Display for SrpError {
@@ -136,6 +146,10 @@ impl core::fmt::Display for SrpError {
                 f.write_str("the platform CSPRNG failed while drawing srpSalt; refusing")
             }
             Self::Precision => f.write_str("an SRP value did not fit the requested precision"),
+            Self::Hkdf => f.write_str("HKDF refused the SRP session key length"),
+            Self::TranscriptFieldLength => {
+                f.write_str("an SRP proof-transcript field is not its fixed width; refusing")
+            }
         }
     }
 }
@@ -337,6 +351,100 @@ pub fn server_premaster<H: SrpHash>(
     Ok(Secret::from_derived_bytes(
         Zeroizing::new(pad(&secret, group)).to_vec(),
     ))
+}
+
+pub const SRP_KEY_LEN: usize = 32;
+
+const INFO_SESSION_KEY: &[u8] = b"chiavora-srp-k";
+const INFO_MAC_C2S: &[u8] = b"chiavora-mac-c2s";
+const INFO_MAC_S2C: &[u8] = b"chiavora-mac-s2c";
+
+/// Siblings rather than a chain, because `K` is hashed into the transmitted `M1`.
+#[derive(Debug)]
+pub struct SessionKeys {
+    /// `K`: hashed into `M1` and `M2`, and used for nothing else.
+    pub session_key: Secret<SrpSessionKey>,
+    pub mac_client_to_server: Secret<SrpMacKeyClientToServer>,
+    pub mac_server_to_client: Secret<SrpMacKeyServerToClient>,
+}
+
+/// One HKDF expansion of `S` under one label, with no salt; `info` carries the separation.
+fn expand(premaster: &Secret<SrpPremasterSecret>, info: &[u8]) -> Result<Vec<u8>, SrpError> {
+    let mut out = Zeroizing::new(vec![0_u8; SRP_KEY_LEN]);
+    Hkdf::<Sha256>::new(None, premaster.expose())
+        .expand(info, out.as_mut_slice())
+        .map_err(|_| SrpError::Hkdf)?;
+    Ok(out.to_vec())
+}
+
+pub fn session_keys(premaster: &Secret<SrpPremasterSecret>) -> Result<SessionKeys, SrpError> {
+    Ok(SessionKeys {
+        session_key: Secret::from_derived_bytes(expand(premaster, INFO_SESSION_KEY)?),
+        mac_client_to_server: Secret::from_derived_bytes(expand(premaster, INFO_MAC_C2S)?),
+        mac_server_to_client: Secret::from_derived_bytes(expand(premaster, INFO_MAC_S2C)?),
+    })
+}
+
+/// `H(N) XOR H(g)`, the group's contribution to `M1` (RFC 5054 §2.6), with `g` padded.
+fn group_xor<H: SrpHash>(group: Group) -> Result<Vec<u8>, SrpError> {
+    let modulus = group.modulus()?;
+    let h_n = H::digest(&[&pad(&modulus, group)]);
+    let h_g = H::digest(&[&pad(&generator(group)?, group)]);
+    Ok(h_n
+        .iter()
+        .zip(h_g.iter())
+        .map(|(left, right)| left ^ right)
+        .collect())
+}
+
+/// `M1 = H(H(N) XOR H(g) ‖ H(I) ‖ s ‖ PAD(A) ‖ PAD(B) ‖ K)`, the client's proof (RFC 5054 §2.6).
+/// Every field is fixed-width. `identity` is the `accountId`, never the email, which can change.
+pub fn client_proof<H: SrpHash>(
+    group: Group,
+    identity: &[u8],
+    srp_salt: &[u8],
+    client_public: &BoxedUint,
+    server_public: &BoxedUint,
+    session_key: &Secret<SrpSessionKey>,
+) -> Result<Vec<u8>, SrpError> {
+    if srp_salt.len() != SRP_SALT_LEN {
+        return Err(SrpError::TranscriptFieldLength);
+    }
+    Ok(H::digest(&[
+        &group_xor::<H>(group)?,
+        &H::digest(&[identity]),
+        srp_salt,
+        &pad(client_public, group),
+        &pad(server_public, group),
+        session_key.expose(),
+    ]))
+}
+
+/// `M2 = H(PAD(A) ‖ M1 ‖ K)`, the server's proof (RFC 5054 §2.6), sent only after `M1` verifies.
+pub fn server_proof<H: SrpHash>(
+    group: Group,
+    client_public: &BoxedUint,
+    client_proof: &[u8],
+    session_key: &Secret<SrpSessionKey>,
+) -> Result<Vec<u8>, SrpError> {
+    if client_proof.len() != H::LEN {
+        return Err(SrpError::TranscriptFieldLength);
+    }
+    Ok(H::digest(&[
+        &pad(client_public, group),
+        client_proof,
+        session_key.expose(),
+    ]))
+}
+
+/// Compares two proofs in constant time; use it, never `==`, on `M1` and `M2`. A length mismatch
+/// returns `false` early, as lengths are public.
+#[must_use]
+pub fn proofs_match(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    left.ct_eq(right).into()
 }
 
 #[cfg(test)]

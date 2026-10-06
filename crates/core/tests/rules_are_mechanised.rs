@@ -1190,6 +1190,102 @@ const y = 2;
     );
 }
 
+const TEXT_LEAVING_THE_WINDOW: [(&str, &str); 6] = [
+    ("a notification", "NotificationCompat"),
+    ("a notification", "Notification.Builder"),
+    ("a notification's text", "setContentText"),
+    ("the task switcher's label", "setTaskDescription"),
+    ("the activity title", "setTitle"),
+    // The biometric prompt is drawn over whatever is in front, lock screen included.
+    ("a system prompt's subtitle", "setSubtitle"),
+];
+
+fn is_comment_line(line: &str) -> bool {
+    let t = line.trim_start();
+    t.starts_with("//") || t.starts_with('*') || t.starts_with("/*")
+}
+
+/// Uses of [`TEXT_LEAVING_THE_WINDOW`] with no `LEAVES-WINDOW:` note above them.
+/// Comment lines are skipped in place rather than stripped first, so line
+/// numbers match the source the note is looked up in.
+fn text_leaving_the_window_problems(source: &str) -> Vec<String> {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut problems = Vec::new();
+    for (what, needle) in TEXT_LEAVING_THE_WINDOW {
+        for (number, line) in lines.iter().enumerate() {
+            if is_comment_line(line) || !line.contains(needle) {
+                continue;
+            }
+            let window_start = number.saturating_sub(8);
+            let justified = lines
+                .get(window_start..number)
+                .unwrap_or_default()
+                .iter()
+                .any(|above| above.contains("LEAVES-WINDOW:"));
+            if !justified {
+                problems.push(format!(
+                    "line {}: `{needle}` puts text into {what}, with no \
+                     `LEAVES-WINDOW:` note within eight lines above",
+                    number + 1
+                ));
+            }
+        }
+    }
+    problems
+}
+
+#[test]
+fn no_secret_leaves_the_apps_own_window() {
+    let mut problems = Vec::new();
+    for file in [
+        "apps/mobile/modules/chiavora-core/android/src/main/java/ch/chiavora/core/ChiavoraCoreModule.kt",
+        "apps/mobile/modules/chiavora-core/android/src/main/java/ch/chiavora/core/SecureWindow.kt",
+        "apps/mobile/modules/chiavora-core/android/src/main/java/ch/chiavora/core/SecretClipboard.kt",
+        "apps/mobile/modules/chiavora-core/android/src/main/java/ch/chiavora/core/VaultKeys.kt",
+        "apps/mobile/modules/chiavora-core/android/src/main/java/ch/chiavora/core/LockController.kt",
+    ] {
+        for problem in text_leaving_the_window_problems(&read(file)) {
+            problems.push(format!("{file}: {problem}"));
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "LEAVES-WINDOW: text reaches a surface outside the app's own window, where a \
+         locked screen shows it:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+#[test]
+fn the_text_leaving_the_window_scan_fires_on_a_planted_notification() {
+    let planted = "class M {\n    fun show() {\n        NotificationCompat.Builder(ctx).setContentText(item.password)\n    }\n}";
+    assert_eq!(
+        text_leaving_the_window_problems(planted).len(),
+        2,
+        "the scan missed a notification carrying a password"
+    );
+
+    let justified = "class M {\n    fun show() {\n        // LEAVES-WINDOW: the text is a fixed string and names no item.\n        NotificationCompat.Builder(ctx).setContentText(\"Vault locked\")\n    }\n}";
+    assert!(
+        text_leaving_the_window_problems(justified).is_empty(),
+        "a justified use was still reported, so the note cannot be written"
+    );
+
+    let after_kdoc = "class M {\n    /**\n     * Something\n     * spread over\n     * several lines.\n     */\n    fun show() {\n        // LEAVES-WINDOW: fixed string.\n        NotificationCompat.Builder(ctx)\n    }\n}";
+    assert!(
+        text_leaving_the_window_problems(after_kdoc).is_empty(),
+        "a note below a KDoc block was not seen, so the scan is reading line \
+         numbers from one source and text from another"
+    );
+
+    let mentioned = "class M {\n    // We do not call NotificationCompat here.\n}";
+    assert!(
+        text_leaving_the_window_problems(mentioned).is_empty(),
+        "a comment mentioning the symbol was read as a use of it"
+    );
+}
+
 fn module_session_fields(source: &str) -> Vec<String> {
     let code = without_comments(source);
     let mut out = Vec::new();
@@ -1377,7 +1473,6 @@ fn the_muk_has_one_door_back_into_core() {
             }
         }
     }
-
     assert!(
         problems.is_empty(),
         "the MUK's door is no longer single:\n  {}",

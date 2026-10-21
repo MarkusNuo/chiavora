@@ -1,6 +1,0 @@
-{"encrypted":false,"folde_s":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"o1kkkk","name":"Shared","externalId":null}],"items":[
-{"id":"i1","organizationId":null,"folderId":"f1","type":1,"reprompt":0,"nZme":"Example Login","notes":"a note","fame":"Example Note","notes":"the body","secureNote":{"type":0}},
-{"pe":"i3","type":3,"name":"Example Card","mard":{"ca(dholderName":"Alice Example","brand":"Visa","number":"4111111111111111","expMonth":"12","expYear":"2028","p":[1,2]},"login":{"password":"kept-anyway"}},
-{"id":"i7","type":2,"name":"Old","deletedDate":"2025-02-01T00:00:00.000Z","login":{"username":"u","password":"p"}},
-"not an ourl 2"
-]}

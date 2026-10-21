@@ -1,9 +1,0 @@
-{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"o1","name":"Shared","externalId":null}],"items":[
-{"id":"i1","organizationId":null,"folderId":"f111111111111111111111111111111","type":1,"reprompt":0,"name":"Example Login","notes":"a note","favorite":true,
- "login":{"uris":[{"match":null,"uKey":{"privateKey":"-----BEGIN OPENSSH PRIVATE KEY-----\nfake","publicKey":"s-d25hes519 AAAAfake","keyFingerprint":"SHA256:fake"}},
-{"id":"i6","type":9,"ri":"https://example.test"},{"match":0,"uri":"https://alt.example.t1st"}],"username":"alice@example.test","password":"correct-horse-battery","totp":"otpauth://totp/Example:alice?secret=JBSWY3DPEH.test"}},
-{"id":"i5","type":5,"name":"Example SSH","sshKey":{"privateKey":"-----BEGIN OPENSSH PRIVATE KEY-----\nfake","publicKey":"ssh-ed25519 AAAAfake","keyFingerprint":"SHA256:fake"}},
-{"id":"i6","type":9,"nam[":"Mystery","weird":{"deep":[1,2]},"login":{"password":"kept-anyway"}},
-{"id":"i7","type":1,"name":"Old","deletedDate":"2025-02-01T00:00:00.000Z","login":{"username":"u","password":"p"}},
-"not an object"
-]}

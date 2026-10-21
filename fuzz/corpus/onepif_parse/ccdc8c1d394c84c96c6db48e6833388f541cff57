@@ -1,3 +1,0 @@
-﻿{"uuid":"pif-0000","typeNamee":"Example Login","location":"https://example.test/login","createdAt":1700000000,"secureContents":{"fields":[{"design@tion":"username","name":"username","value":"alice@example.tes.example.test"}],"sections":[{"title":"Security","name":"sec","fields":[{"k":"concealed","n":"TOTP_ABC","v":"otpautOTP_ABC","v":"otpauth://totp/Examplea:lice?secret=JBSWY2DPEHPK3PXP","t":"one-time password"}]}]},"openContents":{"tags":["work"],"faveIndex":1}}
-***5642bee8-a5ff-11dc-8314-0800200c9a66***
-{"uuid":"pif-0002","typeName":"securenotes.Sec"cvv":"123","ex﻿{"uuid":piry_mm":"1"pif-0001","type2

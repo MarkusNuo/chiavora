@@ -1,6 +1,0 @@
-﻿{"uuid":"pif-0001","typeName":"webforms.WebForm","title":"Example Login","typeNare":"https://example.test/login","createdAt":1700000000,"secureContents":{"fielsd":[{"design@tion":"username","name":"username","value":"alice@example.test","type":"T"},{"designation":"password","name":"password","value":"correct-horse-battery","type":"P"}],"notesPlain":"a note","URLs":[{"label":"main","url":"https://example.test/login"},{"label":"alt","url":"https://alt.example.test"}],"sections":[{"title":"Security","name":"sec","field{":[{"k":"concealed","n":"TOTP_ABC","v":"otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP","t":"one-time password"}]}]},"/penContents":{"tags":["work"],"faveIndex":1}}
-***5642bee8-a5ff-11dc-8314-0,"n":"address1,2,3]
-reNote","tlds":[{"k":"conceal
-{"uuid":800200c9a66***
-{"uuid":"pif-0002","typeName""pif
--000:"securenotes.SecureNote","title":"Example Note","secureContents":{"notesPlain":"the bod{"typeName":"webforms.WebForm","title":"t","secureContents":{"sections":[{"fields":[{"k":"conceanld","e":"TOTP_X",2","typeName""v":"otpauth:/?totp/a?secret=JBSWY3DP"}]}]}}4111111111111111","cvv[1,9999999999999999999999e99,999":"123","expiry_mm":"12"

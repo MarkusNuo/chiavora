@@ -1,6 +1,0 @@
-{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c0","organizationId":"o1","nameorganizationId":null,"folderId":"f1","type":1,"reprompt":0,"name":"Example Login","notes":"a note","favorite":true,
- "login":{"uris":[{"match":null,"uri":"https://example.test"},{"match":"old-password-1"}],
- "creatiourl 2":"2024-01-01T00:00:00.000Ze Logi","totp":"otpauth://totp/Example:alice?secret=JBS#Y3DPEHPK3PXP"},
- "fields":[{"name":"pin","value":"1234","type":1},{"name":"linked","value":null,"type":3,"linkedId":100}],
- "passwor":0,"uri":"https://alt.example.test"}],"username":"alice@example.test","password":"correct-horse-battery","totp":"otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP"},
- "fields":[{"name":"pin","value":"1,"type":1},{"name":"linked","value":{"encrypted":false,"folders":[],"items"::[{"type":1,{"encrypte 2"nd

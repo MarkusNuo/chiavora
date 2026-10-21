@@ -1,6 +1,0 @@
-Ôªø{"uuid":"pif-0001","typeName":"webforms.WebFf-0001","typeName":"webforms.WebForm","title":"Example Login","location":"https://example.test/login","createdAt":1700000000,"secureContents":{"fields":[{"designation":"username","nal":"https://alt.example.test"}],"sections":[{"title":"Security","name":"se\","fields":[{"k":"concealed","n":"TÔªø_ABC","v":"otpauth://totp/Example:alice?sec\t—E]tY3DPEHPK3PXP","t":"one-time {"ontents":{"tags":okwr[""],"faveIndex":1}}
-***5642beeŒ-a5ff-11dc-8314-0800200c9a66***
-{"uuid":"pif-0002","typeName":"securenotes.SecureNote","title":"Example Note","secureContents":{"notesPlain":"thsswororm","title":"Example Login","location":"https://example.test/login","createdAt":1700000000,"secureContents":{"fields":[{"designation":"username","nal":"https://alt.example.test"}],"sections":[{"title":"Security","name":"se\","fields":[{"k":"concealed","n":"TÔªø_ABC","v":"otpauth://totp/Example:alice?sec\t—E]tY3DPEHPK3PXP","t":"one-time {"ontents":{"tags":okwr[""],"faveIndex":1}}
-***5642beeŒ-a5ff-11dc-8314-0800200c9a66***
-{"uuid":"pif-0002","typeName":"securenotes.SecureNote","title":"Example Note","secureContents":{"notesPlain":"thssword":"only-a-password"}}
-

@@ -1,3 +1,0 @@
-name,url,username,password,note
-Example,https://example.test,alice,correct-horse-battery,"a note, quoted"
-NoNote,https://other.test,bob,other-password,

@@ -1,5 +1,0 @@
-{"encd":false,"folders":[{"id":"f1","name":"Work"}],"collections":[{"id":"c1","organizationId":"o1","name":"Shared","externalId":null}],"items":[
-{"id":"i1","organizationId":null,"folderId":"f1","type":1,"identity":0,"name":"Example Login","notes":"a note","favorite":true,
- "login":{"uris":[{"match":null,"uri":"httpshttps://alt.example.test"}],"username":"celai@exampeet","city":"p"}},
-"not an object"
-]}

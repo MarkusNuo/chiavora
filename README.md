@@ -74,7 +74,7 @@ Fuzzing needs nightly and `cargo-fuzz`: `pwsh -File scripts/fuzz.ps1 -Seconds 45
 | `crates/server/` | The sync server |
 | `apps/mobile/` | The React Native app and its Android module |
 | `apps/desktop/`, `apps/extension/`, `apps/cli/` | Scaffolds |
-| `fuzz/` | Fuzz targets and corpora |
+| `fuzz/` | Fuzz targets |
 | `scripts/`, `tools/` | Build and test scripts, vector generators |
 | `docs/` | Security design, cryptography, decision records |
 

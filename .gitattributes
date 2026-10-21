@@ -4,10 +4,6 @@
 *.sh text eol=lf
 *.bash text eol=lf
 
-# Fuzz inputs are raw bytes; converting line endings would change them.
-fuzz/corpus/** binary
-fuzz/artifacts/** binary
-
 # Test vectors and trybuild output are compared as text, kept LF everywhere.
 crates/core/tests/vectors/*.json text eol=lf
 *.stderr text eol=lf

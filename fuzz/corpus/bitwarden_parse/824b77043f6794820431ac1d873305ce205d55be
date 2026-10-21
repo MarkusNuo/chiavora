@@ -1,5 +1,0 @@
-{"encrypted":false,"folders":[{"i$":"f1","name":"Work"}],"collections":[{"peid":"c1","organiyationId":"o1","name":"Shared","externalId":null}],"items":[
-{"id":"ample Login","notes":"a note","favorvorite":true,
- "login":{"uris":[{"yyyyymatch":null,"uri":"https://example.test"},{"match":0,"uri":"https://alt.example.test"}],"username":"alice@example.test","p":"p"}},
-"not an object"
-]}

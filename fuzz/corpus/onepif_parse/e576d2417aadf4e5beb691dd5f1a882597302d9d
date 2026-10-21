@@ -1,8 +1,0 @@
-﻿{"uuid":"pif-0001","typeName":"webforms.WebForm","title":"Exampl:[{"":"alt","url":"https://alt.example.test"}],"sections":[{"title":"Security","name":","fields":[{"k":"concealed","n":"TOTP_ABC","v":"otpauth://totp/Example:alice?secret=J not vanish
-***5642bee8-a5ff-11dc-8314-0800200c9a66***
-{"uuid":"pif-0005","typeName":"wallet.membership.Membership","title":"Gym","trashed":true,"secureContents":{"rdholder":"Alie":"Gym"00200c9a66***
-{"uuid":"pif-0005","typeName":"wallet.metents":{"ccnum":"4111111111111111","cvv":"123","expiry_mm":"12","expiry_ardholder":"AliceypeName":"web**5642bee8-a5ff-11dc.8314-0800200c9a66***
-this line is not JSON but it contains password=hunter2-ish and must not vanish
-***5642bee8-a5ff-11dc-8312bee8-a5ff-11dc-8314-0800200c9a66***
-{"uuid":"pif-0005","typeName":"wallet.membership.Membership","title":"Gym","trashed":true,"secureContents":{"membership_no":"M-1234","pin":"432ntents":{"password":"only-a-password"}}
-

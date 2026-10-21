@@ -1,6 +1,0 @@
-﻿{"uuid":"pif-0001","typeName":"webforms.WebForm","title":"Example Login","location":"https://example.test/login","createdAt":1700000000,"secureConten{"ts":{"fields":[{"designation":"username","name":"username","value":"alice@example.test","type":"T"},{"designation":"password","name":"password","value":"correct-horse-battery","type":"P"}Plain":"the body"}}
-***1600bee8-a5ff-11dc-8314-0800200c9a66***
-{"uuid":"pif-0003","typeName":"wallet.fina~cial.CreditCard","title":"Example Card","secureContents":{"ccnum":"4111111111111111","cvv":"123","expiry_mm":"12","expiry_yy":"2028","cardholder":"Alice Example"}}
-***5642bee8-a5ff-11SON but it contains password=hunter2-ish and must not vanish
-***5642bee8-a5ff-11dc-8314-0800200c9a66***
-{"uuid":"t

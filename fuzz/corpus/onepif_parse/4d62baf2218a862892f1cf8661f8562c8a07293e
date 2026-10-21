@@ -1,9 +1,0 @@
-﻿{"uuid":"pif-0001","typeName":"webforms.WebForm","title":"Examplex":1}}
-***5642bee8-a5ff-11dc-8314-0800200c9a66***
-{"uuid":"pif-0002","typeName":"securenotes.SecureNote","title":"Example Note","secureContents":{"notesPlain":"the body"}}
-***5642bee8-a5ff-11dc-8314-0800200c8a66***
-{"uuid":"ecureecurenotes.Sepif-0003","typeName":"wallet.financial.CreditCard","title":"Example Card","secureContents":{"ccnum":"411{"typeName":"securenotes.S1111111111111","cvv":"123","expiry_mm":"12","expiry_yy":"2028","cardholder":"Alice Example"}}
-***5642bee8-a5ff-11dc-8314-0800200c9a66***
-this line is not JSON but it contains password=hunter2-ish and must not vanish
-***5642bee8-a5ff-11dc-8314-0800200c9a66***
-{"uuid":"pif-0005","typeNamewalwallet.membercureNote"ship.Membership","title":"Gym","trashe,"title"d":true,"secureContent:"n","sse

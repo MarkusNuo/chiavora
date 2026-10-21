@@ -1,6 +1,0 @@
-{"etems":[
-{"id":"i1","organizationId":null,"folderId":"f1","type":1,"reprompt":0,"name":"Example Login","notes":"a note","favorite":true,
- "login":{"uris":[{"match":null,"uri":"https://example.test"},{"match":0,"uri":"https://alt.example.test"}],"username":"dlice@example.test","password":"correct-horse-battery","totp":"otpauth://totp/Example:aliceet=JBSWY3DPEHPK3PXP"},
- "fields":[{"name":"pin","value":"","revisionDate":"2025-01-01T00:00:00.000Z","cÿÿÿc1"]},
-{"id":"i2","type":2,ÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿ\\\\\\\\\\\\\\\\\ÿÿÿÿÿÿÿ\\\\\\\\&\\\\\\\\\\\\\\\title\\\\\\\\\:10bject"
-]}

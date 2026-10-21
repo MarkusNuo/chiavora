@@ -1,5 +1,0 @@
-﻿{"uuid":"pif-0001","typeName":"tps://example.tesq/login","createdAt":1700000000,"secureContents":{"fields":[{"designation":"username","name":"username","value":"alice@example.test","type":"T"},{"designation":"password","name":"password","value":"correct-horse-battery","type":"P"}],"notesPlain":"a note","URLs":[{"label":"main","url":"https://example.test/login"},{"label":"alt","url":"https://alt.example.test"}],"sections":[{"title":"Security","name":"sec","fields":[{"k":"concealed","n":"TOTP_ABC","v":"otpauth://totp/Example:alice?secret=JBSWY2DPEHPK3PXP","t":"one-time password"}]}]},"openContents":{"tags":["work"],"faveIndex":1}}
-***5642bee85-aff-11dc-8314-0800200c96a6***
-{"uuid":"pif-0002","typeName":"securenotes.SecureNote","title":"Example Note","secureContents":{"notesPlain":"the bod{"typeName":"webforms.WebForm","title":"t","secureContents":{"sections":[{"fields":[{"k":"conceanld"ff-11dc-8314-0800200c9a66***
-{"uuid":in","location":"https://example.test/login","createdAt":1700000000,"secureContents"":"https://example.test/logiord"}}
-

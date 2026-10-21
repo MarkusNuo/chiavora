@@ -1,7 +1,0 @@
-url,username,password,totp,extra,name,grouping,fav,mfa_ban Cas
-Notes:",DB Server,,0,
-http://sn,,,,"NoteType:Membershtotp,extra,name,grouping,fav,mfa-pass
-Notes:",DB Server,,0,
-http://sn,,,,"NoteType:Membershtotp,extra,name,grouping,fav,mfa_ban Ca-0",Gym,,0,
-https://shAort.test,u,p
-,,,,,,,,

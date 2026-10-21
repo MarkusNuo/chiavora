@@ -90,14 +90,14 @@ try {
     Write-Host ''
     Write-Host "verdict written to $verdictPath" -ForegroundColor Green
 
-    # Set explicitly: the skip path leaves 2 in `$LASTEXITCODE`. `finally` still runs.
-    exit 0
-
     if (-not $SkipFuzz) {
         Write-Host ''
         Write-Host 'R7: a change that touched a parser also needs a local fuzz run, reported' -ForegroundColor Yellow
         Write-Host 'with its coverage figure and corpus size. See scripts/fuzz.ps1.' -ForegroundColor Yellow
     }
+
+    # Set explicitly: the skip path leaves 2 in `$LASTEXITCODE`. `finally` still runs.
+    exit 0
 }
 finally {
     Pop-Location

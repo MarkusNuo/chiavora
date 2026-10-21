@@ -176,6 +176,25 @@ collides with `vaultId = "a", itemId = "bc"` without length prefixes.
 4348563105020000006162010000006302
 ```
 
+`0x06` sealed Vault Key, `vaultKeyEpoch = 1`, `recipientPk = "pk"` (a real key
+is 32 bytes):
+
+```text
+43485631060200000061620100000002000000706b
+```
+
+`0x07` wrapped Autofill Key, `vaultKeyEpoch = 1`:
+
+```text
+434856310702000000616201000000
+```
+
+`0x08` wrapped account private key, `accountId = "ad"`, `accountKeyEpoch = 1`:
+
+```text
+434856310802000000616401000000
+```
+
 ## The manifest structure
 
 One root (`0x03`) and one or more segments (`0x04`), all under the Vault Key.
@@ -342,7 +361,6 @@ The harness is `crates/core/tests/on_device_cost_reports.rs` (`report_kdf_cost_o
 - Nothing published covers SRP as it ships; its vectors have one independent check.
 - Constant-time SRP exponentiation rests on a type and a scan, not a measurement.
 - There is no transport yet, so its own oracle surfaces are unexamined.
-- `0x06`, `0x07` and `0x08` have no documented vectors.
 
 ## Rules for changing `crates/core`
 

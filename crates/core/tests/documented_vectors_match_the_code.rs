@@ -75,6 +75,28 @@ fn documented_vectors() -> Vec<(&'static str, AadFields)> {
                 wrap_purpose: WRAP_PURPOSE_VAULT,
             },
         ),
+        (
+            "0x06 sealed Vault Key",
+            AadFields::SealedVaultKey {
+                vault_id: b"ab".to_vec(),
+                vault_key_epoch: 1,
+                recipient_public_key: b"pk".to_vec(),
+            },
+        ),
+        (
+            "0x07 wrapped Autofill Key",
+            AadFields::WrappedAutofillKey {
+                vault_id: b"ab".to_vec(),
+                vault_key_epoch: 1,
+            },
+        ),
+        (
+            "0x08 wrapped account private key",
+            AadFields::WrappedAccountKey {
+                account_id: b"ad".to_vec(),
+                account_key_epoch: 1,
+            },
+        ),
     ]
 }
 

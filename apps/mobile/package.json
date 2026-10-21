@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "React Native (Expo) app over the Rust core via uniffi. Android only for now.",
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-only",
   "main": "index.js",
   "scripts": {
     "prebuild": "expo prebuild --platform android --clean",

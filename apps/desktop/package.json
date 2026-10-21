@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Electron shell with a React renderer over core via napi-rs. Scaffold.",
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
     "build:ffi": "node scripts/build-ffi.mjs",

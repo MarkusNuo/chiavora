@@ -38,6 +38,7 @@ edition = "2021"
 # Raised only as far as a dependency needs: crypto-bigint 0.7 needs 1.85.
 rust-version = "1.85"
 publish = false
+license = "AGPL-3.0-only"
 
 # Only silences the failed-symbol prints napi-sys makes when a test binary loads it outside Node.
 [profile.dev.package.napi-sys]

@@ -2,6 +2,7 @@
 name = "chiavora-fuzz"
 version = "0.0.0"
 publish = false
+license = "AGPL-3.0-only"
 edition = "2021"
 
 # Not part of the root workspace: cargo-fuzz needs nightly, the main build

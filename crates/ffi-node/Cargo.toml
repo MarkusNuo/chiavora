@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license.workspace = true
 
 # cdylib for the Node addon; rlib so the Rust-side unit tests can link it.
 [lib]

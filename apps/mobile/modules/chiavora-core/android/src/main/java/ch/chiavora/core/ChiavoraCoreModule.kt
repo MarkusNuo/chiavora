@@ -346,6 +346,7 @@ class ChiavoraCoreModule : Module() {
     private fun armAutoLock() {
         lockController.arm(lockPolicy().idleTimeoutSeconds.toLong() * 1000L)
         (appContext.currentActivity)?.let { lockController.watchTouches(it) }
+        SecureWindow.hold(appContext.currentActivity, SecureWindow.Reason.SESSION)
     }
 
     /** Kept out of backups by `with-chiavora-backup.js`. */

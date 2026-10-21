@@ -25,7 +25,7 @@ self-hostable server and iOS follow.
 - Password and passphrase generator.
 - Import from 1Password, Bitwarden, LastPass and Chrome; an encrypted export.
 - Android app: vault list, item editor, biometric unlock, auto-lock,
-  self-clearing clipboard.
+  screenshot protection, self-clearing clipboard.
 
 ## Tech stack
 

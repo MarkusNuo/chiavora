@@ -101,7 +101,9 @@ fn only_vault(store: &chiavora_core::store::Store) -> Result<Vec<u8>, ItemError>
         }),
         1 => Ok(ids.remove(0)),
         n => Err(ItemError::Provisioning {
-            reason: format!("this device has {n} vaults and the app has no screen that chooses one"),
+            reason: format!(
+                "this device has {n} vaults and the app has no screen that chooses one"
+            ),
         }),
     }
 }

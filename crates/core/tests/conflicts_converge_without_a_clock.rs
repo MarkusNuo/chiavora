@@ -59,8 +59,7 @@ fn the_derivation_is_domain_separated_and_differs_from_the_bare_hash() {
     assert_ne!(
         conflict_item_id(id, &d).as_slice(),
         bare.get(..16).expect("32 bytes"),
-        "without the separator this derivation's output space would overlap \
-         every other bare SHA-256 over an identifier and a digest in this system"
+        "the derivation is not domain-separated"
     );
 }
 
@@ -154,8 +153,7 @@ fn two_devices_resolving_independently_reach_the_same_answer() {
             assert_eq!(
                 copy_item_id,
                 conflict_item_id(copy.item_id(), copy.ciphertext_digest()),
-                "the copy's id is derived from the losing side, so both devices \
-                 mint the same one"
+                "the copy's id is not derived from the losing side"
             );
         }
         Resolution::SameEdit => panic!("these are different edits"),
@@ -231,8 +229,7 @@ fn a_conflict_copy_hashes_independently_of_its_primary() {
     }
     assert!(
         differing > 0,
-        "over 64 conflicts, no copy landed on the other side of a one-bit \
-         split — the derived id is not hashing independently"
+        "over 64 conflicts, no copy landed on the other side of a one-bit split"
     );
 }
 
@@ -414,8 +411,7 @@ fn a_resolved_conflict_lands_as_one_cas_write_carrying_both_versions() {
     assert_eq!(
         server.writes_accepted - before,
         1,
-        "two writes leave a window in which one of the two passwords is in no \
-         manifest at all"
+        "the conflict took more than one write"
     );
 
     let copy_id = conflict_item_id(b"login-bank", &digest(0xA1));
@@ -425,7 +421,7 @@ fn a_resolved_conflict_lands_as_one_cas_write_carrying_both_versions() {
     );
     assert!(
         server.entry(&key, &copy_id).is_some(),
-        "the copy is not in the manifest the single write produced"
+        "the copy is not in the manifest"
     );
 }
 

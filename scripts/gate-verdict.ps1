@@ -47,8 +47,7 @@ if ($LASTEXITCODE -eq 0 -and $originMain) {
     if ($LASTEXITCODE -ne 0) {
         $behind = (& git rev-list --count 'HEAD..refs/remotes/origin/main').Trim()
         Fail ("HEAD is behind origin/main by $behind commit(s) as of the last " +
-            'fetch, so this verdict is for a tree that is not what would merge. ' +
-            'git fetch, rebase, re-run the gate')
+            'fetch; fetch, rebase and re-run the gate')
     }
 }
 else {

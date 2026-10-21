@@ -248,7 +248,7 @@ fn regenerate_item_body_corpus() {
             .unwrap(),
     ));
 
-    assert!(seeds.len() >= 10, "R7: at least ten seeds");
+    assert!(seeds.len() >= 10, "at least ten seeds");
     for (name, bytes) in seeds {
         std::fs::write(dir.join(name), bytes).unwrap();
     }

@@ -196,8 +196,7 @@ mod tests {
         .unwrap();
         assert_ne!(
             autofill, item,
-            "the empty-itemId wrapped Item Key is the exact shape 0x07 exists \
-             to keep distinct"
+            "a wrapped Item Key with an empty itemId must not match the 0x07 binding"
         );
     }
 

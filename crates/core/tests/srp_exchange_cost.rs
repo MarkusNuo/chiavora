@@ -51,7 +51,7 @@ fn the_4096_bit_exchange_costs_what_it_costs() {
     } else {
         "release"
     };
-    println!(" — SRP-6a, RFC 5054 4096-bit group, SHA-256, {profile} build");
+    println!("SRP-6a exchange cost — RFC 5054 4096-bit group, SHA-256, {profile} build");
     println!("  A = g^a            {a_cost:?}");
     println!("  B = k*v + g^b      {b_cost:?}");
     println!("  client premaster   {client_cost:?}");
@@ -60,7 +60,7 @@ fn the_4096_bit_exchange_costs_what_it_costs() {
         "  client total       {:?}  (A + premaster: what a login pays)",
         a_cost + client_cost
     );
-    println!(" NOT a device figure — see this file's header. class is owed.");
+    println!("  Measured on this machine, not on a low-end phone.");
 }
 
 /// `x` under the ephemeral brand, so the verifier can be computed like `A`.

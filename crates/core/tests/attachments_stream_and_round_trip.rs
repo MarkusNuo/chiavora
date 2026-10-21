@@ -129,8 +129,7 @@ fn the_source_is_read_a_chunk_at_a_time_and_chunks_land_as_they_are_sealed() {
     assert_eq!(count, 3);
     assert!(
         watcher.largest_request <= CHUNK_LEN,
-        "the source was asked for {} bytes at once; a materialising \
-         implementation would ask for the whole file",
+        "the source was asked for {} bytes at once",
         watcher.largest_request
     );
     assert_eq!(
@@ -168,8 +167,7 @@ fn the_policy_limit_is_refused_before_a_byte_is_read() {
             .list_chunks(AT.vault_id, AT.item_id, AT.attachment_id)
             .unwrap()
             .is_empty(),
-        "a refused attachment left chunks behind, so the refusal is not \
-         all-or-nothing"
+        "a refused attachment left chunks behind"
     );
 
     let err = seal_attachment(
@@ -227,7 +225,7 @@ fn a_length_mismatch_is_refused_and_leaves_no_chunks_behind() {
             .list_chunks(AT.vault_id, AT.item_id, AT.attachment_id)
             .unwrap()
             .is_empty(),
-        "a length-mismatched attachment left chunks behind, so the refusal is          not all-or-nothing"
+        "a length-mismatched attachment left chunks behind"
     );
 }
 

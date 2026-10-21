@@ -163,10 +163,7 @@ fn the_suite_contains_a_short_a_and_a_short_b() {
 
     assert!(
         short_a >= 1 && short_b >= 1,
-        "the suite needs a vector whose A is shorter than len(N) and one whose \
-         B is, because that is the only input on which padded \
-         transcript and RFC 5054 §2.6's bare one disagree. Found {short_a} and \
-         {short_b}"
+        "the suite needs a short A and a short B; found {short_a} and {short_b}"
     );
 }
 
@@ -220,17 +217,14 @@ fn an_unpadded_transcript_disagrees_on_the_short_vectors() {
         assert_ne!(
             unpadded.finalize().to_vec(),
             decode(text(case, "M1")),
-            "{name}: the unpadded transcript produced the same M1 as the padded \
-             one. decided padding; if the two agree here, the decision \
-             has no effect and this vector no longer witnesses it"
+            "{name}: the unpadded transcript produced the same M1 as the padded one"
         );
         witnessed += 1;
     }
 
     assert!(
         witnessed >= 2,
-        "both searched-for vectors must reach the comparison; {witnessed} did. \
-         A witness that skips every case is green over nothing"
+        "both searched-for vectors must reach the comparison; {witnessed} did"
     );
 }
 
@@ -263,9 +257,7 @@ fn the_three_session_keys_differ_and_none_is_the_premaster_secret() {
         assert_ne!(session, s2c, "{name}: K and macS2C are the same key");
         assert_ne!(
             c2s, s2c,
-            "{name}: the two directions share a MAC key, so a reflected message \
-             verifies under the key that sent it — the defect exists to \
-             close"
+            "{name}: the two directions share a MAC key, so a reflected message verifies"
         );
         for (label, key) in [("K", session), ("macC2S", c2s), ("macS2C", s2c)] {
             assert_ne!(
@@ -287,8 +279,7 @@ fn proofs_match_accepts_only_an_exact_equal_length_match() {
     *last_byte.last_mut().unwrap() ^= 0x01;
     assert!(
         !proofs_match(&proof, &last_byte),
-        "a difference in the final byte must be caught; an implementation that \
-         stopped early would be the one that leaks"
+        "a difference in the final byte must be caught"
     );
 
     let mut first_byte = proof.clone();
@@ -297,8 +288,7 @@ fn proofs_match_accepts_only_an_exact_equal_length_match() {
 
     assert!(
         !proofs_match(&proof, proof.get(..31).unwrap()),
-        "a prefix must not match; lengths are public, so refusing on them early \
-         leaks nothing and accepting a prefix would be fatal"
+        "a prefix must not match"
     );
     assert!(!proofs_match(&proof, &[]), "the empty proof must not match");
     assert!(
@@ -372,8 +362,7 @@ fn a_hostile_servers_wrong_length_salt_is_refused() {
     assert_eq!(
         would_have_been.len(),
         32,
-        "a wrong-length salt hashes without complaint, which is exactly why the \
-         refusal has to be explicit rather than left to something downstream"
+        "a wrong-length salt hashes without complaint, so the refusal must be explicit"
     );
 }
 

@@ -146,7 +146,7 @@ mod tests {
         assert_eq!(
             index.search("STRASSE").len(),
             0,
-            "lowercasing is not case folding; if this starts matching, definition changed and the doc comment above is now wrong"
+            "lowercasing is not case folding; if this matches now, the `search` docs are wrong"
         );
     }
 

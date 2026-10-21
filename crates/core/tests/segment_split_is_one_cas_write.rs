@@ -77,8 +77,7 @@ fn the_first_digest_byte_is_the_most_significant_hash_byte() {
         assert_eq!(
             u8::try_from(hash_item_id(&id) >> 56).expect("top byte"),
             first,
-            "a little-endian read would put the digest's LAST byte here, and \
-             nothing would fail — items would just land in the wrong segments"
+            "the top hash byte is not the first digest byte"
         );
     }
 }
@@ -100,8 +99,7 @@ fn no_assignment_path_takes_a_segment_count() {
     for forbidden in ["% segment", "% count", "% self.segments", "rehash"] {
         assert!(
             !code.contains(forbidden),
-            "`{forbidden}` in manifest.rs: §2.5 forbids assignment by modulus, \
-             because doubling one moves most items at once"
+            "`{forbidden}` in manifest.rs: §2.5 forbids assignment by modulus"
         );
     }
 }
@@ -290,8 +288,7 @@ fn a_split_interrupted_at_every_step_leaves_an_authenticable_vault() {
         assert_eq!(
             root.segments().len(),
             server_segments.len(),
-            "{point:?}: the root vouches for a different number of segments \
-             than the vault holds — a half-applied split"
+            "{point:?}: the root vouches for a different number of segments than the vault holds"
         );
 
         for bytes in &server_segments {

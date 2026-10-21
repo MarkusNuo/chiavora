@@ -362,8 +362,7 @@ fn every_client_can_identify_the_authenticating_epoch() {
     assert!(server.opens_under(&new));
     assert!(
         !server.opens_under(&old),
-        "the previous Vault Key still authenticates the root, so the epoch \
-         names nothing"
+        "the previous Vault Key still authenticates the root"
     );
 }
 
@@ -386,8 +385,7 @@ fn no_item_version_or_ciphertext_digest_changes() {
     let after = server.entries(&key(0x22));
     assert_eq!(
         before, after,
-        "rotation changed an entry; §2.5 says it bumps no version and \
-         invalidates no payload"
+        "rotation bumped a version or changed a ciphertext digest"
     );
     assert!(
         !before.is_empty(),
@@ -414,7 +412,7 @@ fn a_rotation_is_one_cas_write() {
     assert_eq!(
         server.writes_accepted - before,
         1,
-        "rotation is one CAS write (§2.5), and more than one is a window"
+        "rotation took more than one CAS write"
     );
     assert!(
         wraps.all_openable_by(&[2]),
@@ -603,8 +601,7 @@ fn every_interruption_point_under_all_three_injections() {
             );
             assert!(
                 server.opens_under(&old),
-                "{how:?} at {point}: the vault no longer authenticates under \
-                 the key every member already has"
+                "{how:?} at {point}: the vault no longer authenticates under the old key"
             );
             assert_eq!(
                 server.writes_accepted, writes_before,
@@ -627,8 +624,7 @@ fn every_interruption_point_under_all_three_injections() {
             .expect("resumes");
             assert!(
                 matches!(out, Rotated::Complete { already_current, .. } if already_current == point),
-                "{how:?} at {point}: the resume did not find what the first \
-                 attempt had already done: {out:?}"
+                "{how:?} at {point}: the resume did not find the work already done: {out:?}"
             );
             assert_eq!(server.root_metadata().expect("root"), (2, 2));
             assert!(wraps.all_openable_by(&[2]));

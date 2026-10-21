@@ -47,8 +47,8 @@ fn vartime_problems(source: &str) -> Vec<String> {
     for forbidden in FORBIDDEN {
         if code.contains(forbidden) {
             problems.push(format!(
-                "`{forbidden}` appears in srp.rs's production code. : the \
-                 secret exponent goes through `pow_bounded_exp` and nothing else."
+                "`{forbidden}` appears in srp.rs's production code. The secret \
+                 exponent goes through `pow_bounded_exp` and nothing else."
             ));
         }
     }
@@ -75,7 +75,7 @@ fn no_variable_time_exponentiation_reaches_a_secret_exponent() {
     let problems = vartime_problems(&srp_source());
     assert!(
         problems.is_empty(),
-        " (docs/security-design.md §3.2):\n {}",
+        "constant-time exponentiation (docs/security-design.md §3.2):\n  {}",
         problems.join("\n  ")
     );
 }
@@ -114,8 +114,7 @@ fn the_vartime_scan_fires_on_each_violation_planted_in_the_real_module() {
     let after_tests = format!("{real}\nfn appended() {{ let _ = pow_vartime; }}\n");
     assert!(
         !vartime_problems(&after_tests).is_empty(),
-        "a violation after the test module must still be seen; a mask that \
-         swallows the tail is the silent failure scan.rs warns about"
+        "a violation after the test module must still be seen"
     );
 }
 
@@ -123,7 +122,7 @@ fn the_vartime_scan_fires_on_each_violation_planted_in_the_real_module() {
 fn every_permitted_vartime_call_states_what_it_operates_on() {
     assert!(
         !ALLOWED_VARTIME.is_empty(),
-        "ALLOWED_VARTIME is empty, so the per-entry checks below ran over          nothing; an allowance list that has been emptied makes this whole test          vacuous rather than satisfied"
+        "ALLOWED_VARTIME is empty, so the checks below ran over nothing"
     );
     for (name, reason) in ALLOWED_VARTIME {
         assert!(name.ends_with("_vartime"), "{name} is not a vartime call");

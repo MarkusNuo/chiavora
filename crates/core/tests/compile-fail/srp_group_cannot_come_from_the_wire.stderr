@@ -7,5 +7,5 @@ error[E0451]: fields `hex`, `generator` and `bits` of struct `chiavora_core::srp
   |         ^^^ private field
 6 |         generator: 2,
   |         ^^^^^^^^^ private field
-8 |         bits: 32,
+7 |         bits: 32,
   |         ^^^^ private field

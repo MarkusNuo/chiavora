@@ -201,8 +201,6 @@ pub struct HostRecord {
 #[derive(Debug, Clone, Copy)]
 pub struct EntryPointRecord {
     pub name: &'static str,
-    pub gate_phrase: &'static str,
-    pub statement: &'static str,
     pub status: EntryStatus,
     pub host: Option<HostRecord>,
     pub yields: Option<&'static str>,
@@ -213,76 +211,64 @@ pub struct EntryPointRecord {
 pub const REGISTRY: [EntryPointRecord; 6] = [
     EntryPointRecord {
         name: "password field",
-        gate_phrase: "the password field",
-        statement: "",
         status: EntryStatus::CoveredInCore,
         yields: Some("AccountPassword"),
         host: Some(HostRecord {
             surface: "mobile/app",
         }),
         blocked_on: None,
-        resolved_by: Some("built; nothing about the bytes it accepts is undecided"),
+        resolved_by: Some("nothing about the bytes it accepts is undecided"),
     },
     EntryPointRecord {
         name: "Secret Key field",
-        gate_phrase: "the Secret Key field",
-        statement: "",
+        // The formatted string is the key, so decoding it above `core` would
+        // break N1.
         status: EntryStatus::CoveredInCore,
         yields: Some("SecretKey"),
         host: Some(HostRecord {
             surface: "mobile/app",
         }),
         blocked_on: None,
-        resolved_by: Some("docs/adr/0004 decided the CHV1- format"),
+        resolved_by: Some("the CHV1- format (docs/adr/0004)"),
     },
     EntryPointRecord {
         name: "Emergency Kit QR decode path",
-        gate_phrase: "the Emergency Kit QR decode path",
-        statement: "",
+        // The QR payload is the Kit's compact rendering, so this goes through
+        // `emergency_kit::parse` and from there through `SecretKeyField`.
         status: EntryStatus::CoveredInCore,
         yields: Some("SecretKey"),
         host: Some(HostRecord {
             surface: "mobile/app",
         }),
         blocked_on: None,
-        resolved_by: Some("docs/adr/0004 closed the format half; built the Kit"),
+        resolved_by: Some("the Kit format (docs/adr/0004)"),
     },
     EntryPointRecord {
         name: "clipboard paste",
-        gate_phrase: "clipboard paste",
-        statement: "",
         status: EntryStatus::CoveredInCore,
         yields: Some("AccountPassword"),
         host: Some(HostRecord {
             surface: "mobile/app",
         }),
         blocked_on: None,
-        resolved_by: Some(" - the password only, and a pasted Kit line is refused"),
+        resolved_by: Some("the password only; a pasted Kit line is refused"),
     },
     EntryPointRecord {
         name: "CLI stdin",
-        gate_phrase: "CLI stdin",
-        statement: "",
         status: EntryStatus::CoveredInCore,
         yields: Some("AccountPassword"),
-        host: Some(HostRecord {
-            surface: "cli",
-        }),
+        host: Some(HostRecord { surface: "cli" }),
         blocked_on: None,
-        resolved_by: Some(
-            " - the password only; the CLI unlocks an enrolled vault and does not enroll",
-        ),
+        resolved_by: Some("the password only; the CLI unlocks, it does not enroll"),
     },
     EntryPointRecord {
         name: "inbound native messaging",
-        gate_phrase: "inbound native messaging",
-        statement: "",
         // The extension holds no keys (§3.3), so nothing may brand bytes here.
         status: EntryStatus::CarriesNoSecret,
         yields: None,
         host: None,
         blocked_on: None,
-        resolved_by: Some(" - neither secret crosses here, and no EntryPoint may exist"),
+        resolved_by: Some("neither secret crosses here"),
     },
 ];
 

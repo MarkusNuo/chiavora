@@ -125,22 +125,22 @@ mod tests {
     fn the_decided_numbers_are_pinned() {
         for (name, actual, decided) in [
             (
-                " default idle timeout",
+                "the default idle timeout",
                 DEFAULT_IDLE_TIMEOUT,
                 Duration::from_secs(120),
             ),
             (
-                " idle floor",
+                "the idle-timeout floor",
                 MIN_IDLE_TIMEOUT,
                 Duration::from_secs(30),
             ),
             (
-                " idle ceiling",
+                "the idle-timeout ceiling",
                 MAX_IDLE_TIMEOUT,
                 Duration::from_secs(900),
             ),
             (
-                " clipboard TTL",
+                "the clipboard time-to-live",
                 CLIPBOARD_TTL,
                 Duration::from_secs(30),
             ),
@@ -148,16 +148,15 @@ mod tests {
             assert_eq!(
                 actual,
                 decided,
-                "{name} was decided and is now {}s. That is a \
-                 decision to take back to whoever made it, not a constant to \
-                 edit",
+                "{name} is now {}s. That is a product decision to revisit \
+                 deliberately, not a constant to edit",
                 actual.as_secs()
             );
         }
         assert_eq!(
             MAX_FAILED_ATTEMPTS, 5,
-            " N was decided and is now {MAX_FAILED_ATTEMPTS}. \
-             That is a decision to take back to whoever made it"
+            "the failed-attempt bound is now {MAX_FAILED_ATTEMPTS}. \
+             That is a product decision to revisit deliberately, not a constant to edit"
         );
     }
 

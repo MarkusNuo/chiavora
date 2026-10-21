@@ -74,8 +74,7 @@ fn nothing_in_crates_server_constructs_or_derives_srp_x() {
 
     assert!(
         !paths.is_empty(),
-        "no .rs files found under crates/server/src. A scan over zero files \
-         reports success, which is the one result it must never be able to give"
+        "no .rs files found under crates/server/src"
     );
 
     let files: Vec<(String, String)> = paths
@@ -94,9 +93,7 @@ fn nothing_in_crates_server_constructs_or_derives_srp_x() {
     let problems = offenders(&files);
     assert!(
         problems.is_empty(),
-        "`crates/server` holds the verifier and its salt. These name `x`, or a \
-         door to it:\n  {}\n\nIf one of these is genuinely needed, it is a \
-         change to what the server is, not a change to this list.",
+        "`crates/server` holds only the verifier and salt; these name `x` or a way to it:\n  {}",
         problems.join("\n  ")
     );
 }
@@ -119,8 +116,7 @@ fn the_server_scan_would_notice_srp_x() {
     )];
     assert!(
         offenders(&commented).is_empty(),
-        "a comment explaining the rule must not read as breaking it; that is \
-         the mistake `nonce.rs` made with `getrandom`"
+        "a comment explaining the rule must not read as breaking it"
     );
 
     let innocent = vec![(
@@ -144,9 +140,7 @@ fn the_server_scan_would_notice_srp_x() {
                 || std::fs::read_to_string(repo_root().join("crates/core/src/secret.rs"))
                     .expect("core's secret.rs")
                     .contains(needle),
-            "`{needle}` appears nowhere in core, so forbidding it above core \
-             forbids nothing. A needle that cannot match is a line of this list \
-             that reads as protection and is not"
+            "`{needle}` appears nowhere in core, so forbidding it forbids nothing"
         );
     }
 }

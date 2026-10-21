@@ -460,7 +460,7 @@ mod tests {
         );
         assert!(
             ADVISORY.contains("Nobody can"),
-            "N2/N3: the Kit must say the loss is unrecoverable"
+            "the Kit must say the loss is unrecoverable"
         );
     }
 

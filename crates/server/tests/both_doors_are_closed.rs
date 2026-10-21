@@ -81,24 +81,19 @@ fn the_known_and_unknown_paths_produce_an_identical_operation_trace() {
 
     assert_eq!(
         known_trace, unknown_trace,
-        "the two paths performed different work. timing dimension is \
-         established by this being equal and by nothing else: a stopwatch was \
-         refused because it would be green for reasons unrelated to the \
-         property"
+        "the known and unknown paths performed different work"
     );
 
     assert!(
         known_trace.len() >= 4,
-        "a trace of {} entries is not evidence that two paths did the same \
-         work; it is evidence that they both did almost nothing observable",
+        "a trace of {} entries is too short to show that both paths did the same work",
         known_trace.len()
     );
     assert!(
         known_trace
             .iter()
             .any(|op| matches!(op, Op::Fabricated { .. })),
-        "the known path must also fabricate. If it stops, the unknown path \
-         becomes the slower one and the oracle points the wrong way round"
+        "the known path must also fabricate, or the unknown path becomes the slower one"
     );
 }
 
@@ -114,15 +109,12 @@ fn the_trace_would_notice_a_difference() {
     };
     assert_ne!(
         a, b,
-        "two fabrications over different input lengths must not compare equal; \
-         `Op` carries lengths precisely so that `the same operations` and `the \
-         same operations on the same shapes` are different claims"
+        "two fabrications over different input lengths must not compare equal"
     );
     assert_ne!(
         Op::LookedUp { identifier_len: 15 },
         Op::BuiltRecord { account_id_len: 15 },
-        "two different operations with the same number in them must not compare \
-         equal"
+        "two different operations with the same number in them must not compare equal"
     );
 
     let seed = seed();
@@ -130,8 +122,7 @@ fn the_trace_would_notice_a_difference() {
     let (_, long) = resolve_credentials(&seed, b"much-longer@example.com", None).unwrap();
     assert_ne!(
         short, long,
-        "the trace must distinguish inputs that genuinely differ, or it would \
-         compare equal for everything and the test above would prove nothing"
+        "the trace must distinguish inputs that genuinely differ"
     );
 }
 
@@ -151,7 +142,7 @@ fn a_known_and_an_unknown_identifier_yield_records_of_identical_shape() {
     assert_eq!(
         real.to_stored_bytes().len(),
         fabricated.to_stored_bytes().len(),
-        "byte-length parity is size dimension, asserted mechanically"
+        "byte-length parity is the size dimension, asserted mechanically"
     );
     assert_eq!(real.account_id().len(), fabricated.account_id().len());
     assert_eq!(real.srp_salt().len(), fabricated.srp_salt().len());
@@ -174,9 +165,7 @@ fn the_fabricated_answer_is_stable_per_identifier_and_differs_between_them() {
     assert_eq!(
         first.to_stored_bytes(),
         second.to_stored_bytes(),
-        "two probes for the same unknown identifier must get the same answer; \
-         a server that answered differently each time would be announcing that \
-         it is fabricating"
+        "two probes for the same unknown identifier must get the same answer"
     );
 
     let (other, _) = resolve_credentials(&seed, b"eve@example.com", None).unwrap();
@@ -199,14 +188,13 @@ fn the_fabricated_answer_is_stable_per_identifier_and_differs_between_them() {
 fn the_fabricated_account_id_is_not_a_prefix_of_anything_transmitted() {
     let fake = fake_credentials(Group::RFC5054_4096, &SEED, UNKNOWN).unwrap();
 
-    assert_eq!(fake.account_id.len(), 16, ": ACCOUNT_ID_LEN");
+    assert_eq!(fake.account_id.len(), 16, "ACCOUNT_ID_LEN");
     assert!(
         !fake
             .verifier
             .windows(fake.account_id.len())
             .any(|w| w == fake.account_id.as_slice()),
-        "the fabricated accountId appears inside the verifier. forbids \
-         deriving it from x' precisely so that nothing transmitted carries it"
+        "the fabricated accountId appears inside the verifier"
     );
     assert!(
         !fake
@@ -261,9 +249,7 @@ fn an_unknown_identifier_gets_an_exchange_and_fails_the_way_a_wrong_password_doe
     assert_eq!(
         attempt(UNKNOWN, None, &account.exponent).unwrap_err(),
         AuthRecordError::Srp(SrpError::ProofMismatch),
-        "an unknown identifier must reach proof verification and fail there. A \
-         refusal that said `no such account` would undo the endpoint one round \
-         trip later, which is the door §3.4 found"
+        "an unknown identifier must reach proof verification and fail there"
     );
 
     let wrong_x =
@@ -274,8 +260,7 @@ fn an_unknown_identifier_gets_an_exchange_and_fails_the_way_a_wrong_password_doe
     assert_eq!(
         attempt(KNOWN, stored, &wrong_exponent).unwrap_err(),
         AuthRecordError::Srp(SrpError::ProofMismatch),
-        "and a wrong password must fail identically; two distinguishable \
-         failures are the oracle in a different costume"
+        "and a wrong password must fail identically"
     );
 
     // The positive control: a server that refused everybody would pass the above.
@@ -310,20 +295,14 @@ fn the_fabrication_is_not_inside_a_branch() {
     for keyword in ["if ", "match ", "else"] {
         assert!(
             !code.contains(keyword),
-            "`{keyword}` appears before the call to `fake_credentials`. \
-             timing claim is that the unknown path does the same work as the \
-             known one, and it rests on that call being unconditional: a \
-             version that fabricated only on a lookup miss would make the \
-             unknown path slower, which is the oracle pointing the wrong way \
-             round and looks like an optimisation in review"
+            "`{keyword}` appears before the call to `fake_credentials`, which must be unconditional"
         );
     }
 
     // An empty split would contain no keyword and pass.
     assert!(
         code.contains("resolve_credentials") || code.len() > 200,
-        "the scan read {} characters of function body; it is passing over \
-         nothing",
+        "the scan read only {} characters of function body",
         code.len()
     );
 }
@@ -348,8 +327,7 @@ fn the_branch_scan_would_notice_one() {
     );
     assert!(
         !sees("let x = 1;\nlet f = fake_credentials(a, b, c)?;\nif stored.is_some() { }"),
-        "a branch *after* the fabrication must not be caught; selection is \
-         allowed and is what the constant-time select is for"
+        "a branch after the fabrication must not be caught"
     );
     assert!(
         !sees("// if this were inside an if, the scan would fire\nlet f = fake_credentials(a, b, c)?;"),
@@ -375,8 +353,7 @@ fn a_seed_key_of_the_wrong_width_is_refused() {
     assert_ne!(
         one.to_stored_bytes(),
         two.to_stored_bytes(),
-        "even a weak seed must give different identifiers different answers; if \
-         it did not, the identifier is not reaching the HMAC"
+        "even a weak seed must give different identifiers different answers"
     );
 }
 
@@ -390,7 +367,6 @@ fn the_seed_key_does_not_print_itself() {
     );
     assert!(
         rendered.contains("redacted"),
-        "and it must say that it is redacted rather than printing nothing, so a \
-         reader of a log knows a value was withheld: {rendered}"
+        "and it must say that it is redacted: {rendered}"
     );
 }

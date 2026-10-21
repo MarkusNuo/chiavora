@@ -242,11 +242,7 @@ mod tests {
                 .collect();
             assert!(
                 sites.is_empty(),
-                "{provenance} is implemented by hand {} time(s) outside the \
-                 `brand!` macro. Every brand takes its provenance as a macro \
-                 argument so that exactly one applies; a hand-written impl can \
-                 give a brand both, and the disjointness claim in \
-                 `ExternalKind`'s docs stops holding.",
+                "{provenance} is implemented by hand {} time(s) outside the `brand!` macro",
                 sites.len()
             );
         }

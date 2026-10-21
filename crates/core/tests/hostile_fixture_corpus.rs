@@ -426,9 +426,7 @@ fn every_hostile_fixture_is_refused_and_names_its_invariant() {
 
     assert!(
         applied >= MINIMUM_FIXTURES,
-        "the hostile corpus has shrunk: applied {applied}, minimum {MINIMUM_FIXTURES}. \
-         §5 requires it to accumulate — a deleted fixture takes its invariant's \
-         coverage with it."
+        "the hostile corpus has shrunk: applied {applied}, minimum {MINIMUM_FIXTURES}"
     );
 
     assert!(

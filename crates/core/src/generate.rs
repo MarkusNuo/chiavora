@@ -241,7 +241,7 @@ mod tests {
         assert!(text.contains("CSPRNG"), "it must say what failed: {text}");
         assert!(
             text.contains("refusing"),
-            "R1: it must say it is refusing rather than substituting: {text}"
+            "it must say it is refusing rather than substituting: {text}"
         );
     }
 
@@ -380,7 +380,7 @@ mod tests {
         );
         assert!(
             (bits - 124.576).abs() < 0.01,
-            " default is {bits} bits"
+            "the recommended default is {bits} bits"
         );
 
         let digits = Policy::new(6, &[CharClass::Digit], false, false).unwrap();

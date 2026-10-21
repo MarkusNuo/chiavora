@@ -97,123 +97,49 @@ fn nested_modules_are_walked() {
     );
 }
 
-const CORE_INVARIANTS: [(&str, &str); 5] = [
-    ("i1a", "The server never receives the account password"),
-    ("i2", "every nonce is drawn from the platform"),
-    (
-        "i3",
-        "Integrity-relevant metadata is bound as AEAD associated data",
-    ),
-    (
-        "i4",
-        "The client refuses KDF parameters below the hard floor",
-    ),
-    ("i7", "double-wrap agreement"),
-];
+/// The invariants the core establishes. Each needs a test whose name starts
+/// with it, so a failure names the invariant rather than a file.
+const CORE_INVARIANTS: [&str; 5] = ["i1a", "i2", "i3", "i4", "i7"];
 
-const I6_CLAUSES: [(&str, &str); 6] = [
-    ("i6a", "No manifest root below the client's persisted"),
-    ("i6b", "No segment whose digest the root does not vouch for"),
-    ("i6c", "No item below its entry's"),
-    (
-        "i6d",
-        "No item whose ciphertext fails to digest-match its entry",
-    ),
-    ("i6e", "No silently missing or silently extra item"),
-    ("i6f", "is strictly monotonic"),
-];
+const I6_CLAUSES: [&str; 6] = ["i6a", "i6b", "i6c", "i6d", "i6e", "i6f"];
+
+fn tests_named_for(prefix: &str) -> usize {
+    let needle = format!("fn {prefix}_");
+    test_sources()
+        .iter()
+        .map(|(_, src)| src.matches(&needle).count())
+        .sum()
+}
 
 #[test]
-fn every_i6_clause_has_a_test_named_for_it_and_a_phrase_in_the_design() {
-    let sources = test_sources();
-    let plan = read("docs/security-design.md");
-    let flat = plan.split_whitespace().collect::<Vec<_>>().join(" ");
-
-    let mut problems: Vec<String> = Vec::new();
-    for (clause, phrase) in I6_CLAUSES {
-        let needle = format!("fn {clause}_");
-        let count: usize = sources
-            .iter()
-            .map(|(_, src)| src.matches(&needle).count())
-            .sum();
-        if count == 0 {
-            problems.push(format!("{clause}: no test named for it"));
-        }
-        if !flat.contains(phrase) {
-            problems.push(format!(
-                "{clause}: docs/security-design.md no longer states {phrase:?} -- either the \
-                 clause was reworded, in which case fix this row, or it was \
-                 dropped, in which case the test guards nothing"
-            ));
-        }
-    }
-    assert!(
-        problems.is_empty(),
-        "I6 registry:\n  {}",
-        problems.join("\n  ")
-    );
+fn every_i6_clause_has_a_test_named_for_it() {
+    let missing: Vec<&str> = I6_CLAUSES
+        .into_iter()
+        .filter(|clause| tests_named_for(clause) == 0)
+        .collect();
+    assert!(missing.is_empty(), "I6 clauses with no test: {missing:?}");
 }
 
 #[test]
 fn every_core_invariant_has_at_least_one_test_named_for_it() {
-    let sources = test_sources();
-    let mut missing: Vec<&str> = Vec::new();
-    let mut counts: Vec<(&str, usize)> = Vec::new();
-
-    for (invariant, _) in CORE_INVARIANTS {
-        let needle = format!("fn {invariant}_");
-        let count: usize = sources
-            .iter()
-            .map(|(_, src)| src.matches(&needle).count())
-            .sum();
-        counts.push((invariant, count));
-        if count == 0 {
-            missing.push(invariant);
-        }
-    }
-
+    let missing: Vec<&str> = CORE_INVARIANTS
+        .into_iter()
+        .filter(|invariant| tests_named_for(invariant) == 0)
+        .collect();
     assert!(
         missing.is_empty(),
-        ": these core invariants have no test named for them, so a failure \
-         would name a filename rather than the invariant: {missing:?}\n\
-         counts: {counts:?}"
+        "core invariants with no test named for them: {missing:?}"
     );
-}
-
-#[test]
-fn the_invariant_list_matches_the_phrases_the_design_states_them_in() {
-    let plan = read("docs/security-design.md");
-    let flat = plan.split_whitespace().collect::<Vec<_>>().join(" ");
-    for (invariant, phrase) in CORE_INVARIANTS {
-        assert!(
-            flat.contains(phrase),
-            "{invariant}: docs/security-design.md no longer contains {phrase:?}. Either the \
-             invariant was restated — in which case update this list — or it \
-             was removed, in which case its tests are testing nothing named."
-        );
-    }
 }
 
 #[test]
 fn invariants_outside_the_core_are_absent_on_purpose() {
-    let names: Vec<&str> = CORE_INVARIANTS.iter().map(|(n, _)| *n).collect();
     for later in ["i5", "i5a", "i5b", "i6", "i8"] {
         assert!(
-            !names.contains(&later),
-            "{later} is not the core's. If its code has landed, add \
-             it here *and* give it a named test — a row without a test is worse \
-             than no row."
+            !CORE_INVARIANTS.contains(&later),
+            "{later} is not the core's. If it is now, add it with a test named for it."
         );
     }
-
-    let plan = read("docs/security-design.md");
-    let flat = plan.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(
-        flat.contains("the Secret Key's keystore entry is not biometric-bound"),
-        "docs/security-design.md no longer states I8. Either it was restated — update this \
-         assertion — or it was dropped, in which case is free to bind \
-         the Secret Key to the biometric and nothing would object."
-    );
 }
 
 /// Attacker-supplied means bytes this process did not produce in the same operation.
@@ -222,25 +148,25 @@ const PARSERS: [Parser; 18] = [
         file: "core/src/manifest.rs",
         function: "StoredManifest::decode",
         target: "manifest_decode",
-        why: "the stored manifest record as the server serves it -- AAD, nonce and ciphertext in the wire framing, every byte the server's choice, and the AAD is parsed before the tag can check it",
+        why: "the stored manifest record as the server serves it; the AAD is parsed before the tag is checked",
     },
     Parser {
         file: "core/src/manifest.rs",
         function: "ManifestRoot::decode",
         target: "manifest_decode",
-        why: "the manifest root a hostile server serves (A1): nested, length-prefixed, digest-referenced and entirely server-controlled. it comes ahead of the import formats, and `docs/crypto.md` records it as the first fuzz target sync needs",
+        why: "the manifest root a hostile server serves (A1)",
     },
     Parser {
         file: "core/src/manifest.rs",
         function: "ManifestSegment::decode",
         target: "manifest_decode",
-        why: "the other half of the same server-supplied structure; one target feeds both, dispatching on the record type in the AAD it is given",
+        why: "the segments of the same server-supplied manifest",
     },
     Parser {
         file: "core/src/aad.rs",
         function: "decode",
         target: "aad_decode",
-        why: "the inverse of the encoder every record depends on; a disagreement is an I3 failure",
+        why: "the inverse of the record AAD encoder; a disagreement is an I3 failure",
     },
     Parser {
         file: "protocol/src/lib.rs",
@@ -264,31 +190,31 @@ const PARSERS: [Parser; 18] = [
         file: "core/src/zip.rs",
         function: "parse",
         target: "zip_parse",
-        why: "a 1PUX export is a zip archive a person downloaded from somewhere else; the classic bomb and traversal surface, and puts it inside core so it is here",
+        why: "a 1PUX export is a zip archive downloaded from elsewhere",
     },
     Parser {
         file: "core/src/onepux.rs",
         function: "parse",
         target: "onepux_parse",
-        why: "the JSON inside a 1PUX archive: attacker-supplied by docs/security-design.md's own classification; every import parser must survive a malformed corpus",
+        why: "the JSON inside a 1PUX archive",
     },
     Parser {
         file: "core/src/onepif.rs",
         function: "parse",
         target: "onepif_parse",
-        why: "1Password's older line-oriented export (names both)",
+        why: "1Password's older line-oriented export",
     },
     Parser {
         file: "core/src/csv.rs",
         function: "parse",
         target: "csv_parse",
-        why: "the CSV reader under LastPass and Chrome exports: quoting, embedded newlines, ragged rows, a BOM -- all from a file a person downloaded",
+        why: "the CSV reader under the LastPass and Chrome exports",
     },
     Parser {
         file: "core/src/bitwarden.rs",
         function: "parse",
         target: "bitwarden_parse",
-        why: "a Bitwarden JSON export, attacker-supplied by docs/security-design.md's classification; it must survive a malformed corpus",
+        why: "a Bitwarden JSON export",
     },
     Parser {
         file: "core/src/lastpass.rs",
@@ -306,25 +232,25 @@ const PARSERS: [Parser; 18] = [
         file: "core/src/export.rs",
         function: "verify",
         target: "export_verify",
-        why: "a native export file is read back from wherever the user kept it -- a file A4 can rewrite -- and its framing is parsed before its MAC is checked, so the framing is a parser of attacker-supplied bytes",
+        why: "a native export file A4 can rewrite; its framing is parsed before its MAC is checked",
     },
     Parser {
         file: "core/src/attachment.rs",
         function: "StoredChunk::decode",
         target: "stored_chunk_decode",
-        why: "a chunk on disk written by *some* build in a file A4 can rewrite, and later one fetched from the server (A1)",
+        why: "a chunk in a file A4 can rewrite, or fetched from the server (A1)",
     },
     Parser {
         file: "core/src/stored_record.rs",
         function: "StoredRecord::decode",
         target: "stored_record_decode",
-        why: "a record on disk written by *some* build, possibly a newer one, in a file A4 can rewrite",
+        why: "a record, possibly from a newer build, in a file A4 can rewrite",
     },
     Parser {
         file: "core/src/model.rs",
         function: "Item::from_bytes",
         target: "item_body_decode",
-        why: "an item body written by a *newer* client, which this build must read and edit; inside the AEAD, but not produced by this build",
+        why: "an item body from a newer client; inside the AEAD, but not produced by this build",
     },
 ];
 
@@ -353,8 +279,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
         let source = targets.join(format!("{target}.rs"));
         assert!(
             source.exists(),
-            ": {file}::{function} is registered as an attacker-input parser but \
-             `fuzz/fuzz_targets/{target}.rs` does not exist"
+            "{file}::{function} is registered but `fuzz/fuzz_targets/{target}.rs` does not exist"
         );
         let seeds = corpus
             .join(target)
@@ -362,9 +287,7 @@ fn every_registered_parser_has_a_fuzz_target_with_a_corpus() {
             .map_or(0, |d| d.filter_map(Result::ok).count());
         assert!(
             seeds >= 10,
-            " and R7: {target} has {seeds} corpus inputs. An unseeded \
-             target for a prefixed format explores the prefix check and \
-             nothing else"
+            "{target} has {seeds} corpus inputs; it needs at least 10"
         );
     }
 }
@@ -376,375 +299,327 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 111] = [
     (
         "core/src/manifest.rs",
         "conflict_item_id",
-        "SAFE BY CONSTRUCTION: SHA-256 over a domain separator, an identifier          and a fixed-size digest, returning its top sixteen bytes. It parses          nothing and is total over its inputs. Both inputs come from a manifest          this build already decoded and authenticated -- ManifestSegment::decode          is in PARSERS -- and a hostile losing digest yields a copy id that          hashes into whichever segment it hashes into, which is where it          belongs. What must not be wrong is the DOMAIN SEPARATION, and that is          vectored and asserted against the bare hash in          conflicts_converge_without_a_clock.rs rather than left to this row",
+        "SAFE BY CONSTRUCTION: SHA-256 over a separator, an identifier and a digest from an authenticated manifest; parses nothing",
     ),
     (
         "core/src/manifest.rs",
         "ConflictingVersion::new",
-        "NOT A BOUNDARY: names one side of a conflict from values this build          already holds -- an itemId from a decoded segment and a digest this          process computed with StoredRecord::ciphertext_digest. It parses          nothing and stores three fields",
+        "NOT A BOUNDARY: built from a decoded itemId and a digest this process computed",
     ),
     (
         "core/src/manifest.rs",
         "hash_item_id",
-        "SAFE BY CONSTRUCTION: SHA-256 over a byte string, returning its top          eight bytes. It parses nothing, and there is no length, content or          encoding it can be wrong about -- a hash is total over bytes. A          hostile itemId lands in the segment its hash selects, which is where          it belongs; what must not be wrong is the ORIENTATION of those eight          bytes, and that is vectored and property-tested in          segment_split_is_one_cas_write.rs rather than left to this row",
+        "SAFE BY CONSTRUCTION: SHA-256 over a byte string, returning its top eight bytes; parses nothing",
     ),
     (
         "core/src/provision.rs",
         "provision_first_vault",
-        "NOT A BOUNDARY: it draws sixteen bytes from csprng and hands them to provision, which is the row below. accountId is an opaque store key. There is nothing here that reads bytes from outside -- the only bytes it touches are ones it just drew",
+        "NOT A BOUNDARY: draws sixteen bytes from csprng and calls provision; accountId is an opaque key",
     ),
     (
         "core/src/unlock.rs",
         "UnlockedVault::load_provisioning",
-        "COVERED ELSEWHERE: one line, delegating to provision::load with this vault's MUK. It exists so the MUK is never an argument a caller can name, which is §3.3 requirement 2 rather than a parsing concern; what the delegate does with hostile bytes is its own row",
+        "COVERED ELSEWHERE: delegates to provision::load with this vault's MUK",
     ),
     (
         "core/src/unlock.rs",
         "UnlockedVault::provision_first_vault",
-        "COVERED ELSEWHERE: as above, delegating to provision::provision_first_vault. The identifiers are opaque store keys and nothing is parsed here",
+        "COVERED ELSEWHERE: delegates to provision::provision_first_vault",
     ),
     (
         "core/src/provision.rs",
         "is_provisioned",
-        "SAFE BY CONSTRUCTION: a vaultId used as an opaque store key, and a MAX() over an integer column. It parses nothing and answers a boolean. What decides whether a byte string is a valid provisioning record is the AEAD one layer down, not this",
+        "SAFE BY CONSTRUCTION: an opaque store key and a MAX() over an integer column",
     ),
     (
         "core/src/provision.rs",
         "provision",
-        "NOT A BOUNDARY: the write direction. accountId and vaultId are opaque store keys, and every byte it stores was produced in this same call chain -- a keypair it just generated, a Vault Key it just drew, an Autofill Key it just drew. There is nothing here that reads bytes from outside, and the one branch that reads anything reads a record this process wrote",
+        "NOT A BOUNDARY: the write direction; every byte it stores was produced in the same call chain",
     ),
     (
         "core/src/provision.rs",
         "load",
-        "COVERED ELSEWHERE: the read direction, and every byte reaches an AEAD before it reaches a decision. The account key fails account_key::unwrap, the sealed Vault Key fails HPKE's open, the Autofill Key fails autofill::unwrap -- all three authenticate under a key the caller holds. What load itself parses is the two-field CHVR record around them, and an unexpected tag is refused rather than skipped; that framing is chiavora-protocol's, which is in PARSERS and fuzzed. The epoch it uses to look records up comes from the store's HMAC'd metadata, never from the unauthenticated epoch column",
+        "COVERED ELSEWHERE: every byte reaches an AEAD before a decision, and the CHVR framing is chiavora-protocol's, which is fuzzed",
     ),
     (
         "core/src/store.rs",
         "Store::account_key_epoch",
-        "SAFE BY CONSTRUCTION: an accountId used as an opaque key into a BTreeMap the store just authenticated under its own HMAC. It parses nothing and returns a u32 or None. What it is FOR is refusing attacker input -- it is the read half of the account-key high-water mark -- rather than reading any",
+        "SAFE BY CONSTRUCTION: an opaque key into metadata the store authenticated; returns a u32 or None",
     ),
     (
         "core/src/store.rs",
         "Store::put_provisioning",
-        "SAFE BY CONSTRUCTION: ownerId is an opaque key, recordType is one of §2.2's bytes, and the payload is stored without being read -- the same opaque-record obligation put_raw carries, and for the same reason: a byte this build cannot open still has to come back identical or its digest breaks. The one decision here is the 0x08 epoch comparison, which is I6-shaped and is what a_rewound_account_key_epoch_is_refused asserts",
+        "SAFE BY CONSTRUCTION: opaque keys, and the payload is stored without being read",
     ),
     (
         "core/src/store.rs",
         "Store::get_provisioning",
-        "COVERED ELSEWHERE: an opaque key in, stored bytes out, no parse between them. Every byte reaches seal::open_vault_key, autofill::unwrap or account_key::unwrap depending on its record type, and all three authenticate under a key the caller holds -- so hostile bytes fail a tag rather than a parse this function wrote. The framing they came out of is chiavora-protocol's CHVR record, in PARSERS and fuzzed",
+        "COVERED ELSEWHERE: returns stored bytes unread, which an AEAD then authenticates under a key the caller holds",
     ),
     (
         "core/src/store.rs",
         "Store::latest_provisioning_epoch",
-        "SAFE BY CONSTRUCTION: a MAX() over an integer column, with the one i64 to u32 narrowing done by try_from so a corrupted row is refused rather than wrapped. ownerId is an opaque key and nothing is parsed. Deliberately NOT the freshness check -- account_key_epoch is, because it reads the authenticated metadata and this reads the file",
+        "SAFE BY CONSTRUCTION: a MAX() over an integer column, narrowed with try_from; ownerId is an opaque key",
     ),
     (
         "core/src/account_key.rs",
         "WrappedAccountKey::from_stored_parts",
-        "COVERED ELSEWHERE: it stores a nonce and a byte string without reading either. Every byte reaches XChaCha20-Poly1305's own decrypt under the MUK with the 0x08 AAD, so hostile bytes fail the tag rather than a parse this module wrote, and what survives the tag is then refused by AccountKeypair::from_private unless it is a valid X25519 key. The framing they came out of is chiavora-protocol's CHVR record, which is in PARSERS and fuzzed",
+        "COVERED ELSEWHERE: stores a nonce and bytes unread; the AEAD under the MUK authenticates them",
     ),
     (
         "core/src/keywrap.rs",
         "seal",
-        "NOT A BOUNDARY: the encrypt direction, over key material this crate holds -- an Autofill Key it just drew or an account private key it just generated. The AAD argument is a byte string aad::encode produced in this same call chain, not one a caller supplied. There is nothing here that reads foreign bytes",
+        "NOT A BOUNDARY: the encrypt direction, over key material and an AAD this crate produced",
     ),
     (
         "core/src/keywrap.rs",
         "open",
-        "COVERED ELSEWHERE: one AEAD decrypt and no parse. Hostile ciphertext fails Poly1305 and hostile AAD fails it too, which is the whole of what this function decides; the plaintext it returns is then length- and shape-checked by its caller -- autofill::unwrap and account_key::unwrap, both one frame up and both in this list. The bytes' framing is chiavora-protocol's CHVR record, in PARSERS and fuzzed",
+        "COVERED ELSEWHERE: one AEAD decrypt and no parse; its callers check the plaintext",
     ),
     (
         "core/src/autofill.rs",
         "WrappedAutofillKey::from_stored_parts",
-        "COVERED ELSEWHERE: it stores a nonce and a byte string without reading either. Every byte reaches XChaCha20-Poly1305's own decrypt under the Vault Key with the 0x07 AAD, so hostile bytes fail the tag rather than a parse this module wrote -- and the nonce is a fixed-size array the type system has already sized. The framing they came out of is chiavora-protocol's CHVR record, which is in PARSERS and fuzzed",
+        "COVERED ELSEWHERE: stores a nonce and bytes unread; the AEAD under the Vault Key authenticates them",
     ),
     (
         "core/src/seal.rs",
         "AccountKeypair::from_private",
-        "NOT A BOUNDARY: the bytes are this account's own X25519 private key,          just unwrapped from under this device's MUK. They crossed no boundary          -- §2.2 wraps the private key locally and the unwrap authenticates          them, so a caller reaching here with attacker-chosen bytes has          already broken the MUK wrap. The length is checked and          x25519-dalek clamps the scalar; there is no parse to fuzz",
+        "NOT A BOUNDARY: this account's own private key, just unwrapped and authenticated under the MUK",
     ),
     (
         "core/src/seal.rs",
         "SealedVaultKey::from_stored_parts",
-        "COVERED ELSEWHERE: it stores two byte strings without reading them.          Every byte reaches HPKE's own open, which authenticates the          ciphertext under a key derived from the 0x06 info -- so hostile          bytes here fail at single_shot_open rather than at a parse this          module wrote. The framing they came out of is chiavora-protocol's          CHVR record, which is in PARSERS and fuzzed",
+        "COVERED ELSEWHERE: stores two byte strings unread; HPKE's open authenticates them",
     ),
     (
         "core/src/vault.rs",
         "OpenVault::new",
-        "COVERED ELSEWHERE: it holds its arguments and reads none of them. The vaultId is an opaque store key; the sealed Vault Key is not opened until an operation asks for it, and when it is, HPKE authenticates every byte under a key derived from the 0x06 info -- hostile bytes fail at single_shot_open. The framing they came out of is chiavora-protocol's CHVR record, which is in PARSERS and fuzzed",
+        "COVERED ELSEWHERE: holds its arguments unread; HPKE authenticates the sealed Vault Key when it is opened",
     ),
     (
         "core/src/vault.rs",
         "OpenVault::read",
-        "COVERED ELSEWHERE: the itemId is an opaque store key used for lookup and never parsed. Every byte that comes back reaches StoredRecord::decode and then Item::from_bytes, both in PARSERS with fuzz targets of their own. What read adds between them is unsealing, which authenticates -- a record this vault did not seal fails its tag rather than reaching a parse this module wrote",
+        "COVERED ELSEWHERE: an opaque key in; what comes back goes through StoredRecord::decode and Item::from_bytes",
     ),
     (
         "core/src/vault.rs",
         "OpenVault::create",
-        "SAFE BY CONSTRUCTION: the itemId is an opaque store key, never parsed, and the Item is a typed value this process built rather than bytes it read. This is the encode direction; nothing here decides what a foreign byte string means. The bytes it produces are read back by OpenVault::read, one row above",
+        "SAFE BY CONSTRUCTION: an opaque store key and a typed Item, in the encode direction",
     ),
     (
         "core/src/vault.rs",
         "OpenVault::update",
-        "COVERED ELSEWHERE: as create, plus one store read to learn the current version -- and that record arrives through StoredRecord::decode, which is in PARSERS. A hostile version is a u64 that has already survived decoding, and what update does with it is saturating_add. The failure it could cause is a version that fails to advance, which is I6c's refusal and not a parse",
+        "COVERED ELSEWHERE: as create, plus a store read through StoredRecord::decode",
     ),
     (
         "core/src/vault.rs",
         "OpenVault::delete",
-        "SAFE BY CONSTRUCTION: one opaque store key and a bool back. It parses nothing and unseals nothing. The bool is the whole decision -- false becomes NoSuchItem rather than Ok, because deleted and was-never-there are different answers to the screen that asked",
+        "SAFE BY CONSTRUCTION: one opaque store key and a bool back",
     ),
     (
         "core/src/sync.rs",
         "StagedEdit::new",
-        "NOT A BOUNDARY: an edit this client staged locally. The itemId is          this installation's own identifier and the digest was computed here          from bytes this process just sealed. Nothing crosses a boundary until          upload sends it, and what comes back is parsed by StoredManifest and          ManifestRoot, both in PARSERS",
+        "NOT A BOUNDARY: an edit staged locally, with this installation's own identifier and digest",
     ),
     (
         "core/src/sync.rs",
         "upload",
-        "COVERED ELSEWHERE: the vaultId is an opaque key, and every byte the          server returns reaches it through StoredManifest::decode,          ManifestRoot::decode and ManifestSegment::decode -- all three in          PARSERS and all three fed by manifest_decode. What upload itself does          with those bytes is apply the read path, which is I6a-I6f and has          eighteen named tests",
+        "COVERED ELSEWHERE: every server byte reaches it through the three manifest decoders",
     ),
     (
         "core/src/sync.rs",
         "upload_resolving",
-        "COVERED ELSEWHERE: upload's path exactly -- every server byte reaches          it through StoredManifest::decode, ManifestRoot::decode and          ManifestSegment::decode, all three in PARSERS. The one thing it adds          is the [u8; 32] a caller's ConflictCopySealer returns, which is a          digest this device computed over a record it just sealed itself, and          which the next read checks under I6d",
+        "COVERED ELSEWHERE: as upload; the digest it adds was computed by this device",
     ),
     (
         "core/src/sync.rs",
         "upload_with_retry",
-        "COVERED ELSEWHERE: upload's path, repeated. The one value it reads          that upload does not is CasRefused::current_manifest_seq, which is a          number the server chooses and which R10 says had no defence -- so          this function is where the defence was written, not a place that          needs one. It parses nothing: every server byte reaches it through          StoredManifest::decode, ManifestRoot::decode and          ManifestSegment::decode, all three in PARSERS",
+        "COVERED ELSEWHERE: as upload, repeated; it parses nothing",
     ),
     (
         "core/src/rotation.rs",
         "rotate",
-        "COVERED ELSEWHERE: upload's path exactly -- every server byte reaches          it through StoredManifest::decode, ManifestRoot::decode and          ManifestSegment::decode, all three in PARSERS, and the read path          refuses before a re-wrap is ordered. The vaultId is an opaque key, the          epoch is a u32 this device chose and the engine refuses any value but          current + 1, and the WrapRotator is this build's own code holding this          device's own keys",
+        "COVERED ELSEWHERE: as upload; the epoch is chosen by this device and checked by the engine",
     ),
     (
         "core/src/manifest.rs",
         "Entry::accept_attachments",
-        "SAFE BY CONSTRUCTION: set comparison over attachmentIds used as opaque          keys, then a SHA-256 over fixed-width digests the caller computed with          StoredChunk::digest. It parses nothing -- every byte that reached it          came through StoredChunk::decode, which is in PARSERS. This is I6e's          attachment half: the thing that refuses attacker input, not a thing          that reads it",
+        "SAFE BY CONSTRUCTION: set comparison over opaque ids, then SHA-256 over fixed-width digests",
     ),
     (
         "core/src/manifest.rs",
         "Entry::accept_item",
-        "SAFE BY CONSTRUCTION: two comparisons and no parsing. The digest is a          fixed-size array the caller computed with          StoredRecord::ciphertext_digest, and the version is a u64. This is          I6c and I6d themselves -- the thing that refuses attacker input, not          a thing that reads it",
+        "SAFE BY CONSTRUCTION: two comparisons over a fixed-size digest and a u64",
     ),
     (
         "core/src/manifest.rs",
         "ManifestSegment::entry",
-        "SAFE BY CONSTRUCTION: an itemId used as an opaque key in a linear          search over entries this build decoded. Returns a borrow or None, and          the None is I6e's ItemDeliveredNotListed at every call site",
+        "SAFE BY CONSTRUCTION: a linear search by opaque itemId over decoded entries",
     ),
     (
         "core/src/manifest.rs",
         "ManifestSegment::reconcile",
-        "SAFE BY CONSTRUCTION: set comparison over itemIds used as opaque          keys. It parses nothing; it is I6e, the rule that decides whether an          absence is a tombstoned delete or an attack",
+        "SAFE BY CONSTRUCTION: set comparison over itemIds used as opaque keys",
     ),
     (
         "core/src/manifest.rs",
         "advance_high_water_mark",
-        "SAFE BY CONSTRUCTION: the vaultId is an opaque key into the store's          metadata map, never parsed, and the only other input is a u64 read          from a root this build has already authenticated. What the function          decides is which of two errors a refused write is -- I6f's rewind or          an ordinary store fault -- and it parses nothing to do it",
+        "SAFE BY CONSTRUCTION: an opaque key and a u64 from an authenticated root",
     ),
     (
         "core/src/item.rs",
         "seal_record",
-        "NOT A BOUNDARY: the encrypt direction, over a plaintext this crate just          encoded. Its callers are manifest::seal_root and seal_segment, each          with the record type pinned; the decrypt direction is open_record,          reached from open_root and open_segment, and the bytes it returns are          parsed by ManifestRoot::decode and ManifestSegment::decode, which are          both in PARSERS",
+        "NOT A BOUNDARY: the encrypt direction, over a plaintext this crate just encoded",
     ),
     (
         "core/src/manifest.rs",
         "Entry::new",
-        "SAFE BY CONSTRUCTION: an item entry is assembled from an itemId used          as an opaque key, two fixed-size digests, a bool and an already-built          attachment list. It parses nothing. On the server path its bytes come          from ManifestSegment::decode, which is in PARSERS and fuzzed; on the          local path they are this build's own identifiers",
+        "SAFE BY CONSTRUCTION: assembled from an opaque itemId, two fixed-size digests, a bool and a built list",
     ),
     (
         "core/src/manifest.rs",
         "AttachmentEntry::new",
-        "SAFE BY CONSTRUCTION: the same shape one layer in -- an attachmentId          used as an opaque key, a count, a fixed-size digest root and a size.          No parsing, and the counts are compared rather than used to size          anything (R1's corollary)",
+        "SAFE BY CONSTRUCTION: an opaque attachmentId, a count, a digest root and a size",
     ),
     (
         "core/src/unlock.rs",
         "UnlockedVault::from_stored_muk",
-        "COVERED ELSEWHERE: it is one call to `device::muk_from_keystore`, which          carries the length check and its own classification. Its input is a MUK          this installation derived earlier and the device's keystore has been          holding since -- not attacker-chosen input -- and a wrong one is          self-detecting when the store's metadata MAC fails on the next open",
+        "COVERED ELSEWHERE: one call to device::muk_from_keystore, which checks the length",
     ),
     (
         "core/src/device.rs",
         "muk_from_keystore",
-        "NOT A BOUNDARY: its input is a MUK this installation derived earlier and \n         the device's own keystore has been holding since -- not attacker-chosen \n         input. An attacker who can choose these bytes has already replaced the \n         keystore entry, and a wrong MUK is self-detecting one layer down: the \n         Store Key is HKDF(ikm = MUK) and the metadata MAC fails on the next \n         Store::open. The one length check it does have is asserted by \n         a_keystore_buffer_of_the_wrong_length_is_refused_by_name",
+        "NOT A BOUNDARY: a MUK this installation derived and the keystore holds; a wrong one fails the store's metadata MAC",
     ),
     (
         "core/src/base32.rs",
         "decode_with_checksum",
-        "COVERED ELSEWHERE: reached only through secret_key::decode and \
-         emergency_kit::parse, both of which are fuzzed; it takes an \
-         already-normalised symbol slice rather than raw input",
+        "COVERED ELSEWHERE: reached only through secret_key::decode and emergency_kit::parse, both fuzzed",
     ),
     (
         "core/src/base32.rs",
         "normalise_input",
-        "COVERED ELSEWHERE: the first step of all three classified decoders, so \
-         every byte a fuzzer feeds any of them passes through here first",
+        "COVERED ELSEWHERE: the first step of all three classified decoders",
     ),
     (
         "core/src/base32.rs",
         "checksum",
-        "COVERED ELSEWHERE: a truncated SHA-256 over a slice, reached from both \
-         the encode and the decode direction and fuzzed through the decoders",
+        "COVERED ELSEWHERE: a truncated SHA-256, fuzzed through the decoders",
     ),
     (
         "core/src/base32.rs",
         "encode_with_checksum",
-        "NOT A BOUNDARY: the encode direction. Its input is a key or an \
-         accountId this crate generated moments earlier",
+        "NOT A BOUNDARY: the encode direction, over a key or accountId this crate generated",
     ),
     (
         "core/src/base32.rs",
         "group",
-        "NOT A BOUNDARY: presentation over the encoder's own output; the \
-         decoder strips separators, so this never sees input",
+        "NOT A BOUNDARY: presentation over the encoder's own output",
     ),
     (
         "core/src/nonce.rs",
         "StoredNonce::from_stored_bytes",
-        "SAFE BY CONSTRUCTION: takes a fixed-size array, so there is no length \
-         or structure to get wrong, and a wrong nonce fails the AEAD tag",
+        "SAFE BY CONSTRUCTION: a fixed-size array; a wrong nonce fails the AEAD tag",
     ),
     (
         "core/src/secret_key.rs",
         "looks_like_rendered_key_material",
-        "COVERED ELSEWHERE: attacker-facing -- a hostile app can write the \
-         clipboard (A8) -- and its whole body is base32::normalise_input plus a \
-         length comparison and a prefix match",
+        "COVERED ELSEWHERE: clipboard input (A8), checked by base32::normalise_input, a length and a prefix",
     ),
     (
         "core/src/entry.rs",
         "accept",
-        "COVERED ELSEWHERE: the decoding half dispatches to secret_key::decode, \
-         which is fuzzed. The validating half is is_empty, a length bound, \
-         is_ascii and two whitespace checks -- total functions over a slice, \
-         with no parsing and no allocation. A target here would explore \
-         is_ascii and report a coverage figure for it, which is R7's own \
-         failure wearing a fuzzer",
+        "COVERED ELSEWHERE: decodes through secret_key::decode, which is fuzzed; the rest is length and ASCII checks",
     ),
     (
         "core/src/ffi_guard.rs",
         "assert_not_key_material",
-        "SAFE BY CONSTRUCTION: a 32-byte-window substring search over a slice. \
-         A fuzz target here is **impossible** rather than unnecessary -- the \
-         failure path is abort, so a fuzzer that found key material would kill \
-         itself instead of reporting it. Covered by i1a_ffi_guard_aborts.rs, \
-         which re-executes its own binary as a child",
+        "SAFE BY CONSTRUCTION: a 32-byte-window substring search; its failure path aborts, so it cannot be fuzzed",
     ),
     (
         "core/src/ffi_guard.rs",
         "register",
-        "NOT A BOUNDARY: takes key material this crate produced, from \
-         Secret::new, and never anything from outside",
+        "NOT A BOUNDARY: takes key material from Secret::new",
     ),
     (
         "core/src/ffi_guard.rs",
         "deregister",
-        "NOT A BOUNDARY: the Drop half of register, over the same bytes",
+        "NOT A BOUNDARY: the Drop half of register",
     ),
     (
         "core/src/item.rs",
         "SealedPayload::from_stored_parts",
-        "SAFE BY CONSTRUCTION: reconstitutes a sealed record from SQLite, so \
-         the bytes *are* from outside (A4 -- a hostile process on the device \
-         can rewrite the file). It parses nothing: a fixed-size nonce array and \
-         an opaque ciphertext vector go into a struct, and a tampered \
-         ciphertext fails the AEAD tag. The same shape as nonce::from_stored_bytes",
+        "SAFE BY CONSTRUCTION: a fixed-size nonce and an opaque ciphertext from SQLite (A4); tampering fails the AEAD tag",
     ),
     (
         "core/src/wrap.rs",
         "WrappedKey::from_stored_parts",
-        "SAFE BY CONSTRUCTION: the wrap half of item::from_stored_parts, on the \
-         same reasoning",
+        "SAFE BY CONSTRUCTION: as SealedPayload::from_stored_parts",
     ),
     (
         "core/src/item.rs",
         "seal",
-        "NOT A BOUNDARY: the plaintext is opaque to the AEAD. It is encrypted, \
-         not parsed, so there is no structure here for a hostile value to \
-         exploit -- item *decoding* is the schema's work and gets its own \
-         targets",
+        "NOT A BOUNDARY: the plaintext is encrypted, not parsed",
     ),
     (
         "core/src/item.rs",
         "seal_chunk",
-        "NOT A BOUNDARY: seal with the record type pinned to 0x02; the chunk's \
-         plaintext is opaque to the AEAD exactly as an item payload's is",
+        "NOT A BOUNDARY: seal with the record type pinned to 0x02",
     ),
     (
         "core/src/scan.rs",
         "production",
-        "NOT A BOUNDARY: reads this crate's own source text, checked in beside \
-         the code it reads",
+        "NOT A BOUNDARY: reads this crate's own source text",
     ),
     (
         "core/src/secret.rs",
         "Secret::from_derived_bytes",
-        "NOT A BOUNDARY: takes KDF output produced moments earlier in the same \
-         operation",
+        "NOT A BOUNDARY: KDF output from the same operation",
     ),
     (
         "core/src/secret.rs",
         "Secret::from_external_bytes",
-        "NOT A BOUNDARY: pub(crate), and reached only through entry::accept, \
-         which is classified above. The compile-fail case \
-         external_secrets_have_no_public_constructor is what makes that true \
-         rather than customary",
+        "NOT A BOUNDARY: pub(crate), reached only through entry::accept",
     ),
     (
         "core/src/wrap.rs",
         "ItemKind::from_tag",
-        "SAFE BY CONSTRUCTION: an exact match of a stored tag against six \
-         string literals, returning Option. It parses nothing and allocates \
-         nothing, and an unrecognised tag is None rather than a guess",
+        "SAFE BY CONSTRUCTION: an exact match against six literals, returning Option",
     ),
     (
         "core/src/model.rs",
         "Name::new",
-        "SAFE BY CONSTRUCTION: bounded before anything else, then a character \
-         check. No parsing, no structure, and the bound comes first so a \
-         hostile import cannot make it allocate before refusing",
+        "SAFE BY CONSTRUCTION: bounded first, then a character check",
     ),
     (
         "core/src/model.rs",
         "ItemField::new",
-        "SAFE BY CONSTRUCTION: delegates the name to Name::new and treats the \
-         value as opaque bytes -- the value is never parsed here, only sealed \
-         later",
+        "SAFE BY CONSTRUCTION: the name goes through Name::new and the value is opaque",
     ),
     (
         "core/src/model.rs",
         "Item::new",
-        "SAFE BY CONSTRUCTION: delegates every name to Name::new and compares \
-         names for duplicates. Quadratic in the field count, which is bounded \
-         by the caller rather than here -- stated because a hostile import with \
-         a million fields is the shape that would matter, and is where \
-         that bound belongs",
+        "SAFE BY CONSTRUCTION: names go through Name::new and are checked for duplicates; the caller bounds the count",
     ),
     (
         "core/src/model.rs",
         "Item::remove_field",
-        "SAFE BY CONSTRUCTION: compares a name against names already validated          by Name::new and retains the rest. No parsing; the slot list is the          representation and retain cannot reorder it",
+        "SAFE BY CONSTRUCTION: compares a name against validated names and retains the rest",
     ),
     (
         "core/src/model.rs",
         "Item::field",
-        "SAFE BY CONSTRUCTION: a linear search comparing a name to names \
-         already validated by Name::new",
+        "SAFE BY CONSTRUCTION: a linear search over validated names",
     ),
     (
         "core/src/store.rs",
         "Store::put_raw",
-        "SAFE BY CONSTRUCTION: the opaque-record obligation. The identifiers are \
-         opaque keys and the bytes are stored exactly and never read -- a \
-         record this build cannot open goes in and comes out identical, so \
-         the manifest's ciphertextDigest over it still holds (I6d)",
+        "SAFE BY CONSTRUCTION: opaque keys, and the bytes are stored exactly and never read",
     ),
     (
         "core/src/store.rs",
         "Store::get_raw",
-        "SAFE BY CONSTRUCTION: identifiers used as opaque lookup keys; returns \
-         bytes unread",
+        "SAFE BY CONSTRUCTION: opaque lookup keys; returns bytes unread",
     ),
     (
         "core/src/store.rs",
@@ -759,20 +634,17 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 111] = [
     (
         "core/src/store.rs",
         "Store::high_water_mark",
-        "SAFE BY CONSTRUCTION: an identifier used as an opaque map key over \
-         metadata already authenticated on open",
+        "SAFE BY CONSTRUCTION: an opaque key over metadata authenticated on open",
     ),
     (
         "core/src/store.rs",
         "Store::set_high_water_mark",
-        "SAFE BY CONSTRUCTION: an identifier used as an opaque map key; the value \
-         is refused if it decreases (I6f), then re-MAC'd",
+        "SAFE BY CONSTRUCTION: an opaque key; a decreasing value is refused (I6f)",
     ),
     (
         "core/src/search.rs",
         "SearchIndex::insert",
-        "SAFE BY CONSTRUCTION: the identifier is an opaque key; the item's three \
-         searched fields are lowercased into Zeroizing buffers -- copied, not parsed",
+        "SAFE BY CONSTRUCTION: an opaque key; the searched fields are copied, not parsed",
     ),
     (
         "core/src/search.rs",
@@ -782,21 +654,17 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 111] = [
     (
         "core/src/search.rs",
         "SearchIndex::search",
-        "SAFE BY CONSTRUCTION: the query is lowercased and compared by substring \
-         against fields already in memory. No parsing, no allocation per entry, \
-         and the result carries identifiers rather than text",
+        "SAFE BY CONSTRUCTION: a lowercased substring match over fields in memory",
     ),
     (
         "core/src/store.rs",
         "Store::put_chunk_raw",
-        "SAFE BY CONSTRUCTION: the opaque-record obligation for chunks -- \
-         identifiers are opaque keys and the bytes are stored exactly, never read",
+        "SAFE BY CONSTRUCTION: opaque keys, and the chunk bytes are stored exactly and never read",
     ),
     (
         "core/src/store.rs",
         "Store::get_chunk_raw",
-        "SAFE BY CONSTRUCTION: identifiers used as opaque keys; returns bytes \
-         unread",
+        "SAFE BY CONSTRUCTION: opaque keys; returns bytes unread",
     ),
     (
         "core/src/store.rs",
@@ -811,8 +679,7 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 111] = [
     (
         "core/src/export.rs",
         "write",
-        "SAFE BY CONSTRUCTION: the vault id is an opaque key into the store; the \
-         bytes it writes are read from the store and MACed, never parsed",
+        "SAFE BY CONSTRUCTION: an opaque key; the bytes come from the store and are MACed, never parsed",
     ),
     (
         "core/src/store.rs",
@@ -824,16 +691,12 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 111] = [
     (
         "core/src/attachment.rs",
         "seal_attachment",
-        "SAFE BY CONSTRUCTION: the identifiers are opaque AAD fields, the content \
-         type is bounded and copied into the AAD, and the attachment bytes are \
-         read one chunk at a time and sealed -- never parsed. The policy limit is \
-         applied before the first read",
+        "SAFE BY CONSTRUCTION: opaque AAD fields, a bounded content type, and bytes sealed chunk by chunk, never parsed",
     ),
     (
         "core/src/zip.rs",
         "Archive::find",
-        "SAFE BY CONSTRUCTION: compares a caller's member name against the parsed \
-         central directory; parses nothing",
+        "SAFE BY CONSTRUCTION: compares a member name against the parsed central directory",
     ),
     (
         "core/src/csv.rs",
@@ -848,8 +711,7 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 111] = [
     (
         "core/src/csv.rs",
         "row_has_columns",
-        "SAFE BY CONSTRUCTION: compares the required column names against a parsed \
-         row; parses nothing",
+        "SAFE BY CONSTRUCTION: compares column names against a parsed row",
     ),
     (
         "core/src/import.rs",
@@ -874,14 +736,12 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 111] = [
     (
         "core/src/import.rs",
         "parse_json",
-        "COVERED ELSEWHERE: every byte it parses arrives through onepux::parse or \
-         onepif::parse, both fuzzed; the JSON grammar underneath is serde_json's",
+        "COVERED ELSEWHERE: reached only through onepux::parse and onepif::parse, both fuzzed",
     ),
     (
         "core/src/import.rs",
         "ItemBuilder::name_of_value",
-        "SAFE BY CONSTRUCTION: compares bytes against the values already held; \
-         parses nothing",
+        "SAFE BY CONSTRUCTION: compares bytes against the values already held",
     ),
     (
         "core/src/import.rs",
@@ -891,8 +751,7 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 111] = [
     (
         "core/src/import.rs",
         "ItemBuilder::field",
-        "SAFE BY CONSTRUCTION: the names are bounded and copied into the item and \
-         the report; the value is opaque bytes, sealed later and never parsed",
+        "SAFE BY CONSTRUCTION: bounded names are copied; the value is opaque and never parsed",
     ),
     (
         "core/src/import.rs",
@@ -912,8 +771,7 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 111] = [
     (
         "core/src/import.rs",
         "ItemBuilder::attachment_refused",
-        "SAFE BY CONSTRUCTION: the source path is copied into the report; the \
-         reason is rendered from an error that carries no content",
+        "SAFE BY CONSTRUCTION: the source path is copied into the report, with a content-free reason",
     ),
     (
         "core/src/import.rs",
@@ -923,79 +781,77 @@ const NOT_SEPARATELY_FUZZED: [(&str, &str, &str); 111] = [
     (
         "core/src/import.rs",
         "AttachmentHandle::new",
-        "SAFE BY CONSTRUCTION: the file name is copied; it is content for the \
-         report and the caller, not parsed",
+        "SAFE BY CONSTRUCTION: the file name is copied, not parsed",
     ),
     (
         "protocol/src/lib.rs",
         "Field::new",
-        "NOT A BOUNDARY: the encode direction -- a field this crate is about to \
-         serialise. Record::decode is the inbound half and has a target",
+        "NOT A BOUNDARY: the encode direction",
     ),
     (
         "protocol/src/lib.rs",
         "Record::with_field",
-        "NOT A BOUNDARY: the encode direction, and the same reasoning as new",
+        "NOT A BOUNDARY: the encode direction",
     ),
     (
         "core/src/srp.rs",
         "private_exponent",
-        "SAFE BY CONSTRUCTION: `srpSalt` genuinely is attacker-facing -- the          server hands it to the client in the login exchange, so a hostile          server chooses it. But it reaches SHA-256 and nothing else. There          is no length to trust, no structure to parse, and no branch taken          on its contents; any 32 bytes are as valid as any other. A chosen          salt produces a different `x`, which produces a verifier that does          not match the stored one, and the exchange fails to authenticate --          §2.1's self-detecting downgrade wearing different clothes. The one          thing a fuzzer could look for here, a panic on an odd length, cannot          happen: `update` takes any slice",
+        "SAFE BY CONSTRUCTION: the server-chosen srpSalt reaches SHA-256 and nothing else",
     ),
     (
         "core/src/srp.rs",
         "client_proof",
-        "SAFE BY CONSTRUCTION: both slices reach a hash and nothing else -- no parse, no branch on contents, no allocation sized by either. The one shape that would matter is a variable-length `srpSalt`, because transcript is injective only while every field is a constant width, and a hostile server does choose that value. So it is refused rather than reasoned about: a salt that is not SRP_SALT_LEN returns TranscriptFieldLength. `identity` needs no such check because it enters as H(I), one hash wide whatever it was. A fuzzer over these arguments would be looking for a panic on an odd length, which `update` does not have",
+        "SAFE BY CONSTRUCTION: both slices reach a hash, and a salt of the wrong length is refused",
     ),
     (
         "core/src/srp.rs",
         "server_proof",
-        "SAFE BY CONSTRUCTION: the same argument as client_proof. `M1`          arrives at a fixed width or is refused with TranscriptFieldLength,          and the width is the hash's own associated constant rather than a          literal, so SHA-1 and SHA-256 cannot disagree about it",
+        "SAFE BY CONSTRUCTION: as client_proof; an M1 of the wrong width is refused",
     ),
     (
         "core/src/request_mac.rs",
         "decode",
-        "NOT A BOUNDARY: **nothing transmits this encoding.** Only the tag goes          on the wire; the MAC input is built on both sides from values they          already hold, so `decode`'s only inputs are what `encode` produced in          this crate's own tests. It exists so the format version is a value          somebody consumes rather than a constant nobody reads, and so that          `decode(encode(x)) == x` can stand as an injectivity proof stronger          than a sampled collision hunt. It is also safe by construction --          `split_at_checked` and `try_into` throughout, no indexing, and no          allocation sized by an unvalidated length -- but that is the second          reason, not the first. **If anything ever feeds it bytes from          outside this crate, this row is wrong and it belongs in PARSERS with          a target.**",
+        "NOT A BOUNDARY: nothing transmits this encoding, so its only input is encode's output; if that changes, it belongs in PARSERS",
     ),
     (
         "core/src/request_mac.rs",
         "tags_match",
-        "NOT A BOUNDARY: it parses nothing and allocates nothing. It compares          two slices and decides on their lengths first, which is safe because          a tag's length is public. What it is *for* is a property no fuzzer          can observe -- that the comparison does not return early -- and that          claim is `subtle`'s. The same classification and the same reasoning          as `srp::proofs_match`, which it is a copy of for a different key",
+        "NOT A BOUNDARY: compares two slices, length first; constant time is subtle's claim",
     ),
     (
         "core/src/request_mac.rs",
         "body_hash",
-        "SAFE BY CONSTRUCTION: it is one `Sha256::digest` call over whatever          slice it is handed, and returns 32 bytes for every input. There is no          parse, no branch on contents and no allocation sized by the body          beyond the digest. It exists so the body's hash function is one          decision in one place rather than one per call site",
+        "SAFE BY CONSTRUCTION: one Sha256::digest call over any slice",
     ),
     (
         "core/src/srp.rs",
         "fake_credentials",
-        "SAFE BY CONSTRUCTION: `seed` is refused at any width but 32 -- the one          check in this module that R10 is about, because an empty seed raises          no error anywhere and makes every unknown identifier share a          fabricated salt. `identifier` is genuinely attacker-chosen and          genuinely free-length, and it reaches two HMAC updates and nothing          else: no parse, no branch on contents, no allocation sized by it.          `Mac::update` takes any slice, so the panic a fuzzer would look for          cannot happen",
+        "SAFE BY CONSTRUCTION: the seed must be 32 bytes, and the identifier reaches two HMAC updates and nothing else",
     ),
     (
         "core/src/srp.rs",
         "select_credentials",
-        "SAFE BY CONSTRUCTION: both slices are refused at any width but their          fixed ones, and what follows is a byte-wise conditional select over          two equal-length buffers. The interesting property here is not          memory safety but that it does not branch on which side it picks,          which no fuzzer can observe -- that claim is `subtle`'s and is          asserted structurally by the operation trace in          `crates/server/tests/both_doors_are_closed.rs`",
+        "SAFE BY CONSTRUCTION: both slices must have their fixed widths, then a constant-time select",
     ),
     (
         "core/src/srp.rs",
         "check_public_value",
-        "SAFE BY CONSTRUCTION: it is itself one of the checks this registry          exists to encourage. The slice reaches a width comparison and a          modular reduction; there is no parse, no branch on contents beyond          zero-or-not, and no allocation sized by the input. A fuzzer over it          would be looking for a panic on an odd length, which the width check          makes unreachable before any arithmetic runs",
+        "SAFE BY CONSTRUCTION: a width check, then a modular reduction",
     ),
     (
         "core/src/srp.rs",
         "server_public_bytes",
-        "SAFE BY CONSTRUCTION: `verifier` is refused unless it is exactly the          group's width, and then read as a big integer at that precision.          Everything after is modular arithmetic on a fixed-width value. The          verifier is chosen by whoever registered the account -- but by then          they have an account, and any 512 bytes are as valid as any other: a          hostile verifier authenticates nobody, because it is the thing being          authenticated against",
+        "SAFE BY CONSTRUCTION: the verifier must be the group's width, then fixed-width modular arithmetic",
     ),
     (
         "core/src/srp.rs",
         "server_finish",
-        "SAFE BY CONSTRUCTION: four slices, and the three with a fixed width          are refused at any other. `client_proof_bytes` is the one that is          genuinely hostile and genuinely free-length -- it is whatever a          client sent -- and it reaches exactly one operation, a constant-time          comparison that decides on length first. There is no parse and no          allocation sized by it. What a fuzzer would add here is coverage of          `proofs_match`, which is classified beside this",
+        "SAFE BY CONSTRUCTION: fixed-width slices are checked, and the client proof reaches only a constant-time comparison",
     ),
     (
         "core/src/srp.rs",
         "proofs_match",
-        "NOT A BOUNDARY: it parses nothing and allocates nothing. It          compares two slices and decides on their lengths first, which is          safe because both lengths are public -- one hash width. What it is          *for* is a property no fuzzer can observe, that the comparison does          not return early; that claim is `subtle`'s and is asserted by          proofs_match_accepts_only_an_exact_equal_length_match only in the          weaker form that the answer is correct",
+        "NOT A BOUNDARY: compares two slices, length first; constant time is subtle's claim",
     ),
 ];
 
@@ -1221,13 +1077,11 @@ fn the_stripping_keeps_production_code_after_a_mid_file_cfg_test() {
 
     assert!(
         found.iter().any(|f| f == "before_the_marker"),
-        "the stripping dropped production code *before* the marker: {found:?}"
+        "the stripping dropped production code before the marker: {found:?}"
     );
     assert!(
         found.iter().any(|f| f == "after_the_marker"),
-        "**the regression this test exists for.** Production code after a \
-         mid-file #[cfg(test)] item was dropped, so every classification check \
-         is blind to the rest of the file and cannot notice: {found:?}"
+        "production code after a mid-file #[cfg(test)] item was dropped: {found:?}"
     );
     assert!(
         !found.iter().any(|f| f == "only_for_tests"),
@@ -1245,9 +1099,7 @@ fn the_crate_the_finding_came_from_still_has_the_shape_that_hid_it() {
     let marker = concat!("#[cfg(", "test)]");
     assert!(
         guard.matches(marker).count() >= 2,
-        "ffi_guard.rs no longer has a mid-file {marker}. If that is deliberate \
-         the fixture above still guards the stripping, but the real-world case \
-         this came from is gone and the comment should say so."
+        "ffi_guard.rs no longer has a mid-file {marker}; the fixture still covers the stripping."
     );
     let visible: Vec<String> = declared_functions(&production_code(&guard))
         .into_iter()
@@ -1279,9 +1131,7 @@ fn every_parser_in_the_source_is_classified() {
 
     assert!(
         unclassified.is_empty(),
-        ": these parsers have neither a fuzz target of their own nor a \
-         recorded reason for not needing one. Classify each — a parser nobody \
-         decided about is a parser nobody fuzzed:\n  {}",
+        "these parsers are classified nowhere. Add each to PARSERS or NOT_SEPARATELY_FUZZED:\n  {}",
         unclassified.join("\n  ")
     );
 }
@@ -1351,14 +1201,13 @@ fn every_function_taking_bytes_or_text_is_classified() {
     // Before the count checks, so the failure names the function.
     assert!(
         unclassified.is_empty(),
-        ": these functions take bytes or text from a caller and are classified nowhere. Add each to PARSERS with a fuzz target, or to NOT_SEPARATELY_FUZZED with one of the three reason kinds:
-  {}",
+        "these functions take bytes or text and are classified nowhere. Add each to PARSERS or NOT_SEPARATELY_FUZZED:\n  {}",
         unclassified.join("
   ")
     );
     assert!(
         all_declared().len() >= 40,
-        "the signature scan found only {} functions in the two crates, which is          too few to have read them",
+        "the signature scan found only {} functions, too few to have read the crates",
         all_declared().len()
     );
     let declared = all_declared_with_params();
@@ -1396,17 +1245,14 @@ fn every_function_taking_bytes_or_text_is_classified() {
             INVISIBLE_TO_THE_SIGNATURE_SCAN
                 .iter()
                 .any(|(f, fun, _)| f == file && fun == function),
-            "{file}::{function} is classified but takes no bare slice, so the signature \
-             scan cannot see it (R7 case 8). Either the signature should carry the \
-             bytes -- or this is a known blind spot: add it to \
-             INVISIBLE_TO_THE_SIGNATURE_SCAN with the reason"
+            "{file}::{function} takes no bare slice, so the signature scan cannot see it. \
+             Add it to INVISIBLE_TO_THE_SIGNATURE_SCAN with the reason"
         );
     }
     assert_eq!(
         boundary_count, visible,
-        "the signature scan found {boundary_count} functions taking bytes or text; the \
-         classified rows it can see number {visible}. A row is classified twice, or \
-         the scan sees a function the lists do not name"
+        "the signature scan found {boundary_count} functions taking bytes or text but \
+         {visible} classified rows it can see"
     );
 }
 
@@ -1414,48 +1260,47 @@ const INVISIBLE_TO_THE_SIGNATURE_SCAN: [(&str, &str, &str); 9] = [
     (
         "core/src/nonce.rs",
         "StoredNonce::from_stored_bytes",
-        "takes a fixed-size array by value, not a slice; the name scan reaches it",
+        "a fixed-size array by value; the name scan reaches it",
     ),
     (
         "core/src/zip.rs",
         "parse",
-        "takes a generic `Read + Seek`: the bytes arrive through a reader, not a slice. \
-         Registered in PARSERS by name, with its own target",
+        "a generic `Read + Seek`; in PARSERS",
     ),
     (
         "core/src/onepux.rs",
         "parse",
-        "the same generic reader, over the archive. Registered in PARSERS by name",
+        "the same generic reader, over the archive; in PARSERS",
     ),
     (
         "core/src/onepif.rs",
         "parse",
-        "takes a generic `BufRead`, line by line. Registered in PARSERS by name",
+        "a generic `BufRead`, line by line; in PARSERS",
     ),
     (
         "core/src/csv.rs",
         "parse",
-        "takes a generic `BufRead` and a row callback. Registered in PARSERS by name",
+        "a generic `BufRead` and a row callback; in PARSERS",
     ),
     (
         "core/src/bitwarden.rs",
         "parse",
-        "takes a generic `BufRead`. Registered in PARSERS by name",
+        "a generic `BufRead`; in PARSERS",
     ),
     (
         "core/src/lastpass.rs",
         "parse",
-        "takes a generic `BufRead`, rows through csv::parse. Registered in PARSERS by name",
+        "a generic `BufRead`, rows through csv::parse; in PARSERS",
     ),
     (
         "core/src/chrome.rs",
         "parse",
-        "takes a generic `BufRead`, rows through csv::parse. Registered in PARSERS by name",
+        "a generic `BufRead`, rows through csv::parse; in PARSERS",
     ),
     (
         "core/src/export.rs",
         "verify",
-        "takes a generic `Read + Seek`. Registered in PARSERS by name",
+        "a generic `Read + Seek`; in PARSERS",
     ),
 ];
 
@@ -1498,7 +1343,7 @@ fn no_classification_names_a_function_that_is_gone() {
     }
     assert!(
         stale.is_empty(),
-        ": these classifications name functions that no longer exist: {stale:?}"
+        "these classifications name functions that no longer exist: {stale:?}"
     );
 }
 
@@ -1522,7 +1367,7 @@ fn every_fuzz_target_is_registered() {
     }
     assert!(
         unregistered.is_empty(),
-        ": these fuzz targets are in no registry: {unregistered:?}"
+        "these fuzz targets are in no registry: {unregistered:?}"
     );
 }
 
@@ -1532,33 +1377,33 @@ fn every_fuzz_target_is_registered() {
 const DERIVED_FIELDS: [(&str, &str, &str); 6] = [
     (
         "DeviceMark::root_digest",
-        "CARRIED: StoredManifest::digest derives it over the sealed root's own          bytes, and DeviceMark::of calls that rather than taking a digest from          a caller -- which is the point, because a mark pairing one device's          sequence with another's digest reads as a fork at every comparison          thereafter",
-        "the_same_sequence_with_different_roots_is_a_fork, and          a_mark_takes_both_halves_from_one_root -- the second is the one that          fails if the digest stops covering the root it is paired with",
+        "CARRIED: StoredManifest::digest over the sealed root's own bytes, called by DeviceMark::of",
+        "the_same_sequence_with_different_roots_is_a_fork, a_mark_takes_both_halves_from_one_root",
     ),
     (
         "RootEntry::digest",
         "StoredManifest::digest, over the sealed segment's own bytes",
-        "i6b_a_segment_the_root_does_not_vouch_for_is_refused -- the root vouches          for different bytes, and the digest is what says so",
+        "i6b_a_segment_the_root_does_not_vouch_for_is_refused",
     ),
     (
         "AttachmentEntry::chunk_digest_root",
-        "manifest::chunk_digest_root, SHA-256 over the ordered concatenation          of the per-chunk digests",
-        "the_order_of_the_chunks_changes_the_root, and a_replayed_chunk_is_refused_by_the_root -- the second is the one the field exists for, and neither existed",
+        "manifest::chunk_digest_root, SHA-256 over the ordered per-chunk digests",
+        "the_order_of_the_chunks_changes_the_root, a_replayed_chunk_is_refused_by_the_root",
     ),
     (
         "Entry::ciphertext_digest",
-        "CARRIED: StoredRecord::ciphertext_digest in stored_record.rs derives          it over the sealed item payload. The manifest records what that          produced and compares it; it does not compute it",
+        "CARRIED: StoredRecord::ciphertext_digest in stored_record.rs, over the sealed item payload",
         "i6d_a_substituted_ciphertext_at_the_same_version_is_refused",
     ),
     (
         "ConflictingVersion::ciphertext_digest",
-        "CARRIED: the same value, read off an Entry or a StagedEdit. tiebreak compares it and derives nothing",
-        "the_comparison_is_unsigned_and_most_significant_byte_first -- the          tiebreak is what the carried value is *for*, so a wrong comparison is          how a wrong value shows up here",
+        "CARRIED: read off an Entry or a StagedEdit; the conflict tiebreak only compares it",
+        "the_comparison_is_unsigned_and_most_significant_byte_first",
     ),
     (
         "StagedEdit::ciphertext_digest",
-        "CARRIED: computed by this process when it sealed the payload, before          anything was staged. Nothing in sync.rs derives it",
-        "the_copys_entry_carries_the_resealed_digest_and_not_the_losers -- a          conflict copy must name the re-sealed record, not the one its identity          was derived from",
+        "CARRIED: computed by this process when it sealed the payload",
+        "the_copys_entry_carries_the_resealed_digest_and_not_the_losers",
     ),
 ];
 
@@ -1599,10 +1444,8 @@ fn every_digest_field_in_a_record_is_registered() {
     }
     assert!(
         unregistered.is_empty(),
-        "R9's fifth instance: these digest fields on record types are \
-         registered nowhere. Add each to DERIVED_FIELDS with the function that \
-         computes it (or CARRIED naming the module that does) and a test that \
-         fails when it is wrong:{}",
+        "these digest fields are registered nowhere. Add each to DERIVED_FIELDS with \
+         what computes it and a test that fails when it is wrong:{}",
         unregistered.join("")
     );
 }

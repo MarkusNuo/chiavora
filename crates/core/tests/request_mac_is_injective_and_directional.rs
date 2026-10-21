@@ -33,10 +33,7 @@ fn a_path_cannot_borrow_bytes_from_its_neighbour() {
 
     assert_ne!(
         split, joined,
-        "two different paths produced the same MAC input. This is the case the \
-         length prefixes exist for: `POST /a/b` and `POST /a` with `/b` leading \
-         the next field are different requests, and a MAC that authenticates \
-         the wrong one authenticates it perfectly"
+        "two different paths produced the same MAC input"
     );
 
     let moved = encode(&parts(b"POST/a", b"/b", &HASH, 7, &NONCE)).unwrap();
@@ -96,8 +93,7 @@ fn no_two_distinct_requests_encode_alike() {
     assert_eq!(
         seen.len(),
         methods.len() * paths.len() * stamps.len(),
-        "the hunt must have drawn every combination; a loop that drew fewer \
-         would report no collisions for the reason that is not evidence"
+        "the hunt must have drawn every combination"
     );
 }
 
@@ -133,8 +129,7 @@ fn a_truncated_or_wrong_width_encoding_is_refused() {
     assert_eq!(
         decode(&[encoded.clone(), vec![0]].concat()).unwrap_err(),
         MacError::Truncated,
-        "trailing bytes must be refused; an encoding with slack is two \
-         encodings of the same request"
+        "trailing bytes must be refused"
     );
 
     assert_eq!(
@@ -158,10 +153,7 @@ fn a_client_to_server_tag_does_not_verify_as_a_server_to_client_one() {
 
     assert!(
         !tags_match(&c2s, &s2c),
-        "the same request tagged in both directions produced the same tag, so a \
-         reflected message verifies under the key that sent it — which is the \
-         defect exists to close, and this is the first change in which \
-         anything could reflect"
+        "the same request tagged in both directions produced the same tag"
     );
 
     assert!(tags_match(
@@ -203,8 +195,7 @@ fn the_tag_covers_every_field() {
     for (field, variant) in variants {
         assert!(
             !tags_match(&baseline, &client_to_server_tag(&key, &variant).unwrap()),
-            "changing the {field} did not change the tag, so the MAC does not \
-             cover it. docs/security-design.md §2.3 names all five"
+            "changing the {field} did not change the tag"
         );
     }
 }

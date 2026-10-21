@@ -27,8 +27,7 @@ if ($reasons.Count -gt 0) {
     foreach ($reason in $reasons) {
         Write-Host "  $reason" -ForegroundColor Yellow
     }
-    Write-Host '  The app was NOT compiled. This is the check that catches a' -ForegroundColor Yellow
-    Write-Host '  ChiavoraCoreModule.kt that does not build -- see the header.' -ForegroundColor Yellow
+    Write-Host '  The app was NOT compiled.' -ForegroundColor Yellow
     # 2, not 1: a skip is not a failure, but `gate.ps1` must not record a pass.
     exit 2
 }

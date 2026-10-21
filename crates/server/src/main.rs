@@ -1,3 +1,3 @@
 fn main() {
-    eprintln!("chiavora-server: not implemented (scaffold)");
+    eprintln!("chiavora-server: not implemented yet");
 }

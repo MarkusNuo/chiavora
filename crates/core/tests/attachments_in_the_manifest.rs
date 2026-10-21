@@ -245,8 +245,7 @@ fn only_chunks_the_current_entry_names_are_ever_requested() {
     );
     assert!(
         fetcher.requested.is_disjoint(&superseded),
-        "the client asked for a superseded attachment, so collecting it would \
-         be indistinguishable from withholding it"
+        "the client asked for a superseded attachment"
     );
     assert!(!fetcher.requested.is_empty(), "it asked for nothing at all");
 }

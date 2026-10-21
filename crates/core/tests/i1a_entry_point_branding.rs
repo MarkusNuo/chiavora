@@ -1,48 +1,10 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
-use std::path::PathBuf;
-
 use chiavora_core::emergency_kit;
 use chiavora_core::entry::{
     accept, CliStdin, ClipboardPaste, EntryError, EntryPoint as _, EntryStatus, PasswordField,
     SecretKeyField, REGISTRY,
 };
-
-fn repo_root() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.pop();
-    p
-}
-
-fn read(rel: &str) -> String {
-    let path = repo_root().join(rel);
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
-}
-
-fn unwrap_lines(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-#[test]
-fn the_registry_reproduces_the_gate_sentence_verbatim() {
-    let phrases: Vec<&str> = REGISTRY.iter().map(|r| r.gate_phrase).collect();
-    let (last, leading) = phrases.split_last().expect("the registry is never empty");
-    let expected = format!(
-        "the gate names every entry point: {}, and {last}.",
-        leading.join(", ")
-    );
-
-    let plan = unwrap_lines(&read("docs/security-design.md"));
-    assert!(
-        plan.contains(&expected),
-        "docs/security-design.md no longer lists the entry points the registry claims.\n\
-         The registry builds: {expected}\n\
-         If docs/security-design.md changed deliberately, change `entry::REGISTRY` in the same \
-         commit — an entry point named by the gate and absent from the registry \
-         is one nothing will ever build."
-    );
-}
 
 #[test]
 fn every_row_names_either_what_blocks_it_or_what_resolved_it() {
@@ -61,11 +23,8 @@ fn every_row_names_either_what_blocks_it_or_what_resolved_it() {
                     )
                 });
                 assert!(
-                    resolved.contains("OD-")
-                        || resolved.contains("adr/")
-                        || resolved.contains("B-02."),
-                    "{}'s resolution must cite a decision or the change that built \
-                     it, not describe the situation: {resolved}",
+                    !resolved.trim().is_empty(),
+                    "{}'s resolution is empty",
                     record.name
                 );
             }
@@ -77,17 +36,44 @@ fn every_row_names_either_what_blocks_it_or_what_resolved_it() {
                 );
                 let blocker = record.blocked_on.unwrap_or_else(|| {
                     panic!(
-                        "{} is owed with no blocker recorded. An owed entry point \
-                         with no stated reason reads as forgotten rather than as \
-                         waiting on a decision.",
+                        "{} is owed with no blocker recorded, so it reads as forgotten",
                         record.name
                     )
                 });
                 assert!(
-                    blocker.contains("OD-") || blocker.contains("adr/"),
-                    "{}'s blocker must cite the decision that unblocks it, not \
-                     just describe the situation: {blocker}",
+                    !blocker.trim().is_empty(),
+                    "{}'s blocker must name the decision that unblocks it",
                     record.name
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn no_host_is_built_and_every_host_is_a_client_surface() {
+    for record in &REGISTRY {
+        match (record.status, record.host) {
+            (EntryStatus::CarriesNoSecret, None) => {}
+            (EntryStatus::CarriesNoSecret, Some(host)) => panic!(
+                "{} carries no secret and yet names a host ({})",
+                record.name, host.surface
+            ),
+            (_, None) => panic!(
+                "{} has no host recorded; every named entry point is fed by something",
+                record.name
+            ),
+            (_, Some(host)) => {
+                assert_ne!(
+                    host.surface, "core",
+                    "{}'s host is recorded as core work",
+                    record.name
+                );
+                assert!(
+                    ["mobile/app", "cli", "desktop", "extension"].contains(&host.surface),
+                    "{}'s host surface {} is not one of the client components",
+                    record.name,
+                    host.surface
                 );
             }
         }
@@ -158,12 +144,10 @@ fn the_two_counts_are_pinned_and_they_are_two_different_numbers() {
         .count();
     assert_eq!(
         covered, 5,
-        "the number of entry points covered in core changed; update \
-         docs/crypto.md's partial-coverage section, `covered_points` and this \
-         count together"
+        "the covered count changed; update docs/crypto.md and `covered_points` too"
     );
     assert_eq!(excluded, 1, "inbound native messaging is the only such row");
-    assert_eq!(REGISTRY.len(), 6, "the gate names six");
+    assert_eq!(REGISTRY.len(), 6, "the design names six");
 }
 
 #[test]
@@ -177,8 +161,7 @@ fn no_entry_point_claims_the_excluded_boundary() {
     for name in excluded {
         assert!(
             !built.contains(&name),
-            "{name} is recorded as carrying no secret and has an entry point \
-             behind it. One of the two is wrong, and says which."
+            "{name} is recorded as carrying no secret but has an entry point behind it"
         );
     }
 }

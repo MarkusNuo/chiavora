@@ -129,7 +129,7 @@ fn report_kdf_cost_on_this_machine() {
         .expect("at least the I4 floor must allocate");
     println!();
     println!("  highest that allocated here: {highest_that_allocates:?} MiB");
-    println!("  taken forward (capped at §2.1's 256 MiB target): {chosen_mib} MiB");
+    println!("  taken forward (capped at 256 MiB): {chosen_mib} MiB");
 
     println!();
     println!("step 2: raise t at m = {chosen_mib} MiB until the derivation costs >= 500 ms");
@@ -161,8 +161,8 @@ fn report_kdf_cost_on_this_machine() {
         Some(t) => {
             println!();
             println!("RESULT  m = {chosen_mib} MiB, t = {t}, p = 4");
-            println!("        (allocate AND complete: allocation succeeded in the shell cgroup;");
-            println!(" backgrounded-under-pressure is NOT settled here --)");
+            println!("        (allocated in the shell cgroup;");
+            println!("         allocation under memory pressure needs the app)");
         }
         None => println!("RESULT  no t <= 32 reached 500 ms at m = {chosen_mib} MiB"),
     }
@@ -175,7 +175,7 @@ fn report_store_write_costs_on_this_machine() {
     const RECORD_BYTES: usize = 1024;
 
     println!();
-    println!("=== store write cost (NOT the manifest measurement -- see the doc comment) ===");
+    println!("=== store write cost (a proxy, not the manifest write cost) ===");
     print_meminfo("before");
     println!("  {:>8}  {:>12}  {:>14}", "items", "total", "per item");
 
@@ -220,7 +220,7 @@ fn report_store_write_costs_on_this_machine() {
     let total = t.elapsed();
     drop(store);
     println!(
-        " 10000 {total:>12?} {:>14?} (one transaction)",
+        "    10000  {total:>12?}  {:>14?}  (one transaction)",
         total / 10_000
     );
     let _ = std::fs::remove_file(&path);

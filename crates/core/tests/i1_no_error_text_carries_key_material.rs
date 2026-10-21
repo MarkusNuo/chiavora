@@ -410,10 +410,7 @@ fn the_variant_lists_match_the_source() {
 
         assert_eq!(
             count, expected,
-            "{name} in {file} has {count} variants; this file checks \
-             {expected}. Add the new variant to the list above — I1 says *no* \
-             error message carries key material, and a variant nobody renders \
-             is a variant nobody checked."
+            "{name} in {file} has {count} variants but this file checks {expected}."
         );
     }
 }

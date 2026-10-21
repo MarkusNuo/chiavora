@@ -64,8 +64,7 @@ fuzz_target!(|data: &[u8]| {
                 let prefix = entry.prefix();
                 assert!(
                     aad::check_prefix(prefix.bit_len(), prefix.bits()).is_ok(),
-                    "a non-canonical prefix survived into a RootEntry, which is \
-                     I6b's precondition failing"
+                    "a non-canonical prefix survived into a RootEntry"
                 );
             }
 

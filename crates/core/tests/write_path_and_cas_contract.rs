@@ -436,8 +436,7 @@ fn c1_a_server_accepting_at_or_above_orphans_the_losers_items() {
     );
     assert!(
         segment.entry(b"from-a").is_none(),
-        "and A's item is listed in no segment: the orphaned ciphertext C1 exists \
-         to prevent"
+        "and A's item is listed in no segment"
     );
     assert!(
         matches!(
@@ -530,8 +529,7 @@ fn c3_a_refused_write_reports_where_the_vault_is() {
             observed: 7,
             served: 0
         },
-        "the client is told where the vault is, or it cannot distinguish \
-         contention from a refusing server"
+        "the client is not told where the vault is"
     );
 }
 
@@ -581,8 +579,7 @@ fn c7_the_previous_epochs_key_is_retained_until_explicitly_released() {
     }
     assert!(
         server.retains(1),
-        "writes alone never release an epoch: the server cannot see re-wrap \
-         progress, so it has no basis on which to decide"
+        "writes alone must never release a retained epoch"
     );
 
     server.release_epoch(1);
@@ -597,8 +594,7 @@ fn c7s_authentication_half_belongs_to_the_server_and_is_not_tested_here() {
     server.release_epoch(1);
     assert!(
         !server.retains(1),
-        "the fake has no authentication, which is exactly the point: this suite \
-         proves the release is explicit, never that it is authorised"
+        "the fake has no authentication, so this proves the release is explicit, not authorised"
     );
 }
 
@@ -636,7 +632,6 @@ fn c6_the_server_sees_the_metadata_the_enumeration_names_and_no_more() {
     let plaintext_visible = String::from_utf8_lossy(segment.payload().ciphertext()).to_string();
     assert!(
         !plaintext_visible.contains("secret-item"),
-        "an itemId must not be readable in a sealed segment; only segmentPrefix \
-         is server-visible metadata, and R-26 accepts that leak by name"
+        "an itemId must not be readable in a sealed segment"
     );
 }

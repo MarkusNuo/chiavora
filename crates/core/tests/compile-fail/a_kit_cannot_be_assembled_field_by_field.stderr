@@ -11,7 +11,7 @@ warning: unreachable expression
 error[E0451]: fields `account_id`, `account_salt`, `secret_key` and `checkpoint` of struct `Kit` are private
   --> tests/compile-fail/a_kit_cannot_be_assembled_field_by_field.rs:7:9
    |
-16 |     let kit = Kit {
+ 6 |     let kit = Kit {
    |               --- in this type
  7 |         account_id: [0; 16],
    |         ^^^^^^^^^^ private field

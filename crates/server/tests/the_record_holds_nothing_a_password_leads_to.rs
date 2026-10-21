@@ -80,10 +80,7 @@ fn the_stored_bytes_contain_no_password_and_nothing_it_derives_to() {
 
     assert!(
         found.is_empty(),
-        "the server's authentication record contains {found:?}. It holds \
-         `(accountId, srpSalt, v)` and nothing a password leads to — that is \
-And it is what makes a stolen database an offline search \
-         against `srpX` rather than a list of credentials"
+        "the server's authentication record contains {found:?}"
     );
 }
 
@@ -108,9 +105,7 @@ fn the_search_would_notice_x_in_the_record() {
 
     assert!(
         stored.windows(x.len()).any(|window| window == x.as_slice()),
-        "the search must find `x` when it is present. If this fails, the test \
-         above is green over a search that cannot find anything, which is the \
-         one result it must never be able to give"
+        "the search must find `x` when it is present"
     );
 }
 
@@ -157,9 +152,7 @@ fn the_stored_form_is_the_three_fields_and_no_more() {
     assert_eq!(
         stored.len(),
         16 + SRP_SALT_LEN + SRP_VERIFIER_LEN,
-        "the stored form is three fixed-width fields. A different length means \
-         a field was added, reordered or prefixed, and search \
-         above would still have passed"
+        "the stored form must be exactly the three fixed-width fields"
     );
     assert_eq!(
         stored.get(..16).unwrap(),

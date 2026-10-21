@@ -453,8 +453,7 @@ mod tests {
         assert_ne!(
             first.autofill_key.expose(),
             second.autofill_key.expose(),
-            "but the Autofill Key is per vault, which is what makes a shared \
-             vault's Autofill Key reachable by its members and nobody else"
+            "but the Autofill Key is per vault"
         );
     }
 

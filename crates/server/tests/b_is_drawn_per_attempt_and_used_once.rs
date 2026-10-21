@@ -74,8 +74,7 @@ fn an_honest_login_verifies_and_both_sides_agree_on_the_keys() {
     assert_eq!(
         finished.keys.session_key.expose(),
         keys.session_key.expose(),
-        "both sides must reach the same K, or the exchange computed a shared \
-         value that is not shared"
+        "both sides must reach the same K"
     );
     assert_eq!(
         finished.keys.mac_client_to_server.expose(),
@@ -113,8 +112,7 @@ fn two_exchanges_for_one_account_do_not_share_a_b() {
     assert_ne!(
         first.server_public(),
         second.server_public(),
-        "two exchanges produced the same B, which means the same b. Everything \
-          established about replay rests on this being false"
+        "two exchanges produced the same B, which means the same b"
     );
 }
 
@@ -149,8 +147,7 @@ fn a_proof_from_another_exchange_is_refused() {
     assert_eq!(
         current.finish(&stale).unwrap_err(),
         AuthRecordError::Srp(SrpError::ProofMismatch),
-        "a proof computed against an earlier B must not verify against a fresh \
-         one"
+        "a proof computed against an earlier B must not verify against a fresh one"
     );
 }
 

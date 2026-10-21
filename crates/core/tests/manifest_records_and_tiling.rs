@@ -169,8 +169,7 @@ fn i6b_a_root_that_would_tile_only_after_normalisation_is_refused_outright() {
                 aad::AadError::PrefixBitsNotCanonical
             ))
         ),
-        "a non-canonical prefix must fail I6b outright, never be normalised and \
-         then tiled; got {refused:?}"
+        "a non-canonical prefix must fail I6b outright; got {refused:?}"
     );
 
     let normalised = [prefix(1, TOP_HALF), prefix(1, TOP_HALF)];
@@ -182,7 +181,7 @@ fn i6b_a_root_that_would_tile_only_after_normalisation_is_refused_outright() {
                 through: t
             }) if t == TOP_HALF - 1
         ),
-        "normalising two encodings of one prefix hides the bottom half, and the          check must say which half"
+        "the check must name the hidden bottom half"
     );
 }
 
@@ -607,7 +606,7 @@ fn regenerate_manifest_decode_corpus() {
         + write_malformed_seeds(&mut noise);
     assert!(
         written >= 10,
-        "R7: {written} seeds is not a corpus for a prefixed format"
+        "{written} seeds is not a corpus for a prefixed format"
     );
 }
 
@@ -641,8 +640,7 @@ fn the_canonicalisation_rule_is_not_reimplemented_in_the_manifest() {
     for forbidden in ["u64::MAX >>", "MAX_PREFIX_LEN", "PrefixBitsNotCanonical"] {
         assert!(
             !code.contains(forbidden),
-            "`{forbidden}` appears in manifest.rs: §2.2's canonicalisation rule \
-             belongs to aad::check_prefix and nowhere else"
+            "`{forbidden}` appears in manifest.rs; the rule belongs to aad::check_prefix"
         );
     }
 }

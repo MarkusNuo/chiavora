@@ -15,11 +15,6 @@ fn root() -> PathBuf {
     p
 }
 
-fn read(rel: &str) -> String {
-    let path = root().join(rel);
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
-}
-
 /// The stored tags, written out by hand on purpose: they are an on-disk format (the row's
 /// type and the `0x01` AAD's `contentType`), so a rename in the macro must fail here.
 const STORED_TAGS: [&str; 6] = ["login", "TOTP", "note", "card", "identity", "SSH key"];
@@ -33,11 +28,7 @@ fn the_stored_tags_are_pinned_against_a_hand_written_list() {
     let from_code: Vec<&str> = ItemKind::ALL.iter().map(|k| k.tag()).collect();
     assert_eq!(
         from_code, STORED_TAGS,
-        "an item kind's stored tag changed. That is an on-disk format change, \
-         not a rename: the tag is the stored row's type column and the `0x01` \
-         AAD's contentType, so every item already written now decodes as a \
-         different kind or as none. If the change is deliberate it needs a \
-         schema migration, not an edit here."
+        "an item kind's stored tag changed, which changes the on-disk format"
     );
 }
 
@@ -126,8 +117,7 @@ fn a_login_gets_two_wraps_and_a_note_gets_one_through_the_dispatch() {
         assert_eq!(
             set.wrap_count(),
             kind.wrap_count(),
-            "{}: the dispatch produced a set with a different wrap count than \
-             the kind reports",
+            "{}: the dispatch produced a set with a different wrap count",
             kind.tag()
         );
         match (kind, &set) {
@@ -173,9 +163,6 @@ fn no_hand_written_branch_chooses_a_wrap_set() {
     }
     assert!(
         offenders.is_empty(),
-        " §3.1: these modules name both wrap sets, which means something \
-         there is choosing between them. The wrap count is a projection of \
-         `ItemType::Wraps`, and the only dispatch is the generated one in \
-         wrap.rs: {offenders:?}"
+        "these modules name both wrap sets outside wrap.rs: {offenders:?}"
     );
 }

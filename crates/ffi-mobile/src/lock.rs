@@ -42,8 +42,7 @@ mod tests {
         assert!(
             r.min_idle_timeout_seconds <= r.idle_timeout_seconds
                 && r.idle_timeout_seconds <= r.max_idle_timeout_seconds,
-            "the default sits outside the bounds the same call reports, so a \
-             slider drawn from this would open with its handle off the track"
+            "the default lies outside the bounds the same call reports"
         );
     }
 

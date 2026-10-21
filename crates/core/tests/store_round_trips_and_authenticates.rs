@@ -419,7 +419,7 @@ fn a_rolled_back_bulk_write_leaves_the_rollback_anchor_where_it_was() {
     assert_eq!(
         anchor.latest(),
         Some(settled),
-        "a rolled-back bulk write moved the rollback anchor: it now claims          generation {:?} while the file is still at {settled}",
+        "a rolled-back bulk write moved the anchor to {:?} while the file is at {settled}",
         anchor.latest()
     );
 
@@ -622,7 +622,7 @@ fn regenerate_stored_record_corpus() {
             n += 1;
         }
     }
-    assert!(n >= 10, "R7: at least ten seeds");
+    assert!(n >= 10, "at least ten seeds");
 }
 
 #[test]

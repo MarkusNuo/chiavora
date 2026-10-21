@@ -75,8 +75,7 @@ fn an_empty_query_matches_nothing() {
     // Listing everything is `Store::list`'s job, not the index's.
     assert!(
         fixture().search("").is_empty(),
-        "the empty query matched something, which makes the index an \
-         enumeration API"
+        "the empty query matched something"
     );
 }
 
@@ -85,8 +84,7 @@ fn only_the_three_searched_fields_are_searched() {
     let index = fixture();
     assert!(
         index.search("correct-horse").is_empty(),
-        "a password was reachable through the index, which is the property \
-         that makes the index unsafe to hold"
+        "a password was reachable through the index"
     );
     assert!(
         index.search("work").is_empty(),
@@ -130,8 +128,7 @@ fn insert_replaces_by_identifier_and_remove_is_honest() {
     );
     assert!(
         index.search("example bank").is_empty(),
-        "the replaced title is still searchable, so insert appended instead \
-         of replacing"
+        "the replaced title is still searchable"
     );
     assert_eq!(ids(&index.search("renamed")), [&b"a"[..]]);
     assert!(index.remove(b"a"));
@@ -202,8 +199,10 @@ fn report_index_costs_on_this_machine() {
         .expect("a thousand samples");
 
     println!();
-    println!("index costs on THIS machine -- gate applies to the handset run");
+    println!(
+        "index costs on this machine -- the latency target applies to the reference-handset run"
+    );
     println!("  rebuild at unlock, {ITEMS} items, median of 10:   {rebuild_median:?}");
-    println!("  query latency, p95 over {QUERIES} queries: {p95:?}");
+    println!("  query latency, p95 over {QUERIES} queries:        {p95:?}");
     println!("  these are two different numbers and neither licenses the other");
 }

@@ -333,8 +333,7 @@ fn a_conflict_copy_lands_in_the_segment_its_own_hash_selects() {
 
     assert_eq!(
         server.last_write_segments, 2,
-        "the primary's segment and the copy's are two segments, and both must \
-         land in the same CAS write"
+        "the primary's segment and the copy's must land in one CAS write"
     );
     let entries = server.entries(&k);
     assert!(
@@ -386,8 +385,7 @@ fn an_edit_after_a_rotation_carries_the_rotated_epoch() {
     assert_eq!(
         root.vault_key_epoch(),
         2,
-        "the edit wrote an epoch the vault is not at, so every reader would \
-         fetch the wrong sealed Vault Key"
+        "the edit wrote an epoch the vault is not at"
     );
     for bytes in &server.segments {
         match StoredManifest::decode(bytes).expect("segment").fields() {

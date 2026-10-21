@@ -32,7 +32,7 @@ module.exports = function withChiavoraAndroid(config, options) {
       anchor,
       [
         '// Set by apps/mobile/plugins/with-chiavora-android.js — the SDK',
-        "// components verified against Google's manifest and 049.",
+        "// components verified against Google's manifest.",
         '// Expo would otherwise pin its own and try to download them.',
         ...assignments,
         '',

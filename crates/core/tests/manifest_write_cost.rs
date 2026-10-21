@@ -149,7 +149,7 @@ fn report(m: &Measurement) {
     println!("  items in vault      {}", m.items);
     println!("  edits timed         {}", m.edits);
     if m.edits < 20 {
-        println!("  NOTE: under 20 samples, p95 by nearest rank is the maximum");
+        println!("  note: under 20 samples, p95 is the maximum");
     }
     println!("  median              {} ms", m.median_millis);
     println!(
@@ -162,7 +162,7 @@ fn report(m: &Measurement) {
         m.bytes,
         if bytes_ok { "PASS" } else { "FAIL" }
     );
-    println!("  budget is PROVISIONAL -- revision allowed, with its reason");
+    println!("  the budget is provisional");
     println!();
 }
 

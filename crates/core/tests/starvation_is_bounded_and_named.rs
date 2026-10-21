@@ -191,8 +191,7 @@ fn a_client_that_keeps_losing_stops() {
     assert_eq!(
         backoff.waits.len(),
         4,
-        "five attempts means four waits -- a wait after the last attempt is \
-         time a user spends waiting for nothing"
+        "five attempts must mean exactly four waits"
     );
 }
 
@@ -347,9 +346,7 @@ fn contention_and_refusal_are_distinct_variants_not_distinct_strings() {
     };
     assert_ne!(
         contended, refusing,
-        "the same numbers produce the same outcome, so the distinction is in \
-         the message rather than in the type -- which puts it hands \
-         and not in this module's"
+        "the same numbers produce the same outcome, so the distinction is only in the message"
     );
 }
 
@@ -374,8 +371,7 @@ fn an_inflating_server_is_caught_and_this_is_the_decisive_one() {
             out,
             Err(ManifestError::ServerReportedImpossibleSequence { .. })
         ),
-        "an inflating server was read as contention, which is the message that \
-         tells a user to wait: {out:?}"
+        "an inflating server was read as contention: {out:?}"
     );
 }
 
@@ -468,6 +464,7 @@ fn the_retry_path_reads_no_wall_clock() {
     );
     assert!(
         source.contains("SystemTime"),
-        "the module no longer says what it forbids, so this scan is guarding          a rule nobody reading the file would know about"
+        "the module no longer says what it forbids, so this scan is guarding \
+         a rule nobody reading the file would know about"
     );
 }

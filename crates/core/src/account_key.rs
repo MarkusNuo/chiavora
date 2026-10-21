@@ -148,8 +148,7 @@ mod tests {
         assert_eq!(
             unwrap(&wrapped, &muk(0x11), ctx(b"account-1", 2)).err(),
             Some(AccountKeyError::Aead),
-            "a wrap from before a keypair rotation does not open -- the case \
-             the epoch exists for, and the one a MUK change would not catch"
+            "a wrap from before a keypair rotation does not open"
         );
         assert_eq!(
             unwrap(&wrapped, &muk(0x22), ctx(b"account-1", 1)).err(),

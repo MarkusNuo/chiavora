@@ -411,7 +411,7 @@ def main() -> int:
         "Extracted from RFC 5054's own text and recomputed from the specification by "
         "tools/srp_reference.py (Python: hashlib and pow(), sharing no code with "
         "crates/core), so the Rust implementation is checked against something that "
-        "is not itself. ; the precedent is secret_key_format.json."
+        "is not itself."
     )
 
     properties = {}
@@ -429,17 +429,15 @@ def main() -> int:
         "source": "RFC 5054 Appendix A",
         "note": provenance,
         "warning": (
-            "Appendix A publishes N and g for every group. It publishes exchange "
-            "test vectors for NONE of them -- Appendix B's single set uses the "
-            "1024-bit group and SHA-1. Comparing these bytes establishes that the "
-            "group is the right group; it establishes nothing about the exchange. "
-            "See docs/adr/0008 section 4."
+            "Matching these bytes shows the group is the right one and says "
+            "nothing about the exchange, whose only published vectors "
+            "(Appendix B) use the 1024-bit group with SHA-1."
         ),
         "groups": {
             "1024": {"bits": 1024, "g": g1024, "N": n1024,
-                     "use": "TEST ONLY -- the instantiation RFC 5054 Appendix B uses"},
+                     "use": "Test only: the instantiation RFC 5054 Appendix B uses."},
             "4096": {"bits": 4096, "g": g4096, "N": n4096,
-                     "use": "SHIPPING -- docs/security-design.md 2.3"},
+                     "use": "Shipping (docs/security-design.md 2.3)."},
         },
         "properties": properties,
     }, indent=1) + "\n", encoding="utf-8")
@@ -448,10 +446,9 @@ def main() -> int:
         "source": "RFC 5054 Appendix B",
         "note": provenance,
         "scope": (
-            "The 1024-bit group with SHA-1. This is NOT Chiavora's shipping "
-            "configuration (4096-bit, SHA-256) and passing it is NOT evidence that "
-            "the shipping configuration is verified. It establishes the exchange "
-            "algebra given x, and nothing else. docs/adr/0008 section 4."
+            "The 1024-bit group with SHA-1, which Chiavora does not ship: these "
+            "vectors check the exchange algebra given x and are no evidence for "
+            "the shipping configuration."
         ),
         "group": "1024",
         "hash": "sha1",
@@ -472,19 +469,12 @@ def main() -> int:
         "source": "docs/adr/0008 section 3.3 — x = SHA-256(srpSalt || srpX), v = g^x mod N",
         "note": provenance,
         "checked_against": (
-            "NOTHING EXTERNAL, AND THAT IS THE POINT. RFC 5054's vectors above are "
-            "recomputed and compared against the RFC's own published values. These "
-            "cannot be: no other implementation of x = SHA-256(srpSalt || srpX) "
-            "exists, because the construction is this project's. The only evidence "
-            "here is that a second implementation -- this file, written from the "
-            "ADR and sharing no code with crates/core -- agrees with the Rust. "
-            "Stated rather than implied by the `source` field, per docs/crypto.md R7."
+            "NOTHING EXTERNAL: no other implementation of x = SHA-256(srpSalt || "
+            "srpX) exists, so the only evidence is that tools/srp_reference.py, "
+            "written from the ADR and sharing no code with crates/core, agrees "
+            "with the Rust."
         ),
-        "scope": (
-            "The SHIPPING configuration: RFC 5054's 4096-bit group with SHA-256. "
-            "This is adr/0008 section 4's third evidence row, and it is the only "
-            "one of the three that reaches what ships."
-        ),
+        "scope": "The SHIPPING configuration: RFC 5054's 4096-bit group with SHA-256.",
         "group": "4096",
         "hash": "sha256",
         "vectors": derivation,
@@ -502,23 +492,19 @@ def main() -> int:
 
     (args.out / "srp_proofs.json").write_text(json.dumps({
         "source": (
-            "RFC 5054 section 2.6's M1/M2 formula, with the session-key schedule of "
-            " and the fixed-width transcript encoding."
+            "RFC 5054 section 2.6's M1/M2 formula, with the flat session-key "
+            "schedule and the fixed-width transcript encoding of docs/crypto.md."
         ),
         "note": provenance,
         "checked_against": (
-            "NOTHING EXTERNAL. RFC 5054 publishes no M1 or M2 for any group -- "
-            "Appendix B stops at the premaster secret, in the 1024-bit SHA-1 "
-            "instantiation Chiavora does not ship. The evidence here is the same as "
-            "srp_derivation.json's: a second implementation -- this file, written "
-            "from and sharing no code with crates/core -- agrees "
-            "with the Rust. HKDF is written out from RFC 5869 here rather than "
-            "imported, so even the key schedule is not a shared library call."
+            "NOTHING EXTERNAL: RFC 5054 publishes no M1 or M2, so the only "
+            "evidence is that tools/srp_reference.py, written from docs/crypto.md "
+            "with HKDF written out from RFC 5869 and sharing no code with "
+            "crates/core, agrees with the Rust."
         ),
         "scope": (
             "The SHIPPING configuration: RFC 5054's 4096-bit group with SHA-256, "
-            "Chiavora's x, flat key schedule and fixed-width "
-            "transcript. Everything these vectors cover reaches what ships."
+            "Chiavora's x, the flat key schedule and the fixed-width transcript."
         ),
         "group": "4096",
         "hash": "sha256",

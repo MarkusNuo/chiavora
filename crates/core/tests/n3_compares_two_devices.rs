@@ -79,8 +79,7 @@ fn the_comparison_is_symmetric_in_its_arguments() {
         assert_eq!(
             compare(&x, &y),
             compare(&y, &x),
-            "argument order changed the answer, so two devices would disagree \
-             about whether they agree"
+            "argument order changed the answer"
         );
     }
 }
@@ -94,8 +93,7 @@ fn a_freeze_and_a_forgotten_phone_are_the_same_outcome() {
 
     assert_eq!(
         frozen, forgotten,
-        "the comparison distinguishes a freeze from a lag, which is a claim \
-         two marks cannot support"
+        "the comparison distinguishes a freeze from a lag, which two marks cannot"
     );
     assert!(
         matches!(frozen, MarkComparison::Behind { .. }),
@@ -132,7 +130,6 @@ fn a_mark_takes_both_halves_from_one_root() {
     assert_ne!(
         a.root_digest(),
         b.root_digest(),
-        "two roots at different sequences produced one digest, so the digest \
-         does not cover the sequence"
+        "two roots at different sequences produced one digest"
     );
 }

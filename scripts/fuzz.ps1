@@ -41,7 +41,7 @@ try {
     }
 
     Write-Host ''
-    Write-Host 'R7 report — copy this into the PR, all three numbers or none:' -ForegroundColor Green
+    Write-Host 'Fuzz report (keep all three numbers together):' -ForegroundColor Green
     $report | ForEach-Object { Write-Host "  $_" }
 }
 finally {

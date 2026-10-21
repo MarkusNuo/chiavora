@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn the_default_password_is_twenty_characters_and_its_entropy_is_reported() {
         let out = generate_password(20, true, true, true, true, false, true)
-            .expect(" default is generatable");
+            .expect("the recommended default is generatable");
         assert_eq!(out.value.chars().count(), 20);
         // 20 * log2(75).
         assert!((out.entropy_bits - 124.576).abs() < 0.01);

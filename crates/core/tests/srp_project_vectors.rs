@@ -66,9 +66,7 @@ fn project_vectors_cover_the_x_derivation_and_verifier_at_4096_sha256() {
 
     assert!(
         saw_leading_zero,
-        "the suite must contain an x with a leading zero byte; that case is \
-         searched for by tools/srp_reference.py and is where fixed-width \
-         encoding goes wrong"
+        "the suite must contain an x with a leading zero byte"
     );
 }
 
@@ -82,13 +80,11 @@ fn the_vector_file_states_that_nothing_external_checks_it() {
     );
     assert!(
         checked.contains("sharing no code with crates/core"),
-        "and must state what the evidence actually is: an independent \
-         implementation written from the ADR"
+        "and must state that the checking implementation is independent"
     );
     let scope = field(&json, &["scope"]).as_str().unwrap();
     assert!(
         scope.contains("SHIPPING"),
-        "and must state that this is the shipping configuration, which is what \
-         distinguishes it from the Appendix B vectors"
+        "and must state that this is the shipping configuration"
     );
 }

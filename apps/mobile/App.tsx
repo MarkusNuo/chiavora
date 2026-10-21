@@ -217,18 +217,18 @@ export default function App() {
   const probeKeystoreProvider = useCallback(async () => {
     const out = await keystoreProviderReport();
     if (!out) {
-      say(': NO PROBE IN THIS BUILD');
+      say('provider probe: NO PROBE IN THIS BUILD');
       return;
     }
     if (out.error !== undefined) {
-      say(could not run: ${out.error}`);
+      say(`provider probe could not run: ${out.error}`);
       return;
     }
-    say(spi: ${out.spiClass}`);
-    say(chain: ${out.chain}`);
-    say(byte[] doFinal declared by: ${out.byteArrayDoFinalDeclaredBy} (control)`);
-    say(ByteBuffer doFinal declared by: ${out.byteBufferDoFinalDeclaredBy}`);
-    say(VERDICT: ${out.verdict}`);
+    say(`provider probe spi: ${out.spiClass}`);
+    say(`provider probe chain: ${out.chain}`);
+    say(`provider probe byte[] doFinal declared by: ${out.byteArrayDoFinalDeclaredBy} (control)`);
+    say(`provider probe ByteBuffer doFinal declared by: ${out.byteBufferDoFinalDeclaredBy}`);
+    say(`provider probe VERDICT: ${out.verdict}`);
   }, [say]);
 
   const generate = useCallback(async () => {
@@ -365,14 +365,11 @@ export default function App() {
         <Button label="Lock" onPress={lock} disabled={!unlocked} />
         <Button label="Forget this device" onPress={forget} />
         <Text style={styles.line}>
-          session: {unlocked ? 'unlocked' : 'locked'} — no auto-lock
+          session: {unlocked ? 'unlocked' : 'locked'}
         </Text>
         {ChiavoraCore.hasHarness() ? (
           <Button label="Probe the Keystore provider" onPress={probeKeystoreProvider} />
         ) : null}
-
-        {/*
-        */}
 
         <View style={styles.report}>
           <Text style={styles.reportTitle}>Generate</Text>
@@ -403,14 +400,10 @@ export default function App() {
           ) : null}
         </View>
 
-        {/*
-        */}
+        {/* The word list's CC BY 3.0 US attribution, supplied by `core`. */}
         {limits && passphraseMode ? (
           <Text style={styles.attribution}>{limits.wordlistAttribution}</Text>
         ) : null}
-
-        {/*
-        */}
 
         <View style={styles.blunt}>
           <Text style={styles.bluntTitle}>If you lose both, the vault is gone</Text>

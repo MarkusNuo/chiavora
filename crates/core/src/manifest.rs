@@ -233,7 +233,7 @@ impl fmt::Display for ManifestError {
                 "the server served a root at manifestSeq {served} and claimed {reported}"
             ),
             Self::ConflictNeedsResolution => f.write_str(
-                "two devices advanced the same item to the same version with different                  contents: both are kept and the conflict is resolved, never discarded",
+                "two devices advanced the same item to the same version with different contents",
             ),
             Self::NonceUnavailable => {
                 f.write_str("the platform CSPRNG refused a nonce, so nothing was sealed")

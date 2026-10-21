@@ -52,6 +52,45 @@ fn sources(dir: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
+fn the_x_derivation_is_still_cheap_to_change_because_nothing_registers_a_verifier() {
+    let root = repo_root();
+    let searched = [
+        root.join("crates").join("server"),
+        root.join("crates").join("ffi-mobile"),
+        root.join("crates").join("ffi-node"),
+        root.join("apps"),
+    ];
+
+    let mut callers: Vec<String> = Vec::new();
+    for dir in &searched {
+        for file in sources(dir) {
+            let Ok(text) = std::fs::read_to_string(&file) else {
+                continue;
+            };
+            for (index, line) in text.lines().enumerate() {
+                let code = line.split("//").next().unwrap_or("");
+                if names_the_verifier(code) {
+                    callers.push(format!(
+                        "{}:{}  {}",
+                        file.strip_prefix(&root).unwrap_or(&file).display(),
+                        index + 1,
+                        code.trim()
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        callers.is_empty(),
+        "`srp::verifier` is now called outside `crates/core`, so `x` can no longer change \
+         without a migration; record the freeze in `docs/adr/0008` and delete this test. \
+         Callers:\n  {}",
+        callers.join("\n  ")
+    );
+}
+
+#[test]
 fn the_tripwire_would_notice_a_caller() {
     let root = repo_root();
     let planted = "let v = chiavora_core::srp::verifier(group, &x)?;";
@@ -63,20 +102,19 @@ fn the_tripwire_would_notice_a_caller() {
     assert!(sees(planted), "a real call must be seen");
     assert!(
         sees("use chiavora_core::srp::{verifier, Group};"),
-        "a braced import must be seen. **This was a hole**: the filter matched the literal `srp::verifier`, and `use chiavora_core::srp::{{verifier, Group}}` puts a `{{` between the two halves, so a production caller who imported the ordinary way was invisible to the tripwire. Found because a legitimate test in `crates/server` used exactly that form -- the shape the instrument could not see turning up in use before it turned up in anger"
+        "a braced import must be seen"
     );
     assert!(
         sees("use chiavora_core::srp::{private_exponent, verifier};"),
-        "and with another name before it, which is how it actually appeared"
+        "and with another name before it"
     );
     assert!(
         !sees("use chiavora_core::srp::{private_exponent, Group};"),
-        "a braced import that does NOT name the verifier must not fire;          otherwise the widening has turned the tripwire into a check on          whether anyone imports from `srp` at all"
+        "a braced import that does not name the verifier must not fire"
     );
     assert!(
         !sees(&commented),
-        "a commented-out call must not fire the tripwire; comments are stripped \
-         so that a discussion of the freeze does not read as the freeze"
+        "a commented-out call must not fire the tripwire"
     );
     assert!(
         !sees("let v = something_else(group, &x)?;"),
@@ -89,7 +127,7 @@ fn the_tripwire_would_notice_a_caller() {
     );
     assert!(
         root.join("crates").join("server").join("src").is_dir(),
-        "and crates/server/src specifically, which is the half the walk still reads excluded `tests`"
+        "and crates/server/src specifically"
     );
 
     let walked = sources(&root.join("crates").join("server"));
@@ -99,7 +137,7 @@ fn the_tripwire_would_notice_a_caller() {
         .collect();
     assert!(
         names.iter().any(|name| name.contains("/src/")),
-        "the walk must still reach crates/server/src; if it reaches nothing          there, the exclusion has taken the production half with it"
+        "the walk must still reach crates/server/src"
     );
     assert!(
         !names.iter().any(|name| name.contains("/tests/")),

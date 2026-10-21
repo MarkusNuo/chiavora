@@ -95,7 +95,7 @@ fn bitwarden_login_totp_stays_a_field_on_the_login_and_fields_land_by_name() {
     assert_eq!(field(login, FIELD_PASSWORD), b"correct-horse-battery");
     assert!(
         field(login, FIELD_TOTP).starts_with(b"otpauth://totp/"),
-        "ADR-0003 rev 2: a field on the login"
+        "the TOTP is a field on the login"
     );
     assert!(
         imported

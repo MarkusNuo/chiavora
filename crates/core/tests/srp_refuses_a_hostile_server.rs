@@ -82,14 +82,12 @@ fn a_zero_mod_n_is_refused_and_would_otherwise_hand_the_attacker_s() {
     let base = zero.mul_mod(&v_to_u, &nonzero);
     assert!(
         bool::from(base.is_zero()),
-        "A · v^u must be zero when A is zero; if this ever fails the witness \
-         below is checking something else"
+        "A · v^u must be zero when A is zero"
     );
     // 0^b is 0 for every b > 0.
     assert!(
         bool::from(base.is_zero()),
-        "with the refusal removed, S = 0 for every account and every b: the \
-         attacker knows the session key without knowing the password"
+        "with the refusal removed, S = 0 for every account and every b"
     );
 }
 
@@ -125,8 +123,7 @@ fn a_public_value_that_is_a_multiple_of_n_is_refused() {
 
     assert!(
         !bool::from(n.is_zero()) && !bool::from(two_n.is_zero()),
-        "N and 2N are not literally zero, which is the whole reason a `!= 0` \
-         check would let them through"
+        "N and 2N are not literally zero, so a `!= 0` check would let them through"
     );
 
     assert_eq!(
@@ -169,8 +166,7 @@ fn a_replayed_proof_fails_against_a_fresh_b_and_succeeds_against_a_reused_one() 
     assert_ne!(
         first.expose(),
         second.expose(),
-        "two draws from the CSPRNG must differ; if they do not, nothing below \
-         means anything"
+        "two draws from the CSPRNG must differ"
     );
 
     let earlier = proof_for(&first);
@@ -185,10 +181,7 @@ fn a_replayed_proof_fails_against_a_fresh_b_and_succeeds_against_a_reused_one() 
     let reused = proof_for(&first);
     assert!(
         proofs_match(&earlier, &reused),
-        "with b reused, the earlier proof verifies exactly. This test passing \
-         is the point: it is the statement of what crates/server must not do, \
-         and if it ever stops holding then replay resistance rests on something \
-         other than b's freshness and reasoning needs redoing"
+        "with b reused, the earlier proof verifies, so crates/server must never reuse b"
     );
 }
 
@@ -200,8 +193,7 @@ fn generate_ephemeral_returns_a_different_value_each_time() {
 
     assert!(
         draws.iter().all(|d| d.len() == 32),
-        "an ephemeral is 32 bytes, comfortably above RFC 5054 §2.5.1's 256-bit \
-         floor"
+        "an ephemeral is 32 bytes, RFC 5054 §2.5.1's minimum"
     );
     assert!(
         draws.iter().all(|d| d.iter().any(|byte| *byte != 0)),
@@ -214,7 +206,6 @@ fn generate_ephemeral_returns_a_different_value_each_time() {
     assert_eq!(
         unique.len(),
         draws.len(),
-        "eight draws produced a repeat, which from a 256-bit space means the \
-         CSPRNG is not one"
+        "eight draws from a 256-bit space produced a repeat"
     );
 }

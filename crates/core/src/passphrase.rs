@@ -221,10 +221,7 @@ mod tests {
         assert_eq!(
             format!("{digest:x}"),
             WORDLIST_SHA256,
-            "the word list is not the file this module documents. If it was \
-             deliberately changed, the entropy claim and the attribution both \
-             need re-checking; if it was a line-ending conversion, see \
-             .gitattributes"
+            "the word list is not EFF's published file, or its line endings were converted"
         );
     }
 
@@ -298,7 +295,7 @@ mod tests {
 
     #[test]
     fn the_recommended_policy_is_five_hyphenated_lowercase_words() {
-        let policy = PassphrasePolicy::recommended().expect(" defaults are valid");
+        let policy = PassphrasePolicy::recommended().expect("the recommended policy is valid");
         assert_eq!(policy.words(), 5);
         assert_eq!(policy.separator(), '-');
         assert!(!policy.capitalise());
@@ -320,8 +317,7 @@ mod tests {
 
         assert!(
             (entropy_bits(&plain) - entropy_bits(&capped)).abs() < f64::EPSILON,
-            "capitalisation moved the reported entropy; it adds nothing an \
-             attacker who knows the policy does not already know"
+            "capitalisation moved the reported entropy"
         );
 
         // A separator no word contains, so the split is exact (`T-shirt` is one word).
@@ -347,12 +343,12 @@ mod tests {
 
     #[test]
     fn entropy_is_words_times_log2_of_the_list() {
-        let policy = PassphrasePolicy::recommended().expect(" defaults are valid");
+        let policy = PassphrasePolicy::recommended().expect("the recommended policy is valid");
         let bits = entropy_bits(&policy);
         assert!((bits - 5.0 * 7776.0_f64.log2()).abs() < 1e-9);
         assert!(
             (bits - 64.62).abs() < 0.01,
-            " default is {bits} bits"
+            "the recommended default is {bits} bits"
         );
 
         let twelve = PassphrasePolicy::new(12, '-', false).unwrap();
@@ -397,7 +393,7 @@ mod tests {
 
     #[test]
     fn two_generated_passphrases_differ() {
-        let policy = PassphrasePolicy::recommended().expect(" defaults are valid");
+        let policy = PassphrasePolicy::recommended().expect("the recommended policy is valid");
         let a = passphrase(&policy).expect("generates");
         let b = passphrase(&policy).expect("generates");
         assert_ne!(*a, *b, "two draws of 64.6 bits collided");

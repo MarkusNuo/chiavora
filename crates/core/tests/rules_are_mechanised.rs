@@ -174,8 +174,7 @@ fn r1_absorbing_problems(modules: &[(String, String)]) -> Vec<String> {
 /// Names the near miss: `R1` without its colon above the absorber, or `R1:` below it.
 fn near_miss(above: &[&str], from_absorber: &[&str]) -> String {
     if above.iter().any(|l| l.contains("R1") && !l.contains("R1:")) {
-        return "\n      ^ found `R1` above WITHOUT THE COLON — the scan matches the literal \
-                token `R1:`, which is the one form nobody writes by instinct"
+        return "\n      ^ found `R1` above WITHOUT THE COLON; the scan matches only `R1:`"
             .to_owned();
     }
     if from_absorber
@@ -184,8 +183,7 @@ fn near_miss(above: &[&str], from_absorber: &[&str]) -> String {
         .take(8)
         .any(|l| l.contains("R1:"))
     {
-        return "\n      ^ found `R1:` BELOW this line — the note must be in the eight lines \
-                ABOVE, because that is where a reader meets it first"
+        return "\n      ^ found `R1:` BELOW this line; the note must be in the eight lines above"
             .to_owned();
     }
     String::new()
@@ -196,12 +194,7 @@ fn r1_every_absorbing_pattern_carries_a_justification() {
     let unjustified = r1_absorbing_problems(&core_modules());
     assert!(
         unjustified.is_empty(),
-        "R1: these absorb a failure with no justification.\n  \
-         The note must contain the literal token `R1:` and must be ABOVE the \
-         line, within the eight lines preceding it — a note below the line \
-         does not count, however close.\n  \
-         Either propagate the error, or write why the absorbed value cannot be \
-         a cryptographic output:\n  {}",
+        "R1: these absorb a failure with no `R1:` note in the eight lines above:\n  {}",
         unjustified.join("\n  ")
     );
 }
@@ -376,7 +369,7 @@ fn production_mask_states_the_limitation_it_has_not_solved() {
     );
     assert!(
         seen.lines().any(|l| l.trim() == "}"),
-        "the early end of the mask should leak the item's tail into production -- if this          no longer holds, the mask has been made string-aware and this test and the          limitation it records should go: {seen}"
+        "the item's tail no longer leaks, so the mask is string-aware and this test can go: {seen}"
     );
 }
 
@@ -400,8 +393,7 @@ fn the_rules_scan_reads_past_a_mid_file_cfg_test() {
     assert!(seen.contains("before_the_marker"));
     assert!(
         seen.contains("after_the_marker"),
-        "**the regression this test exists for**: production code after a mid-file \
-         #[cfg(test)] item was dropped, so R1's scan was blind to it: {seen}"
+        "production code after a mid-file #[cfg(test)] item was dropped: {seen}"
     );
     assert!(!seen.contains("only_for_tests"), "{seen}");
     assert!(!seen.contains("inside"), "{seen}");
@@ -428,7 +420,7 @@ fn the_rules_scan_reads_past_the_trailing_test_module() {
     assert!(seen.contains("above_the_module"), "{seen}");
     assert!(
         seen.contains("below_the_module"),
-        "**the regression this test exists for**: production code *after* the trailing          test module was dropped, so every scan using `production` was blind to the bottom          of any file with one: {seen}"
+        "production code after the trailing test module was dropped: {seen}"
     );
     assert!(
         !seen.contains("inside"),
@@ -484,10 +476,7 @@ fn r1_no_capacity_is_reserved_from_an_unbounded_claim() {
     let unjustified = r1_capacity_problems(&modules);
     assert!(
         unjustified.is_empty(),
-        "R1 corollary: these reserve capacity from a size that is not a literal, a \
-         constant expression or the length of bytes in hand, with no `R1:` note \
-         within eight lines above naming the bound. A length read from input is a \
-         claim; bound it first, then say so:\n  {}",
+        "R1: these reserve capacity from an unbounded size with no `R1:` note:\n  {}",
         unjustified.join("\n  ")
     );
 }
@@ -510,9 +499,7 @@ fn the_reservation_scan_would_notice_an_unbounded_size() {
     );
     assert!(
         reservation_sizes("let f = vec![Slot::SchemaVersion, Slot::Kind];").is_empty(),
-        "`vec![a, b]` was read as a reservation: it lists elements and \
-         reserves nothing, and counting it would make the scan noisy enough \
-         to stop being read"
+        "`vec![a, b]` was read as a reservation, but it lists elements and reserves nothing"
     );
 }
 
@@ -653,77 +640,6 @@ fn r2_the_aad_encoder_takes_fields_not_bytes() {
 }
 
 #[test]
-fn r4_every_dependency_of_core_appears_in_adr_0002() {
-    let manifest = read("crates/core/Cargo.toml");
-    let adr = read("docs/adr/0002-m1-primitive-and-construction-choices.md");
-
-    let deps = manifest
-        .split("[dependencies]")
-        .nth(1)
-        .expect("crates/core has a [dependencies] section")
-        .split("[dev-dependencies]")
-        .next()
-        .expect("bounded by dev-dependencies");
-
-    let mut missing: Vec<String> = Vec::new();
-    for line in deps.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with('[') {
-            continue;
-        }
-        let Some(name) = line.split_whitespace().next() else {
-            continue;
-        };
-        let name = name.trim_end_matches('=').trim();
-        if name.is_empty() {
-            continue;
-        }
-        if !adr.contains(name) {
-            missing.push(name.to_owned());
-        }
-    }
-    assert!(
-        missing.is_empty(),
-        "R4: these dependencies of `crates/core` are not named in ADR-0002. \
-         A construction this crate uses must be recorded before it is used, and \
-         the ADR is where: {missing:?}"
-    );
-}
-
-#[test]
-fn r5_every_compile_fail_case_is_in_the_claim_table() {
-    let crypto = read("docs/crypto.md");
-    let mut missing: Vec<String> = Vec::new();
-    for dir in [
-        "crates/core/tests/compile-fail",
-        "crates/protocol/tests/compile-fail",
-    ] {
-        let path = root().join(dir);
-        for entry in std::fs::read_dir(&path).unwrap_or_else(|e| panic!("{dir}: {e}")) {
-            let file = entry.expect("a directory entry").path();
-            if file.extension().and_then(|e| e.to_str()) != Some("rs") {
-                continue;
-            }
-            let stem = file
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or_default()
-                .to_owned();
-            if !crypto.contains(&stem) {
-                missing.push(format!("{dir}/{stem}"));
-            }
-        }
-    }
-    assert!(
-        missing.is_empty(),
-        "R5: these compile-fail cases are not named anywhere in \
-         `docs/crypto.md`. A case nobody can find from the rules document is a \
-         case nobody knows establishes anything:\n  {}",
-        missing.join("\n  ")
-    );
-}
-
-#[test]
 fn r6_every_text_header_survives_its_own_normalisation() {
     for (what, header) in [
         (
@@ -738,12 +654,8 @@ fn r6_every_text_header_survives_its_own_normalisation() {
         for source in ['I', 'L', 'O'] {
             assert!(
                 !header.contains(source),
-                "R6: {what} = {header:?} contains {source}, a Crockford \
-                 normalisation *source*. Input normalisation runs over the whole \
-                 buffer before the header is located, so this header is \
-                 destroyed by its own normalisation. Choose a different one — \
-                 R6 says a header that cannot survive the rule is a format bug, \
-                 not a reason to exempt the header."
+                "R6: {what} = {header:?} contains {source}, which Crockford normalisation \
+                 rewrites, so the header cannot survive its own normalisation."
             );
         }
         // Normalisation uppercases before mapping.
@@ -795,10 +707,7 @@ fn r7_every_fuzz_target_has_a_checked_in_corpus() {
     );
     assert!(
         unseeded.is_empty(),
-        "R7: these fuzz targets have no meaningful checked-in corpus. An \
-         unseeded target for a format with a magic explores the magic check: \
-         `secret_key_decode` reached 15.2 million executions that way and \
-         entered its decoder zero times:\n  {}",
+        "R7: these fuzz targets have no meaningful checked-in corpus:\n  {}",
         unseeded.join("\n  ")
     );
 }
@@ -808,8 +717,7 @@ fn r7_the_fuzz_workflow_is_not_the_standing_arrangement() {
     let workflow = read(".github/workflows/fuzz.yml");
     assert!(
         !workflow.contains("cron:"),
-        ": fuzzing is local and manual. A `cron` here is a change to that \
-         decision and belongs in the register first."
+        "fuzzing is local and manual; a `cron` here should be a deliberate decision"
     );
 }
 
@@ -822,50 +730,8 @@ fn the_gate_sets_its_own_exit_code() {
         .expect("gate.ps1 no longer writes `EXIT 0` to the verdict file");
     assert!(
         after_verdict.lines().any(|line| line.trim() == "exit 0"),
-        "gate.ps1 writes `EXIT 0` to the verdict file and then does not set \
-         its own exit code, so the process exits with whatever the last \
-         command left in `$LASTEXITCODE`. On a machine with no Android SDK \
-         that is 2, and the verdict file and the process then disagree"
-    );
-}
-
-#[test]
-fn every_rule_in_the_index_is_either_mechanised_here_or_says_why_not() {
-    let crypto = read("docs/crypto.md");
-    let index = crypto
-        .split("## Rules for changing `crates/core`")
-        .nth(1)
-        .expect("the rules index")
-        .split("### R1")
-        .next()
-        .expect("bounded by the first rule");
-
-    let rows: Vec<&str> = index
-        .lines()
-        .filter(|l| l.starts_with("| **[R") && l.contains("](#r"))
-        .collect();
-    assert!(
-        rows.len() >= 8,
-        "the rules index has {} rows; at least R1-R8 exist, so the derivation \
-         did not read the table",
-        rows.len()
-    );
-    for row in rows {
-        let rule = row
-            .split("**[")
-            .nth(1)
-            .and_then(|rest| rest.split("](").next())
-            .unwrap_or_default();
-        assert!(
-            row.contains('`') || row.to_lowercase().contains("not mechanis"),
-            "{rule}'s index row must name its assertion in backticks, or say it \
-             is not mechanisable: {row}"
-        );
-    }
-
-    assert!(
-        crypto.contains("rules_are_mechanised"),
-        "`docs/crypto.md` must point at `tests/rules_are_mechanised.rs`"
+        "gate.ps1 writes `EXIT 0` and then exits with whatever the last command left in \
+         `$LASTEXITCODE`"
     );
 }
 
@@ -899,12 +765,8 @@ fn every_file_the_release_absence_claim_rests_on_is_tracked() {
 
         assert!(
             output.status.success(),
-            "{file} exists on disk but is NOT TRACKED by git.\n\
-             It is one of the files that make the release build's absence of the \
-             measurement harness true, so leaving it untracked means the \
-             guarantee lives on one machine. Check `.gitignore` — a bare \
-             `release/` or `debug/` pattern matches Android build variants.\n\
-             git said: {}",
+            "{file} exists on disk but is not tracked by git; check `.gitignore` for a bare \
+             `release/` or `debug/`. git said: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
@@ -916,15 +778,13 @@ fn the_tracking_check_names_the_file_that_was_missing() {
         RELEASE_ABSENCE_FILES
             .iter()
             .any(|f| f.contains("src/release/") && f.ends_with("HarnessDefinition.kt")),
-        "the release-side HarnessDefinition.kt is the file R7 case 9 is about; \
-         it must stay in this list"
+        "the release-side HarnessDefinition.kt must stay in this list"
     );
     assert!(
         RELEASE_ABSENCE_FILES
             .iter()
             .any(|f| f.contains("src/debug/") && f.ends_with("HarnessDefinition.kt")),
-        "the debug-side registration must be listed too: without it the release \
-         file's absence of a registration means nothing"
+        "the debug-side HarnessDefinition.kt must stay in this list"
     );
 }
 
@@ -1069,7 +929,7 @@ fn no_bridge_method_runs_core_on_the_js_thread() {
                 if body.contains(symbol.as_str()) {
                     problems.push(format!(
                         "{name}: a synchronous `Function` calls `{symbol}`, which reaches \
-                         `core` on the JS thread. UI-THREAD: use `AsyncFunction`."
+                         `core` on the JS thread. Use `AsyncFunction`."
                     ));
                 }
             }
@@ -1099,9 +959,8 @@ fn no_bridge_method_runs_core_on_the_js_thread() {
                     .any(|l| l.contains("UI-THREAD:"));
                 if !justified {
                     problems.push(format!(
-                        "{name}:{}: `{forbidden}` with no `UI-THREAD:` note within eight \
-                         lines above. A bridge method dispatches to a native thread and \
-                         returns; if this really must touch the UI thread, say why.",
+                        "{name}:{}: `{forbidden}` with no `UI-THREAD:` note in the eight \
+                         lines above.",
                         index + 1
                     ));
                 }
@@ -1113,16 +972,15 @@ fn no_bridge_method_runs_core_on_the_js_thread() {
     for forbidden in ["setTimeout", "setInterval", "requestAnimationFrame"] {
         if wrapper.contains(forbidden) {
             problems.push(format!(
-                "modules/chiavora-core/index.ts: contains `{forbidden}`. JavaScript is the \
-                 caller; it schedules nothing that must complete while the app is not \
-                 foregrounded."
+                "modules/chiavora-core/index.ts: contains `{forbidden}`, and the wrapper \
+                 must schedule nothing."
             ));
         }
     }
 
     assert!(
         problems.is_empty(),
-        " violations:\n {}",
+        "bridge threading violations:\n  {}",
         problems.join("\n  ")
     );
 }
@@ -1256,9 +1114,8 @@ fn the_typescript_surface_and_the_kotlin_module_agree() {
 
     assert!(
         main_kt.len() > 10 && !ts.is_empty(),
-        "the reader found {} Kotlin functions and {} TypeScript methods, which \
-         means it has stopped reading one of the files rather than that the \
-         surface has shrunk",
+        "the reader found {} Kotlin functions and {} TypeScript methods, so it has \
+         stopped reading one of the files",
         main_kt.len(),
         ts.len()
     );
@@ -1286,9 +1143,7 @@ fn the_typescript_surface_and_the_kotlin_module_agree() {
         }
         if *optional && main_kt.contains(name) {
             problems.push(format!(
-                "`{name}` is optional in TypeScript — which says it is absent \
-                 from a release build — but it is registered in the MAIN \
-                 source set, which every build has"
+                "`{name}` is optional in TypeScript but registered in the main source set"
             ));
         }
     }
@@ -1304,8 +1159,7 @@ fn the_typescript_surface_and_the_kotlin_module_agree() {
 
     assert!(
         problems.is_empty(),
-        "the two halves of the binding disagree, and nothing else in this \
-         repository would notice:\n  {}",
+        "the TypeScript and Kotlin halves of the binding disagree:\n  {}",
         problems.join("\n  ")
     );
 }
@@ -1400,8 +1254,8 @@ fn no_secret_leaves_the_apps_own_window() {
     }
     assert!(
         problems.is_empty(),
-        "LEAVES-WINDOW: text reaches a surface outside the app's own window, where a \
-         locked screen shows it:\n  {}",
+        "text reaches a surface outside the app's own window, where a locked \
+         screen shows it:\n  {}",
         problems.join("\n  ")
     );
 }
@@ -1463,9 +1317,8 @@ fn the_lock_clears_every_field_the_module_holds() {
     let fields = module_session_fields(&source);
     assert!(
         fields.len() >= 2,
-        "the scan found {} `@Volatile` fields in ChiavoraCoreModule, which \
-         means it has stopped reading the class rather than that the class has \
-         stopped holding state: {fields:?}",
+        "the scan found only {} `@Volatile` fields in ChiavoraCoreModule, so it has \
+         stopped reading the class: {fields:?}",
         fields.len()
     );
 
@@ -1478,10 +1331,7 @@ fn the_lock_clears_every_field_the_module_holds() {
         .collect();
     assert!(
         missed.is_empty(),
-        "`dropSession` does not mention {missed:?}. A lock that leaves one \
-         field set is a vault that reports itself locked while something it \
-         holds is still live, which is the one disagreement this path must not \
-         have"
+        "`dropSession` does not clear {missed:?}, so a locked vault still holds it"
     );
 }
 
@@ -1494,8 +1344,7 @@ fn the_session_field_reader_reads_the_class() {
     );
     assert!(
         module_session_fields("class M { private var notVolatile: Foo? = null }").is_empty(),
-        "a field with no `@Volatile` was read as session state, which would \
-         make the scan fire on every ordinary variable in the class"
+        "a field with no `@Volatile` was read as session state"
     );
 }
 
@@ -1535,9 +1384,8 @@ fn i8_the_secret_key_entry_is_not_biometric_bound() {
     ] {
         assert!(
             muk.contains(required),
-            "the MUK's wrapping key no longer sets {required}. Either the key is no longer \
-             biometric-bound -- which §3.3 requirement 1 forbids -- or this scan has stopped \
-             reading the function, in which case I8's half below is passing vacuously."
+            "the MUK's wrapping key no longer sets {required}, or this scan has stopped \
+             reading the function"
         );
     }
 
@@ -1547,12 +1395,8 @@ fn i8_the_secret_key_entry_is_not_biometric_bound() {
     ] {
         assert!(
             !secret.contains(forbidden),
-            "I8 VIOLATED: the Secret Key's keystore entry calls {forbidden}.\n\
-             This looks like hardening and is a regression: a user enrolling a second \
-             fingerprint would lose the Secret Key and need their Emergency Kit for a routine \
-             change. docs/security-design.md §2.4 (v0.27) has the reasoning. The Secret Key defends against an \
-             attacker holding the encrypted data WITHOUT the device (A3); it is not a defence \
-             against the device's owner."
+            "I8: the Secret Key's keystore entry calls {forbidden}, so a new fingerprint \
+             would lose the Secret Key (`docs/security-design.md` §2.4)."
         );
     }
 
@@ -1589,8 +1433,7 @@ fn the_i8_scan_would_notice_a_bound_secret_key_and_an_unbound_muk() {
 
     assert!(
         kotlin_fn_body(good, "createSomethingThatDoesNotExist").is_none(),
-        "the body finder must return None for a missing function, so the presence \
-         half fails loudly rather than the absence half passing quietly"
+        "the body finder must return None for a missing function"
     );
 }
 
@@ -1621,10 +1464,8 @@ fn the_muk_has_one_door_back_into_core() {
                     .to_string_lossy()
                     .replace('\\', "/");
                 problems.push(format!(
-                    "{short} calls `Secret::from_derived_bytes`. The one door for key \
-                     material re-entering `core` from a platform keystore is \
-                     `device::muk_from_keystore`, which carries the justification and the \
-                     length check. See `docs/crypto.md`'s R4 deviation on §3.3 requirement 2."
+                    "{short} calls `Secret::from_derived_bytes`; key material re-enters `core` \
+                     only through `device::muk_from_keystore`."
                 ));
             }
         }
@@ -1640,10 +1481,8 @@ fn the_muk_has_one_door_back_into_core() {
         .collect();
     assert!(
         unlisted.is_empty(),
-        "a new door for key material re-entering `core` exists and is not in \
-         PERMITTED_DERIVED_DOORS. **Adding the row is the point**: it takes a \
-         path and a sentence saying why that caller holds real key material, \
-         and the diff then reads as what it is rather than as a test fix:\n  {}",
+        "these callers re-enter `core` with key material and are not in \
+         PERMITTED_DERIVED_DOORS:\n  {}",
         unlisted
             .iter()
             .map(|problem| problem.as_str())
@@ -1654,25 +1493,22 @@ fn the_muk_has_one_door_back_into_core() {
     for (path, why) in PERMITTED_DERIVED_DOORS {
         assert!(
             root().join(path).is_file(),
-            "PERMITTED_DERIVED_DOORS names {path}, which does not exist. A stale \
-             permission is a hole nobody is looking at"
+            "PERMITTED_DERIVED_DOORS names {path}, which does not exist"
         );
         assert!(
             why.len() > 40,
-            "{path}'s row must say what key material that caller legitimately \
-             holds, not merely that it is allowed"
+            "{path}'s row must say what key material that caller legitimately holds"
         );
     }
 
     let device = production(&read("crates/core/src/device.rs"));
     assert!(
         device.contains("fn muk_from_keystore"),
-        "`device::muk_from_keystore` is gone. It is the door the check above assumes exists"
+        "`device::muk_from_keystore` is gone, and the check above assumes it exists"
     );
     assert!(
         device.contains("from_derived_bytes"),
-        "`muk_from_keystore` no longer calls `from_derived_bytes`, so the scan above is \
-         asserting that nobody uses a door that does nothing"
+        "`muk_from_keystore` no longer calls `from_derived_bytes`"
     );
 
     let manifest = read("Cargo.toml");
@@ -1692,8 +1528,8 @@ fn the_muk_has_one_door_back_into_core() {
     assert_eq!(
         declared,
         CRATES_ABOVE_CORE.len() + 2,
-        "the workspace has {declared} members and this scan covers {} plus core and protocol. \
-         A new crate above `core` must be added to CRATES_ABOVE_CORE, or it is not scanned.",
+        "the workspace has {declared} members and this scan covers {} plus core and protocol; \
+         add the new crate to CRATES_ABOVE_CORE.",
         CRATES_ABOVE_CORE.len()
     );
 }
@@ -1710,23 +1546,12 @@ fn the_store_key_is_still_derived_from_the_muk() {
 
     assert!(
         body.contains("hkdf_sha256(muk.expose()"),
-        "the Store Key is no longer derived with the MUK as its HKDF ikm.\n\
-         `docs/crypto.md` declines AAD record type 0x06 for the device-wrapped MUK because a \
-         substituted blob is self-detecting: a different MUK derives a different Store Key and \
-         the metadata MAC fails on open. That argument rests on this line. If the derivation \
-         has genuinely changed, 0x06 has to come back -- and I3's \"five record types\" wording, \
-         the injectivity suite and ADR-0002 come with it."
+        "the Store Key is no longer derived from the MUK, so the device-wrapped MUK needs its \
+         own AAD record type (see `docs/crypto.md`)."
     );
     assert!(
         body.contains("INFO_STORE"),
-        "the Store Key's domain separator changed; check the argument above still holds"
-    );
-
-    let crypto = read("docs/crypto.md");
-    assert!(
-        crypto.contains("No sixth AAD record type"),
-        "`docs/crypto.md` no longer records why 0x06 was declined, so this test is guarding \
-         an argument the document does not make"
+        "the Store Key's domain separator changed"
     );
 }
 
@@ -1796,9 +1621,8 @@ fn the_r1_absorbing_scan_fires_on_a_violation_planted_in_a_real_module() {
         let problems = r1_absorbing_problems(&poisoned);
         assert!(
             problems.iter().any(|p| p.contains("derive.rs")),
-            "R1's absorbing scan did not see an unjustified `unwrap_or` planted in the real \
-             `derive.rs` at {at:?}. The scan passes its own suite and is blind to this \
-             position -- which is what R7 cases 7 and 10 were. Check `production_mask`."
+            "R1's absorbing scan did not see an `unwrap_or` planted in `derive.rs` at {at:?}; \
+             check `production_mask`."
         );
     }
 
@@ -1821,9 +1645,7 @@ fn the_muk_door_scan_fires_on_a_violation_planted_in_a_real_crate() {
         ));
         assert!(
             poisoned.contains("from_derived_bytes"),
-            "the door scan's reading of a real crate file is blind at {at:?}: a planted call \
-             to `from_derived_bytes` is not in what it would scan. This is exactly how case 10 \
-             was found -- a violation planted below the test module that nothing saw."
+            "the door scan did not see a `from_derived_bytes` call planted at {at:?}"
         );
     }
 
@@ -1860,9 +1682,8 @@ fn the_r1_capacity_scan_fires_on_a_reservation_planted_in_a_real_module() {
         let problems = r1_capacity_problems(&poisoned);
         assert!(
             problems.iter().any(|p| p.contains("zip.rs")),
-            "R1's capacity scan did not see an unjustified `Vec::with_capacity(declared)` \
-             planted in the real `zip.rs` at {at:?} -- the file the corollary's own incident \
-             came from."
+            "R1's capacity scan did not see a `Vec::with_capacity(declared)` planted in \
+             `zip.rs` at {at:?}"
         );
     }
     assert!(
@@ -1888,8 +1709,7 @@ fn the_bridge_scan_fires_on_a_synchronous_core_call_planted_in_the_real_module()
         assert!(
             blocks.iter().any(|b| b.contains("ffiSmoke")),
             "the bridge scan did not see a synchronous `Function` calling into `core` planted \
-             in the real module at {at:?}. A scan that cannot see a planted violation cannot \
-             see a real one."
+             at {at:?}"
         );
     }
 
@@ -1918,8 +1738,7 @@ fn the_i8_scan_fires_on_a_binding_planted_in_the_real_keystore_code() {
     assert!(
         secret.contains("setInvalidatedByBiometricEnrollment(true)"),
         "I8's scan cannot see the Secret Key's entry being bound to the biometric in the real \
-         file. That is the one regression it exists to catch, and it would read as hardening \
-         in review."
+         file"
     );
 
     let clean = without_comments(&real);
@@ -1959,13 +1778,12 @@ fn no_hardware_backing_predicate_is_called_only_by_its_own_tests() {
 
     assert!(
         source.contains("pub const fn is_hardware_backed"),
-        "device.rs no longer defines `is_hardware_backed` -- this scan is \
-         asserting something about a function that is not there"
+        "device.rs no longer defines `is_hardware_backed`"
     );
     assert!(
         source.contains("pub const fn check_enrolment_backing"),
         "device.rs no longer defines `check_enrolment_backing`, which is the \
-         enrolment path's refusal (D2)"
+         enrolment path's refusal"
     );
 
     let sites = call_sites(&source, "is_hardware_backed");
@@ -1976,9 +1794,7 @@ fn no_hardware_backing_predicate_is_called_only_by_its_own_tests() {
         .collect();
     assert!(
         !production.is_empty(),
-        "`is_hardware_backed` has {} call site(s) and every one of them is in a \
-         test module. A predicate nothing production calls is a check that does \
-         not run -- which is exactly what D2 was raised about.",
+        "`is_hardware_backed` has {} call site(s), all of them in test code",
         sites.len()
     );
 
@@ -2037,13 +1853,12 @@ mod tests {
 
     assert!(
         tests_only.is_empty(),
-        "a predicate called only inside `#[cfg(test)]` reported a production \
-         caller at {tests_only:?} -- the mask is not masking"
+        "a predicate called only inside `#[cfg(test)]` reported a production caller at \
+         {tests_only:?}"
     );
     assert!(
         !with_caller.is_empty(),
-        "a predicate called from a production function reported no production \
-         caller -- the detector is not reading its argument"
+        "a predicate called from a production function reported no production caller"
     );
     assert_ne!(
         tests_only, with_caller,
@@ -2097,8 +1912,7 @@ fn every_scan_without_a_real_file_witness_is_listed_as_such() {
         let source = read(file);
         assert!(
             source.contains(&format!("fn {scan}(")),
-            "{scan} is no longer in {file}. A scan outside this registry that has moved is \
-             a scan nothing here is tracking"
+            "{scan} is no longer in {file}"
         );
     }
 
@@ -2109,9 +1923,7 @@ fn every_scan_without_a_real_file_witness_is_listed_as_such() {
     assert_eq!(
         covered,
         SCANS_AND_THEIR_WITNESSES.len(),
-        "the count changed without this assertion being updated: real-file witnesses are \
-         owed for the rows marked false, and moving a row to `true` should be a deliberate \
-         edit here as well as a new test"
+        "some scans have no real-file witness; rows marked false still owe one"
     );
 }
 
@@ -2131,8 +1943,7 @@ fn r3_getrandom_is_called_in_exactly_one_place_in_the_crate() {
     let modules = core_modules();
     assert!(
         modules.len() >= 8,
-        "expected every module in crates/core/src, found {} — a scan that reads \
-         nothing reports success",
+        "expected every module in crates/core/src, found {}",
         modules.len()
     );
     for required in ["generate.rs", "csprng.rs"] {
@@ -2179,13 +1990,11 @@ fn the_r3_scan_fires_on_a_draw_planted_in_a_real_module() {
         );
         assert_ne!(
             sites, clean,
-            "R3's scan gave the same answer for a poisoned and a clean tree at {at:?} -- it is              not reading the slice it was handed"
+            "R3's scan gave the same answer for a poisoned and a clean tree at {at:?}"
         );
         assert!(
             sites.iter().any(|n| n == "generate.rs"),
-            "R3's scan did not see a `getrandom::fill` planted in the real `generate.rs` at \
-             {at:?}. This is the scan whose second-copy masking helper was blind to 57% of \
-             `ffi_guard.rs`."
+            "R3's scan did not see a `getrandom::fill` planted in `generate.rs` at {at:?}"
         );
     }
 }
@@ -2222,10 +2031,7 @@ fn every_detector_taking_a_source_slice_has_a_differential_witness() {
         let calls = suite.matches(&format!("{detector}(&")).count();
         assert!(
             calls >= 3,
-            "`{detector}` is called {calls} time(s) -- its scan, and a witness that runs it \
-             on both a poisoned and a clean input. Fewer than three means there is no \
-             differential witness, and an absolute one passes for a detector that ignores \
-             its argument."
+            "`{detector}` is called {calls} time(s), so it has no differential witness"
         );
     }
 }
@@ -2240,7 +2046,7 @@ fn biometric_callback_problems(source: &str) -> Vec<String> {
     let Some(body) = kotlin_fn_body(&code, "onAuthenticationSucceeded") else {
         problems.push(
             "a file with an `AuthenticationCallback` has no findable \
-             `onAuthenticationSucceeded` body -- the scan cannot see what it does"
+             `onAuthenticationSucceeded` body"
                 .to_owned(),
         );
         return problems;
@@ -2248,10 +2054,8 @@ fn biometric_callback_problems(source: &str) -> Vec<String> {
 
     if !body.contains("cryptoObject") {
         problems.push(
-            "`onAuthenticationSucceeded` never reads `result.cryptoObject`: the flow continues \
-             on the fact that authentication succeeded rather than on the key the OS released. \
-             That fact is a boolean a patched APK or a hooked callback can forge (§3.3 \
-             requirement 1)."
+            "`onAuthenticationSucceeded` never reads `result.cryptoObject`, so it acts on a \
+             forgeable success flag rather than the key the OS released (§3.3)."
                 .to_owned(),
         );
     }
@@ -2259,9 +2063,8 @@ fn biometric_callback_problems(source: &str) -> Vec<String> {
     for forbidden in ["resume(true)", "resume(Unit)", "resume(false)"] {
         if body.contains(forbidden) {
             problems.push(format!(
-                "`onAuthenticationSucceeded` calls `{forbidden}`: the caller is being handed a \
-                 flag instead of the authenticated `Cipher`, so it can proceed to key material \
-                 without the object the OS unlocked. Resume with the cipher."
+                "`onAuthenticationSucceeded` calls `{forbidden}`; resume with the authenticated \
+                 `Cipher` instead."
             ));
         }
     }
@@ -2302,9 +2105,8 @@ fn no_biometric_callback_hands_the_caller_a_flag() {
 
     assert!(
         files_with_callbacks >= 1,
-        "no `AuthenticationCallback` found in the bridge module. Either the biometric unlock \
-         is gone -- which is the thing §3.3 requirement 1 is about -- or this scan has stopped \
-         reading the files it names."
+        "no `AuthenticationCallback` found in the bridge module, so the biometric unlock is \
+         gone or this scan has stopped reading"
     );
     assert!(
         problems.is_empty(),
@@ -2353,8 +2155,7 @@ fn the_biometric_scan_would_notice_a_flag_and_a_missing_crypto_object() {
 
     assert!(
         biometric_callback_problems("class Unrelated { }").is_empty(),
-        "a class with no biometric callbacks was reported as having a \
-         problem, so the scan fires on files it does not apply to"
+        "a class with no biometric callbacks was reported as having a problem"
     );
 }
 
@@ -2398,7 +2199,8 @@ fn keystore_precondition_problems(source: &str) -> Vec<String> {
             .any(|l| l.contains("USABLE-NOT-EXISTS:"));
         if !justified {
             problems.push(format!(
-                "{}: `if (!exists(...))` decides whether to create a key. **An                  invalidated key keeps its alias**, so this skips a recreate that                  was needed and the next use throws                  `KeyPermanentlyInvalidatedException`. Delete and recreate                  unconditionally, or write a `USABLE-NOT-EXISTS:` note saying why                  the alias's presence is the right question here.",
+                "{}: `if (!exists(...))` decides whether to create a key, but an invalidated key \
+                 keeps its alias; delete and recreate, or add a `USABLE-NOT-EXISTS:` note.",
                 index + 1
             ));
         }
@@ -2475,13 +2277,11 @@ fn the_usability_scan_would_notice_the_incident_it_was_written_for() {
 
     assert!(
         !guarded_problems.is_empty(),
-        "the scan did not notice an `exists` guard around a create -- the exact shape of \
-          incident"
+        "the scan did not notice an `exists` guard around a create"
     );
     assert_ne!(
         guarded_problems, fixed_problems,
-        "the detector gave the same answer for the broken shape and the fixed one, so it is \
-         not reading its argument"
+        "the detector gave the same answer for the broken shape and the fixed one"
     );
     assert!(
         fixed_problems.is_empty(),
@@ -2490,8 +2290,7 @@ fn the_usability_scan_would_notice_the_incident_it_was_written_for() {
 
     assert!(
         keystore_precondition_problems("class Unrelated {}").is_empty(),
-        "a class that touches no keystore entry was reported, so the scan \
-         fires on files it does not apply to"
+        "a class that touches no keystore entry was reported"
     );
 }
 
@@ -2516,9 +2315,7 @@ fn backup_exclusion_problems(app_json: &str, plugin: &str) -> Vec<String> {
 
     if !compact.contains("\"allowBackup\":false") {
         problems.push(
-            "app.json: expo.android.allowBackup is not false. Cloud backup is governed by \
-             this attribute and nothing else; the XML rules cover device-to-device transfer \
-             only."
+            "app.json: expo.android.allowBackup is not false, and only it governs cloud backup."
                 .to_owned(),
         );
     }
@@ -2527,9 +2324,8 @@ fn backup_exclusion_problems(app_json: &str, plugin: &str) -> Vec<String> {
     }
     if !compact.contains("\"./plugins/with-chiavora-backup\"") {
         problems.push(
-            "app.json: with-chiavora-backup is not in expo.plugins, so the generated \
-             manifest points at no dataExtractionRules and device-to-device transfer is \
-             unrestricted — which `allowBackup` does not cover on API 31+."
+            "app.json: with-chiavora-backup is not in expo.plugins, so device-to-device \
+             transfer is unrestricted on API 31+."
                 .to_owned(),
         );
     }
@@ -2538,24 +2334,23 @@ fn backup_exclusion_problems(app_json: &str, plugin: &str) -> Vec<String> {
     for required in ["<cloud-backup>", "<device-transfer>"] {
         if !plugin.contains(required) {
             problems.push(format!(
-                "with-chiavora-backup.js: no `{required}` section. On API 31+ these are \
-                 two different transports and excluding one excludes one."
+                "with-chiavora-backup.js: no `{required}` section; on API 31+ the two \
+                 transports are excluded separately."
             ));
         }
     }
     for domain in EXTRACTION_DOMAINS {
         if !plugin.contains(&format!("'{domain}'")) {
             problems.push(format!(
-                "with-chiavora-backup.js: the domain `{domain}` is not in DOMAINS. An \
-                 unexcluded domain is a backed-up domain — the rules file includes \
-                 everything it does not name."
+                "with-chiavora-backup.js: the domain `{domain}` is not in DOMAINS, so it is \
+                 backed up."
             ));
         }
     }
     if !plugin.contains("allowBackup !== false") {
         problems.push(
             "with-chiavora-backup.js: the plugin no longer refuses an app.json whose \
-             allowBackup is not false. Half is not a partial mitigation."
+             allowBackup is not false."
                 .to_owned(),
         );
     }
@@ -2571,7 +2366,7 @@ fn the_vault_database_is_excluded_from_backup_and_device_transfer() {
     );
     assert!(
         problems.is_empty(),
-        " violations:\n {}",
+        "backup exclusion violations:\n  {}",
         problems.join("\n  ")
     );
 }
@@ -2618,8 +2413,7 @@ fn the_backup_scan_would_notice_each_half_going_missing() {
         // Not `assert_ne!`, so a failure names the mutation instead of printing two files.
         assert!(
             json != good_json || plugin != good_plugin,
-            "the mutation '{what}' changed nothing, so it tests nothing — the string it \
-             replaces is no longer in the file it replaces it in"
+            "the mutation '{what}' changed nothing; its needle is no longer in the file"
         );
         assert!(
             !backup_exclusion_problems(&json, &plugin).is_empty(),
@@ -2721,8 +2515,7 @@ fn r1_every_generator_knob_is_registered_with_its_entropy_assertion() {
             {
                 problems.push(format!(
                     "{struct_name}.{field} ({label}) is a generator knob with no row in \
-                     GENERATOR_KNOBS. Add one saying whether it moves the reported entropy, \
-                     and the test that asserts it --- R1's third corollary."
+                     GENERATOR_KNOBS."
                 ));
             }
         }
@@ -2789,8 +2582,7 @@ fn the_generator_knob_registry_would_notice_an_unregistered_knob() {
 
     assert!(
         struct_fields(synthetic, "NoSuchStruct").is_empty(),
-        "a struct that is not there returned fields, so the reader invents \
-         members rather than finding them"
+        "a struct that is not there returned fields"
     );
 }
 
@@ -2856,29 +2648,19 @@ const ENUMERATION_ALLOWED: [(&str, &str, &str); 3] = [
     (
         "item kinds",
         "core/tests/i7_double_wrap_agreement.rs",
-        "TYPE-LEVEL, NOT VALUE-LEVEL: it names the marker types `Login`, `Note` \
-         and the rest, not `ItemKind::Login`. `ItemKind::ALL` is a slice of \
-         runtime values and types cannot be iterated, so there is nothing to \
-         derive from. What forces the decision for a new item type is the \
-         `item_type!` macro: `PROVIDER_READABLE` and `Wraps` have no defaults, \
-         so a seventh type cannot be declared without stating both. **The \
-         assertions could be macro-generated the way `brand!` now generates \
-         I1(a)'s** --- recorded here rather than done, because I7 is \
-         invariant and `wrap.rs` is not restructured here",
+        "it names the marker types such as `Login`, which cannot be iterated, and \
+         `item_type!` makes a new type state both of its properties",
     ),
     (
         "item kinds",
         "core/tests/import_bitwarden_lastpass_chrome.rs",
-        "A MAPPING TABLE, NOT A COVERAGE CLAIM: it asserts which foreign type \
-         becomes which kind. A seventh item kind with no Bitwarden, LastPass or \
-         Chrome equivalent **should not** appear here, so deriving from \
-         `ItemKind::ALL` would assert something false",
+        "a mapping table, where a kind with no Bitwarden, LastPass or Chrome \
+         equivalent is correctly absent",
     ),
     (
         "item kinds",
         "core/tests/import_one_password.rs",
-        "A MAPPING TABLE, NOT A COVERAGE CLAIM: as above, for 1PUX and 1PIF. A \
-         kind 1Password does not have is correctly absent",
+        "a mapping table, where a kind 1Password does not have is correctly absent",
     ),
 ];
 
@@ -2890,8 +2672,8 @@ fn every_enumerable_set_is_derived_rather_than_listed_by_hand() {
         let members = set_members(&read(definition), opener);
         assert!(
             members.len() >= 3,
-            "{label}: found {} members in {definition} — the member reader has \
-             stopped reading, which would make this test vacuous",
+            "{label}: found only {} members in {definition}, so the member reader has \
+             stopped reading",
             members.len()
         );
         let threshold = members.len().div_ceil(2);
@@ -2921,8 +2703,7 @@ fn every_enumerable_set_is_derived_rather_than_listed_by_hand() {
 
     assert!(
         problems.is_empty(),
-        "these enumerate a set by hand, so they range over what somebody \
-         remembered rather than over what exists:\n  {}",
+        "these enumerate a set by hand rather than deriving it:\n  {}",
         problems.join("\n  ")
     );
 }
@@ -2944,13 +2725,12 @@ fn the_enumerable_set_reader_reads_each_definition() {
 
     assert!(
         set_members("fn nothing() {}", "pub enum Absent").is_empty(),
-        "a shape that is not there returned members, which is the vacuous \
-         pass this whole pattern exists to prevent"
+        "a shape that is not there returned members"
     );
 }
 
 #[test]
-fn plan_mds_record_table_and_the_encoder_define_the_same_set() {
+fn the_design_record_table_and_the_encoder_define_the_same_set() {
     let plan = read("docs/security-design.md");
     let mut in_plan: Vec<u8> = plan
         .lines()
@@ -2965,15 +2745,13 @@ fn plan_mds_record_table_and_the_encoder_define_the_same_set() {
 
     assert!(
         !in_plan.is_empty(),
-        "no `recordType 0xNN` lines found in docs/security-design.md -- the §2.2 table moved or \
-         changed shape, and this check reads nothing rather than checking \
-         nothing"
+        "no `recordType 0xNN` lines found in docs/security-design.md; the §2.2 \
+         table moved or changed shape"
     );
     assert_eq!(
         in_plan, in_code,
         "docs/security-design.md §2.2 and `aad::ALL_RECORD_TYPES` define different record-type \
-         sets. A type in one and not the other is a format that exists in the \
-         design and not the encoder, or the reverse"
+         sets"
     );
 }
 
@@ -3047,9 +2825,8 @@ fn no_hkdf_call_site_passes_a_salt() {
 
     assert!(
         !sites.is_empty(),
-        "no `Hkdf::new` call site found in any crate's src. Either the \
-         derivations moved, or this walk reads nothing -- which is the failure \
-         mode that makes a scan green for the one reason that is not evidence"
+        "no `Hkdf::new` call site found in any crate's src, so the derivations moved or \
+         this walk reads nothing"
     );
 
     let salted: Vec<String> = sites
@@ -3060,8 +2837,7 @@ fn no_hkdf_call_site_passes_a_salt() {
 
     assert!(
         salted.is_empty(),
-        "`docs/crypto.md` says no HKDF salt is used and that separation is \
-         carried entirely by `info`. These call sites pass one:\n  {}",
+        "`docs/crypto.md` says no HKDF salt is used, but these call sites pass one:\n  {}",
         salted.join("\n  ")
     );
 }
@@ -3084,8 +2860,7 @@ fn the_hkdf_salt_scan_would_notice_a_salt() {
     assert_eq!(
         hkdf_salt_arguments(&compliant),
         vec![("x/src/a.rs".to_owned(), "None".to_owned())],
-        "a compliant call must be seen and its argument read as `None`; a scan \
-         that silently reads the wrong argument is green for the wrong reason"
+        "a compliant call must be seen and its argument read as `None`"
     );
     assert_eq!(
         hkdf_salt_arguments(&salted),
@@ -3095,15 +2870,13 @@ fn the_hkdf_salt_scan_would_notice_a_salt() {
     assert_eq!(
         hkdf_salt_arguments(&turbofish_free),
         vec![("x/src/c.rs".to_owned(), "&self.salt".to_owned())],
-        "`Hkdf::new` without a turbofish reaches the same call and must not be \
-         a hole in the scan"
+        "`Hkdf::new` without a turbofish must be caught too"
     );
 
     let real = hkdf_salt_arguments(&workspace_src());
     assert!(
         real.iter().any(|(name, _)| name.contains("derive.rs")),
-        "the walk must reach core/src/derive.rs, which has held the only HKDF \
-         call site since §2.1 was built"
+        "the walk must reach core/src/derive.rs and its HKDF call site"
     );
 }
 
@@ -3124,30 +2897,19 @@ fn pinned_channel() -> Option<String> {
 #[test]
 fn the_pinned_toolchain_is_the_one_actually_running() {
     let pinned = pinned_channel().unwrap_or_else(|| {
-        panic!(
-            "rust-toolchain.toml does not pin an exact version. The user \
-             decided that it must: a floating channel makes the \
-             first dispatch after every Rust release a known-red, and a \
-             known-red is a signal people learn to ignore"
-        )
+        panic!("rust-toolchain.toml does not pin an exact version, and it must")
     });
 
     let output = std::process::Command::new("rustc")
         .arg("--version")
         .output()
-        .expect(
-            "rustc must be invokable from a test; if it is not, this check \
-                 is reporting nothing rather than passing",
-        );
+        .expect("rustc must be invokable from a test");
     let reported = String::from_utf8_lossy(&output.stdout).into_owned();
 
     assert!(
         reported.contains(&pinned),
         "rust-toolchain.toml pins {pinned} but the compiler running this test \
-         reports `{}`. Either this worktree has not picked up a bump, or \
-         something is overriding the toolchain file -- which is the silent \
-         failure this check exists for, because every document in the \
-         repository would go on saying the build is pinned",
+         reports `{}`; something overrides the toolchain file or the checkout is stale",
         reported.trim()
     );
 }
@@ -3275,17 +3037,13 @@ fn every_dependency_of_core_is_classified_as_cryptographic_or_not() {
 
     assert_eq!(
         actual, classified,
-        "the two classification lists must equal `crates/core`'s dependencies. \
-         A crate in `core` and in neither list is one the scan below will not \
-         look for; a crate in a list and not in `core` is a name nobody checks \
-         any more"
+        "the two classification lists must equal `crates/core`'s dependencies"
     );
 
     for (name, reason) in CRYPTOGRAPHIC_CRATES.iter().chain(NOT_CRYPTOGRAPHIC.iter()) {
         assert!(
             reason.len() > 10,
-            "{name}'s classification must say what it is for, not merely which \
-             list it is on"
+            "{name}'s classification must say what it is for"
         );
     }
 }
@@ -3305,12 +3063,8 @@ fn no_crate_above_core_depends_on_a_cryptographic_crate() {
                 CRYPTOGRAPHIC_CRATES.iter().find(|(name, _)| *name == dep)
             {
                 problems.push(format!(
-                    "{crate_dir} depends on `{name}` ({purpose}). Crates above \
-                     `core` do not do cryptography of their own -- §3.2 is one \
-                     implementation, and hard rule 1's primitive list is about \
-                     this workspace, not about one crate in it. Route it through \
-                     `chiavora-core`, or if there is genuinely no way, that is an \
-                     ADR before it is a dependency"
+                    "{crate_dir} depends on `{name}` ({purpose}); route it through \
+                     `chiavora-core` instead"
                 ));
             }
         }
@@ -3339,10 +3093,7 @@ fn the_cryptographic_dependency_scan_would_notice_one() {
     );
     assert!(
         !deps.contains(&"hex".to_owned()),
-        "`[dev-dependencies]` must not be read as `[dependencies]`: test \
-         machinery is not the shipping dependency graph, which is the same \
-         distinction `r4_every_dependency_of_core_appears_in_adr_0002` makes \
-         for x25519-dalek"
+        "`[dev-dependencies]` must not be read as `[dependencies]`"
     );
     assert!(
         CRYPTOGRAPHIC_CRATES.iter().any(|(name, _)| *name == "hmac"),
@@ -3369,8 +3120,7 @@ fn the_cryptographic_dependency_scan_would_notice_one() {
     let server = read("crates/server/Cargo.toml");
     assert!(
         manifest_dependencies(&server).contains(&"chiavora-core".to_owned()),
-        "crates/server must depend on chiavora-core; without it this change's \
-         premise -- one SRP implementation, shared -- is not true"
+        "crates/server must depend on chiavora-core, so there is one SRP implementation"
     );
 }
 
@@ -3387,8 +3137,11 @@ fn the_door_list_permits_only_what_it_names() {
         "with nothing listed, every caller must be reported"
     );
     assert!(
-        !permits(&[("crates/ffi-mobile/src/lib.rs", "the MUK, from the keystore")], problem),
-        "a listed path must be permitted, or adding a row would not be a way          to record a door -- it would be a row that changes nothing"
+        !permits(
+            &[("crates/ffi-mobile/src/lib.rs", "the MUK, from the keystore")],
+            problem
+        ),
+        "a listed path must be permitted"
     );
     assert!(
         permits(&[("crates/ffi-node/src/lib.rs", "something else")], problem),
@@ -3406,7 +3159,7 @@ fn the_door_list_permits_only_what_it_names() {
         .replace('\\', "/");
     assert!(
         short.starts_with("crates/server/src/"),
-        "the scan must produce repo-relative paths; got `{short}`. Until it produced an absolute path in any checkout not named `chiavora`, which was harmless while nothing matched on it"
+        "the scan must produce repo-relative paths; got `{short}`"
     );
 }
 

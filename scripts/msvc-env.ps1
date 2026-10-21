@@ -27,13 +27,9 @@ function Import-LinkableVcEnvironment {
     if (-not $vcvars) {
         Write-Host 'GATE PRECONDITION FAILED' -ForegroundColor Red
         Write-Host @'
-No Visual Studio installation on this machine can link a desktop x64 binary:
-none carries VC\Tools\MSVC\<version>\lib\x64\msvcrt.lib together with a usable
-vcvarsall.bat.
-
-`cargo build` on a library will still appear to work. `cargo test` fails at link
-time with LNK1181 or LNK1104 — so the gate cannot run, and the gate is
-the merge condition, so nothing can be merged.
+No Visual Studio installation on this machine can link a desktop x64 binary
+(none has VC\Tools\MSVC\<version>\lib\x64\msvcrt.lib and vcvarsall.bat), so
+`cargo test` fails to link with LNK1181 or LNK1104.
 
 Fix: install or repair the "Desktop development with C++" workload:
 

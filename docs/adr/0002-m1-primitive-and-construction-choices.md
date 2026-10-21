@@ -49,7 +49,7 @@ drop in (ADR-0007, ADR-0008).
 ## Consequences
 
 - Anything not listed here is a deviation and needs its own ADR before it is
-  coded. R4's check fails on a `crates/core` dependency not named here.
+  coded.
 - Argon2id's `m` and `t` are set by measurement on hardware and recorded in
   `docs/crypto.md`.
 - `bundled` statically links SQLite's C; `crypto-bigint` 0.7 adds `asm!` beneath
